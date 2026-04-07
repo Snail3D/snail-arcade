@@ -53,12 +53,11 @@
             window.addEventListener('keydown', e => keys[e.code] = true);
             window.addEventListener('keyup', e => keys[e.code] = false);
 
-            // Unified Input Handling
             const handleInput = (e) => {
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 touchTarget = { x: clientX, y: clientY };
-                e.preventDefault();
+                if (e.cancelable) e.preventDefault();
             };
 
             canvas.addEventListener('mousedown', handleInput);
@@ -85,7 +84,7 @@
                 }
             } else {
                 if (keys['ArrowUp'] || keys['KeyW']) snail.vy -= accel;
-                if (keys['ArrowDown'] or keys['KeyS']) snail.vy += accel;
+                if (keys['ArrowDown'] || keys['KeyS']) snail.vy += accel;
                 if (keys['ArrowLeft'] || keys['KeyA']) snail.vx -= accel;
                 if (keys['ArrowRight'] || keys['KeyD']) snail.vx += accel;
             }
@@ -95,7 +94,6 @@
             snail.x += snail.vx;
             snail.y += snail.vy;
 
-            // Screen wrap
             if (snail.x < 0) snail.x = width;
             if (snail.x > width) snail.x = 0;
             if (snail.y < 0) snail.y = height;
@@ -114,7 +112,6 @@
                     else score += 10;
                     items.splice(i, 1);
                     spawnItem();
-                    // Explosion
                     for(let j=0; j<8; j++) particles.push({x: item.x, y: item.y, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5, life: 1.0, color: item.color});
                 }
             });
@@ -123,7 +120,7 @@
             particles = particles.filter(p => p.life > 0);
 
             scoreEl.innerText = `LETTUCE: ${score}`;
-            glitchEl.innerText = glitchLevel > 70 ? "REALITY: ERROR" : (glitchLevel > 40 ? "REALITTY: UNSTABLE" : "REALITY: STABLE");
+            glitchEl.innerText = glitchLevel > 70 ? "REALITY: ERROR" : (glitchLevel > 40 ? "REALITY: UNSTABLE" : "REALITY: STABLE");
             frame++;
         }
 
