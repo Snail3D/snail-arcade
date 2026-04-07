@@ -185,7 +185,7 @@
                 for (let c = 0; c < gridSize; c++) {
                     const cellDiv = document.createElement('div');
                     cellDiv.classList.add('cell');
-                    cellleDiv.id = `cell-${r}-${c}`;
+                    cellDiv.id = `cell-${r}-${c}`;
                     cellDiv.dataset.r = r;
                     cellDiv.dataset.c = c;
                     cellDiv.addEventListener('click', () => revealCell(r, c));
