@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snail vs Salt</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #2d5a2lag; font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { background: #4a7c44; box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 5px solid #3e6639; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; text-shadow: 2px 2px 4px #000; }
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.7); display: none; flex-direction: column;
+            justify-content: center; align-items: center; color: white; font-size: 2rem;
+        }
+        button { padding: 10px 20px; font-size: 1.5rem; cursor: pointer; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Snail vs Salt</h1>
+        <p>Use Arrow Keys to move. Reach the Lettuce!</p>
+    </div>
+    <div id="overlay">
+        <div id="msg">GAME OVER</div>
+        <button onclick="resetGame()">Try Again</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const msg = document.getElementById('margin-msg'); // placeholder
+        const msgText = document.querySelector('#overlay div:first-child');
+
+        canvas.width = 800;
+        canvas.height = 600;
+
+        let gameRunning = true;
+        let snail, lettuce, saltLineX, saltSpeed, obstacles, pellets, keys;
+
+        function resetGame() {
+            snail = { x: 50, y: 300, radius: 15, speed: 3, color: '#a8dadc' };
+            lettuce = { x: 750, y: 300, radius: 25, color: '#2ecc71' };
+            saltLineX = -50;
+            saltSpeed = 0.3;
+            obstacles = [];
+            pellets = [];
+            keys = {};
+            gameRunning = true;
+            overlay.style.display = 'none';
+            
+            // Seed initial obstacles
+            for(let i=0; i<6; i++) spawnObstacle();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('keydown', e => keys[e.code] = true);
+        window.addEventListener('keyup', e => keys[e.code] = false);
+
+        function spawnObstacle() {
+            obstacles.push({
+                x: Math.random() * (canvas.width - 200) + 150,
+                y: Math.random() * (canvas.height - 100) + 50,
+                radius: 12,
+                color: '#333'
+            });
+        }
+
+        function drawSnail(s) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+            ctx.fillStyle = s.color;
+            ctx.fill();
+            // Shell
+            ctx.beginPath();
+            ctx.arc(s.x - 5, s.y - 5, s.radius * 0.8, 0, Math.PI * 2);
+            ctx.fillStyle = '#8d6e63';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawLettuce(l) {
+            ctx.beginPath();
+            ctx.arc(l.x, l.y, l.radius, 0, Math.PI * 2);
+            ctx.fillStyle = l.color;
+            ctx.fill();
+            ctx.strokeStyle = '#1b5e20';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // Movement
+            if (keys['ArrowUp'] && snail.y > snail.radius) snail.y -= snail.speed;
+            if (keys['ArrowDown'] && snail.y < canvas.height - snail.radius) snail.y += snail.speed;
+            if (keys['ArrowLeft'] && snail.x > snail.radius) snail.x -= snail.speed;
+            if (keys['ArrayRight'] || keys['ArrowRight']) snail.x += snail.speed;
+
+            // Salt movement (the pressure)
+            saltLineX += saltSpeed;
+            saltSpeed += 0.0001; // Accelerating pressure
+
+            // Salt particles (visuals)
+            if (Math.random() < 0.5) {
+                pellets.push({
+                    x: saltLineX,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 3 + 1,
+                    life: 100
+                });
+            }
+
+            // Check Salt Collision (Death)
+            if (snail.x < saltLineX) {
+                endGame("SALTED!");
+            }
+
+            // Check Lettuce Collision (Win)
+            const distToLettuce = Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y);
+            if (distToLettuce < snail.radius + lettuce.radius) {
+                endGame("YOU REACHED THE LETTUCE!");
+            }
+
+            // Check Obstacle Collision (Death)
+            obstacles.forEach(obs => {
+                const dist = Math.hypot(snail.x - obs.x, snail.y - obs.y);
+                if (dist < snail.radius + obs.radius) {
+                    endGame("HIT A PELLET!");
+                }
+            });
+
+            // Update pellets
+            for (let i = pellets.length - 1; i >= 0; i--) {
+                pellets[i].life--;
+                if (pellets[i].life <= 0) pellets.splice(i, 1);
+            }
+        }
+
+        function endGame(text) {
+            gameRunning = false;
+            msgText.innerText = text;
+            overlay.style.display = 'flex';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Salt Area
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(0, 0, saltLineX, canvas.height);
+
+            // Draw Salt line boundary
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(saltLineX, 0);
+            ctx.lineTo(saltLineX, canvas.height);
+            ctx.stroke();
+
+            // Draw Pellets
+            ctx.fillStyle = 'white';
+            pellets.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Obstacles
+            obstacles.forEach(obs => {
+                ctx.beginPath();
+                ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+                ctx.fillStyle = obs.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            drawLettuce(lettuce);
+            drawSnail(snail);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (gameRunning) requestAnimationFrame(gameLoop);
+        }
+
+        resetGame();
+    </script>
+</body>
+</html>
