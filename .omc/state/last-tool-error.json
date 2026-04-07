@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"HERMES_HOME=/Users/snailmac/.hermes hermes gateway stop 2>&1; sleep 2; HERMES_HOME=/Users/snailmac/.hermes hermes gateway start 2>&1\",\"description\":\"Restart with larger context\"}",
-  "error": "Exit code 144\n✓ Service stopped\n✓ Stopped 2 additional manual gateway process(es)",
-  "timestamp": "2026-04-07T03:17:45.659Z",
+  "tool_input_preview": "{\"command\":\"# Restart clawhip\\npkill -f clawhip 2>/dev/null; sleep 1; nohup ~/.cargo/bin/clawhip start > /tmp/clawhip-restart.log 2>&1 & sleep 2; ~/.cargo/bin/clawhip status 2>/dev/null | python3 -c \\...",
+  "error": "Exit code 144\nClawhip: UP on :25294\n✓ Service stopped\n✓ Stopped 3 additional manual gateway process(es)",
+  "timestamp": "2026-04-07T04:22:46.725Z",
   "retry_count": 1
 }
