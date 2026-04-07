@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport", width="device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport", content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Snail vs Salt: Garden Escape</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a3312; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #1a331ac; font-family: sans-serif; touch-action: none; }
         canvas { display: block; background: #2d5a27; margin: 0 auto; }
-        #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: #fff; pointer-events: none; text-shadow: 1px 1px 3px #000; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: #fff; pointer-events: none; text-shadow: 1px 1px 3px #000; z-index: 5; }
         #overlay { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             background: rgba(0,0,0,0.8); display: none; flex-direction: column;
@@ -24,7 +24,7 @@
         p { margin: 5px 0; opacity: 0.8; }
     </style>
 </head>
-<body>
+<body \>
     <div id="ui">
         <h1>Snail Escape</h1>
         <p>Drag to Move 🐌</p>
@@ -55,59 +55,41 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // Input handling
         let isDragging = false;
-        let lastTouch = { x: 0, y: 0 };
+        let lastX = 0;
+        let lastY = 0;
 
-        function handleInputStart(x, y) {
+        // Unified Pointer Events (handles Mouse and Touch)
+        canvas.addEventListener('pointerdown', e => {
             isDragging = true;
-            lastTouch = { x, y };
-        }
+            lastX = e.clientX;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            canvas.setPointerCapture(e.pointerId);
+        });
 
-        function handleInputMove(x, y) {
+        canvas.addEventListener('pointermove', e => {
             if (isDragging && gameRunning) {
-                const dx = x - lastTouch.x;
-                const dy = y - lastTouch.y;
+                const dx = e.clientX - lastX;
+                const dy = e.clientY - lastY;
                 
-                // Apply movement based on drag delta
-                const moveStrength = 0.5; 
-                snail.x += dx * moveStrength;
-                snail.y += dy * *moveStrength;
+                snail.x += dx;
+                snail.y += dy;
                 
-                lastTouch = { x, y };
+                // Keep snail inside canvas
+                snail.x = Math.max(snail.radius, Math.min(width - snail.radius, snail.x));
+                snail.y = Math.max(snail.radius, Math.min(height - snail.radius, snail.y));
+
+                lastX = e.clientX;
+                lastY = e.clientY;
             }
-        }
+        });
 
-        function handleInputEnd() {
-            isDragging = false;
-        }
-
-        // Mobile Touch
-        canvas.addEventListener('touchstart', e => {
-            const t = e.touches[0];
-            handleInputStart(t.clientX, t.clientY);
-            e.preventDefault();
-        }, {passive: false});
-
-        canvas.addEventListener('touchmove', e => {
-            const t = e.touches[0];
-            handleInputMove(t.clientX, t.clientY);
-            e.preventDefault();
-        }, {passive: false});
-
-        canvas.addEventListener('touchend', handleInputEnd);
-
-        // Mouse Support
-        canvas.addEventListener('mousedown', e => handleInputStart(e.clientX, e.clientY));
-        window.addEventListener('mousemove', e => handleInputMove(e.clientX, e.clientY));
-        window.addEventListener('mouseup', handleInputEnd);
+        canvas.addEventListener('pointerup', () => isDragging = false);
+        canvas.addEventListener('pointercancel', () => isDragging = false);
 
         function resetGame() {
-            snail = { 
-                x: 100, y: height/2, 
-                radius: 18, 
-                color: '#e0e0e0'
-            };
+            snail = { x: 100, y: height/2, radius: 18, color: '#e0e0e0' };
             lettuce = { x: width - 60, y: height/2, radius: 25, color: '#4caf50' };
             saltLineX = -50;
             saltSpeed = 0.6;
@@ -124,14 +106,12 @@
                     color: '#3e2723'
                 });
             }
-
             requestAnimationFrame(gameLoop);
         }
 
         function endGame(text, win) {
             gameRunning = false;
             statusText.innerText = text;
-            statusTempText = text; 
             statusText.style.color = win ? "#4caf50" : "#ff5252";
             scoreText.innerText = win ? "Success! You escaped!" : "The salt caught you...";
             overlay.style.display = 'flex';
@@ -139,10 +119,6 @@
 
         function update() {
             if (!gameRunning) return;
-
-            // Bounds
-            snail.x = Math.max(snail.radius, Math.min(width - snail.radius, snail.x));
-            snail.y = Math.max(snail.radius, Math.min(height - snail.radius, snail.y));
 
             saltLineX += saltSpeed;
             saltSpeed += 0.0002;
@@ -165,8 +141,9 @@
 
             if (snail.x < saltLineX) endGame("SALTED!", false);
 
-            const distToLettuce = Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y);
-            if (distToLettuce < snail.radius + lettuce.radius) endGame("ESCAPED!", true);
+            if (Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y) < snail.radius + lettuce.radius) {
+                endGame("ESCAPED!", true);
+            }
 
             obstacles.forEach(obs => {
                 if (Math.hypot(snail.x - obs.x, snail.y - obs.y) < snail.radius + obs.radius) {
@@ -217,8 +194,8 @@
             ctx.fillStyle = '#8d6e63';
             ctx.beginPath(); ctx.arc(snail.x - 5, snail.y - 5, snail.radius * 0.8, 0, Math.PI*2); ctx.fill();
             ctx.fillStyle = '#000';
-            ctx.beginPath(); ctx.arc(snail.x + 10, snail.y - 5, 3, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(snail.x + 10, snail.y + 5, 3, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(snail.x + 8, snail.y - 5, 3, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(snail.x + 8, snail.y + 5, 3, 0, Math.PI*2); ctx.fill();
         }
 
         function gameLoop() {
