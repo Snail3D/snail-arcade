@@ -2,37 +2,61 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>PharmaSweep</title>
     <style>
         :root {
             --bg-color: #f0f4f8;
             --cell-color: #ffffff;
             --cell-revealed: #e2e8f0;
-            --text-color: #2d3748;
+            --text-control: #2d3748;
             --error-color: #e53e3e;
             --safe-color: #38a169;
             --border-color: #cbd5e0;
+            --primary-blue: #3182ce;
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: varvar(--bg-color);
+            background-color: var(--bg-color);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
-            color: var(--text-color);
+            color: var(--text-control);
+            touch-action: manipulation;
         }
 
-        h1 { margin-bottom: 10px; color: #2c5282; }
-        p { margin-bottom: 20px; font-size: 0.9rem; color: #4a5568; }
+        h1 { margin: 10px 0 5px 0; color: #2c5282; font-size: 1.5rem; }
+        p { margin: 0 0 15px 0; font-size: 0 %= 0.85rem; color: #4a5568; text-align: center; padding: 0 10px; }
+
+        #controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-btn {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 2px solid var(--border-color);
+            background: white;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .control-btn.active {
+            background: var(--primary-blue);
+            color: white;
+            border-color: var(--primary-blue);
+        }
 
         #game-container {
             background: white;
-            padding: 20px;
+            padding: 15px;
             border-radius: 12px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             border: 2px solid var(--border-color);
@@ -40,14 +64,14 @@
 
         #grid {
             display: grid;
-            grid-template-columns: repeat(10, 35px);
-            grid-template-rows: repeat(10, 35px);
+            grid-template-columns: repeat(10, 32px);
+            grid-template-rows: repeat(10, 30px);
             gap: 4px;
         }
 
         .cell {
-            width: 35px;
-            height: 35px;
+            width: 32px;
+            height: 30px;
             background-color: var(--cell-color);
             border: 1px solid var(--border-color);
             display: flex;
@@ -57,10 +81,11 @@
             cursor: pointer;
             user-select: none;
             border-radius: 4px;
-            transition: background 0.2s;
+            transition: background 0.1s;
+            font-size: 0.9rem;
         }
 
-        .cell:hover { background-color: #edf2f7; }
+        .cell:active { background-color: #edf2f7; }
 
         .cell.revealed {
             background-color: var(--cell-revealed);
@@ -68,7 +93,6 @@
         }
 
         .cell.error {
-            background-color: var(--error-length);
             background-color: var(--error-color);
             color: white;
         }
@@ -88,29 +112,33 @@
         .cell.revealed-num-4 { color: #805ad5; }
 
         #status {
-            margin-top: 20px;
-            font-size: 1.2rem;
+            margin-top: 15px;
+            font-size: 1.1rem;
             font-weight: bold;
+            height: 1.5rem;
         }
 
         #reset-btn {
             margin-top: 15px;
-            padding: 8px 20px;
-            background-color: #3182ce;
+            padding: 10px 25px;
+            background-color: var(--primary-blue);
             color: white;
             border: none;
             border-radius: 6px;
             cursor: pointer;
             font-weight: bold;
         }
-
-        #reset-btn:hover { background-color: #2b6cb0; }
     </style>
 </head>
 <body>
 
     <h1>PharmaSweep 💊</h1>
-    <p>Avoid Medication Errors (⚠️) to clear the ward!</p>
+    <p>Identify medication errors (⚠️) to clear the ward.</p>
+
+    <div id="controls">
+        <button id="mode-reveal" class="control-btn active" onclick="setMode('reveal')">Reveal 💊</button>
+        <button id="mode-flag" class="control-wrap control-btn" onclick="setMode('flag')">Flag ⚠️</button>
+    </div>
 
     <div id="game-container">
         <div id="grid"></div>
@@ -125,9 +153,23 @@
         let grid = [];
         let revealedCount = 0;
         let gameOver = false;
+        let currentMode = 'reveal';
 
         const gridElement = document.getElementById('grid');
         const statusElement = document.getElementById('status');
+        const modeRevealBtn = document.getElementById('mode-reveal');
+        const modeFlagBtn = document.getElementById('mode-flag');
+
+        function setMode(mode) {
+            currentMode = mode;
+            if (mode === 'reveal') {
+                modeRevealBtn.classList.add('active');
+                modeFlagBtn.classList.remove('active');
+            } else {
+                modeFlagBtn.classList.add('active');
+                modeRevealBtn.classList.remove('active');
+            }
+        }
 
         function initGame() {
             grid = [];
@@ -135,8 +177,8 @@
             gameOver = false;
             statusElement.innerText = '';
             gridElement.innerHTML = '';
+            setMode('reveal');
             
-            // Create board
             for (let r = 0; r < gridSize; r++) {
                 grid[r] = [];
                 for (let c = 0; c < gridSize; c++) {
@@ -150,7 +192,6 @@
                 }
             }
 
-            // Place errors
             let placed = 0;
             while (placed < errorCount) {
                 let r = Math.floor(Math.random() * gridSize);
@@ -161,7 +202,6 @@
                 }
             }
 
-            // Calculate neighbors
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
                     if (!grid[r][c].isError) {
@@ -180,7 +220,6 @@
                 }
             }
 
-            // Render
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
                     const cellDiv = document.createElement('div');
@@ -188,14 +227,22 @@
                     cellDiv.id = `cell-${r}-${c}`;
                     cellDiv.dataset.r = r;
                     cellDiv.dataset.c = c;
-                    cellDiv.addEventListener('click', () => revealCell(r, c));
-                    cellDiv.addEventListener('contextmenu', (e) => {
-                        e.preventDefault();
-                        toggleFlag(r, c);
-                    });
+                    
+                    cellDiv.addEventListener('click', () => handleInteraction(r, c));
+                    
                     gridElement.appendChild(cellDiv);
                     grid[r][c].element = cellDiv;
                 }
+            }
+        }
+
+        function handleInteraction(r, c) {
+            if (gameOver || grid[r][c].isRevealed) return;
+
+            if (currentMode === 'flag') {
+                toggleFlag(r, c);
+            } else {
+                revealCell(r, c);
             }
         }
 
@@ -222,7 +269,6 @@
                 cell.element.innerText = cell.errorNeighbors;
                 cell.element.classList.add(`revealed-num-${cell.errorNeighbors}`);
             } else {
-                // Flood fill
                 for (let dr = -1; dr <= 1; dr++) {
                     for (let dc = -1; dc <= 1; dc++) {
                         let nr = r + dr;
@@ -244,7 +290,6 @@
             statusElement.innerText = win ? "✅ Shift Complete! All clear!" : "❌ Error Found! Critical Incident!";
             statusElement.style.color = win ? "var(--safe-color)" : "var(--error-color)";
 
-            // Reveal all errors
             for (let r = 0; r < gridSize; r++) {
                 for (let c = 0; c < gridSize; c++) {
                     if (grid[r][c].isError) {
