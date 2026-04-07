@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snail vs Salt: Garden Escape</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a3312; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-scale; touch-action: none; }
+        canvas { display: block; background: #2d5a27; margin: 0 auto; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: #fff; pointer-events: none; text-shadow: 1px 1px 3px #000; }
+        #overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); display: none; flex-direction: column;
+            justify-content: center; align-items: center; color: white; text-align: center;
+        }
+        .btn { 
+            padding: 15px 30px; font-size: 1.5rem; cursor: pointer; 
+            background: #4caf50; border: none; color: white; border-radius: 30px;
+            margin-top: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            pointer-events: auto;
+        }
+        h1 { margin: 0; font-size: 1.8rem; }
+        p { margin: 5px 0; opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Snail Escape</h1>
+        <p>Drag to Move 🐌</p>
+    </div>
+    <div id="overlay">
+        <h1 id="status-text">GAME OVER</h1>
+        <p id="score-text"></p>
+        <button class="btn" onclick="resetGame()">Try Again</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const statusText = document.getElementById('status-text');
+        const scoreText = document.getElementById('score-text');
+
+        let width, height, gameRunning, snail, lettuce, saltLineX, saltSpeed, obstacles, particles, keyInput;
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            if (snail) {
+                // Keep snail in view on resize if possible
+                snail.x = Math.min(snail.x, width - 50);
+                snail.y = Math.min(snail.y, height - 50);
+            }
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input handling (Touch & Mouse)
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+
+        function handleStart(x, y) {
+            isDragging = true;
+            dragStart = { x, y };
+        }
+
+        function handleMove(x, y) {
+            if (isDragging && gameRunning) {
+                const dx = x - dragStart.x;
+                const dy = y - dragStart.y;
+                const angle = Math.atan2(dy, dx);
+                const distance = Math.min(Math.sqrt(dx*dx + dy*key) || 30, 50); // Max drag strength
+                
+                snail.vx = Math.cos(angle) * snail.speed;
+                snail.vy = Math.sin(angle) * snail.speed;
+                
+                // Move snail actual position for direct feel
+                snail.x += snail.vx;
+                snail.y += snail.vy;
+                
+                // Update drag origin to allow continuous dragging
+                dragStart.x = x;
+                dragStart.y = y;
+            }
+        }
+
+        function handleEnd() {
+            isDragging = false;
+            snail.vx = 0;
+            snail.vy = 0;
+        }
+
+        canvas.addEventListener('touchstart', e => {
+            const t = e.touches[0];
+            handleStart(t.clientX, t.clientY);
+        }, {passive: false});
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const t = e.touches[0];
+            handleMove(t.clientX, t.clientY);
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', handleEnd);
+
+        canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', handleEnd);
+
+        function resetGame() {
+            snail = { 
+                x: 100, y: height/2, 
+                radius: 18, 
+                speed: 4, 
+                vx: 0, vy: 0,
+                color: '#e0e0e0'
+            };
+            lettuce = { x: width - 60, y: height/2, radius: 25, color: '#4caf50' };
+            saltLineX = -50;
+            saltSpeed = 0.5;
+            obstacles = [];
+            particles = [];
+            gameRunning = true;
+            overlay.style.display = 'none';
+            
+            // Generate random obstacles
+            for(let i=0; i<6; i++) {
+                obstacles.push({
+                    x: Math.random() * (width - 200) + 100,
+                    y: Math.random() * (height - 100) + 50,
+                    radius: 15,
+                    color: '#3e2723'
+                });
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame(text, win) {
+            gameRunning = false;
+            statusText.innerText = text;
+            statusText.style.color = win ? "#4caf50" : "#ff5252";
+            scoreText.innerText = win ? "Success! You escaped the salt!" : "The salt caught you...";
+            overlay.style.display = 'flex';
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // Snail Bounds
+            snail.x = Math.max(snail.radius, Math.min(width - snail.radius, snail.x));
+            snail.y = Math.max(snail.radius, Math.min(height - snail.radius, snail.y));
+
+            // Salt Expansion
+            saltLineX += saltSpeed;
+            saltSpeed += 0.0002;
+
+            // Salt particles
+            if (Math.random() < 0.3) {
+                particles.push({
+                    x: saltLineX,
+                    y: Math.random() * height,
+                    size: Math.random() * 4,
+                    life: 1,
+                    vx: Math.random() * 2 + 1
+                });
+            }
+
+            // Update particles
+            for(let i = particles.length-1; i>=0; i--) {
+                particles[i].x += particles[i].vx;
+                particles[i].life -= 0.02;
+                if(particles[i].life <= 0) particles.splice(i, 1);
+            }
+
+            // Check Collisions
+            if (snail.x < saltLineX) {
+                endGame("SALTED!", false);
+            }
+
+            const distToLettuce = Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y);
+            if (distToLettuce < snail.radius + lettuce.radius) {
+                endGame("ESCAPPED!", true);
+            }
+
+            obstacles.forEach(obs => {
+                const dist = Math.hypot(snail.x - obs.x, snail.y - obs.y);
+                if (dist < snail.radius + obs.radius) {
+                    endGame("HIT A PELLET!", false);
+                }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Grass Patterns (simple)
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.lineWidth = 2;
+            for(let i=0; i<width; i+=50) {
+                ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,height); ctx.stroke();
+            }
+
+            // Draw Salt Area
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.fillRect(0, 0, saltLineX, height);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(saltLineX, 0); ctx.lineTo(saltLineX, height); ctx.stroke();
+
+            // Draw Particles
+            ctx.fillStyle = 'white';
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            // Draw Obstacles
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
+                ctx.beginPath(); ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+            });
+
+            // Draw Lettuce
+            ctx.fillStyle = lettuce.color;
+            ctx.beginPath(); ctx.arc(lettuce.x, lettuce.y, lettuce.radius, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = '#1b5e20'; ctx.lineWidth = 3; ctx.stroke();
+
+            // Draw Snail
+            ctx.fillStyle = snail.color;
+            ctx.beginPath(); ctx.arc(snail.x, snail.y, snail.radius, 0, Math.PI*2); ctx.fill();
+            // Shell
+            ctx.fillStyle = '#8d6e63';
+            ctx.beginPath(); ctx.arc(snail.x - 5, snail.y - 5, snail.radius * 0.8, 0, Math.PI*2); ctx.fill();
+            // Eyes
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(snail.x + 10, snail.y - 5, 3, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(snail.x + 10, snail.y + 5, 3, 0, Math.PI*2); ctx.clip(); // simplified
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (gameRunning) requestAnimationFrame(gameLoop);
+        }
+
+        resetGame();
+    </script>
+</body>
+</html>
