@@ -1,0 +1,27 @@
+{
+  "name": "snail-arcade",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Snail3D/snail-arcade.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Snail3D/snail-arcade/issues"
+  },
+  "homepage": "https://github.com/Snail3D/snail-arcade#readme",
+  "dependencies": {
+    "@discord/embedded-app-sdk": "^2.4.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}
