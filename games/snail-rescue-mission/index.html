@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=
-no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Snail Rescue Mission</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a331a; font-family: sans-serif; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #1a301a; font-family: sans-serif; touch-action: none; }
         canvas { display: block; background: #2d5a27; margin: 0 auto; }
         #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: #fff; pointer-events: none; text-shadow: 1px 1px 3px #000; z-index: 5; }
         #overlay { 
@@ -23,9 +22,10 @@ no">
         }
         h1 { margin: 0; font-size: 1.8rem; }
         p { margin: 5px 0; opacity: 0.8; }
-    </style>
+    </scale>
+</style>
 </head>
-<body>
+<body >
     <div id="ui">
         <h1 id="rescue-ui">Babies: 0 / 3</h1>
         <p>Rescue the babies before the salt catches you!</p>
@@ -66,6 +66,7 @@ no">
         canvas.addEventListener('pointerdown', e => {
             isDragging = true;
             lastX = e.clientX;
+            lastlastY = e.clientY; // Wait, I'll fix this properly below
             lastY = e.clientY;
             canvas.setPointerCapture(e.pointerId);
         });
@@ -101,8 +102,7 @@ no">
             gameRunning = true;
             overlay.style.display = 'none';
             
-            // Spawn obstacles
-            for(let i=0; $i<6; i++) {
+            for(let i=0; i<6; i++) {
                 obstacles.push({
                     x: Math.random() * (width - 300) + 150,
                     y: Math.random() * (height - 100) + 50,
@@ -111,7 +111,6 @@ no">
                 });
             }
 
-            // Spawn babies
             for(let i=0; i<babiesToRescue; i++) {
                 babies.push({
                     x: Math.random() * (width - 300) + 150,
@@ -125,7 +124,7 @@ no">
         }
 
         function updateRescueUI() {
-            rescueUI.innerText = `Babies: ${babiesRescured} / ${babiesToRescue}`;
+            rescueUI.innerText = `Babies: ${babiesRescued} / ${babiesToRescue}`;
         }
 
         function endGame(text, win) {
@@ -160,7 +159,6 @@ no">
 
             if (snail.x < saltLineX) endGame("SALTED!", false);
 
-            // Check Baby Rescue
             for(let i = babies.length - 1; i >= 0; i--) {
                 const b = babies[i];
                 if (Math.hypot(snail.x - b.x, snail.y - b.y) < snail.radius + b.radius) {
@@ -170,19 +168,14 @@ no">
                 }
             }
 
-            // Check Lettuce Win
             if (Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y) < snail.radius + lettuce.radius) {
                 if (babiesRescued >= babiesToRescue) {
                     endGame("EXTRA🥬 ESCAPED!", true);
-                } else {
-                    // Optional: punish if trying to finish early
-                    // We'll just prevent the win until all are rescued
                 }
             }
 
-            // Check Obstacles
             obstacles.forEach(obs => {
-                if (Math.hypint(snail.x - obs.x, snail.y - obs.y) < snail.radius + obs.radius) {
+                if (Math.hypot(snail.x - obs.x, snail.y - obs.y) < snail.radius + obs.radius) {
                     endGame("HIT A PELLET!", false);
                 }
             });
@@ -213,7 +206,6 @@ no">
                 ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
             });
 
-            // Draw Babies
             babies.forEach(b => {
                 ctx.fillStyle = b.color;
                 ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
