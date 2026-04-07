@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snail Arcade</title>
+<meta property="og:title" content="Snail Arcade">
+<meta property="og:description" content="Play free browser games by SnailKing">
+<meta property="og:type" content="website">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+  .header {
+    text-align: center;
+    padding: 40px 20px 20px;
+    border-bottom: 1px solid #222;
+  }
+  .header h1 {
+    font-size: 2.5em;
+    color: #00ff88;
+    text-shadow: 0 0 20px rgba(0,255,136,0.3);
+  }
+  .header p {
+    color: #666;
+    margin-top: 8px;
+  }
+  .games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    padding: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .game-card {
+    background: #141414;
+    border: 1px solid #252525;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .game-card:hover {
+    border-color: #00ff88;
+    transform: translateY(-2px);
+  }
+  .game-card a {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .game-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3em;
+  }
+  .game-info {
+    padding: 16px;
+  }
+  .game-info h3 {
+    color: #00ff88;
+    margin-bottom: 6px;
+  }
+  .game-info p {
+    color: #888;
+    font-size: 0.85em;
+    line-height: 1.4;
+  }
+  .tag {
+    display: inline-block;
+    background: #1e1e1e;
+    color: #00ff88;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    margin-top: 8px;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: #444;
+  }
+  .empty-state p { font-size: 1.2em; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Snail Arcade</h1>
+    <p>Browser games by SnailKing &mdash; playable anywhere, even Discord</p>
+  </div>
+  <div class="games-grid" id="games"></div>
+  <div class="empty-state" id="empty" style="display:none;">
+    <p>No games yet. Tell your AI to make one.</p>
+  </div>
+  <script>
+    // Game registry — add entries here when new games are created
+    const GAMES = [
+      // { slug: "cool-snail-game", title: "Cool Snail Game", emoji: "\u{1F40C}", desc: "A fun snail racing game", tags: ["arcade"] },
+    ];
+
+    const grid = document.getElementById('games');
+    const empty = document.getElementById('empty');
+
+    if (GAMES.length === 0) {
+      empty.style.display = 'block';
+    } else {
+      GAMES.forEach(g => {
+        const card = document.createElement('div');
+        card.className = 'game-card';
+        const link = document.createElement('a');
+        link.href = 'games/' + g.slug + '/index.html';
+
+        const thumb = document.createElement('div');
+        thumb.className = 'game-thumb';
+        thumb.textContent = g.emoji || '\u{1F3AE}';
+
+        const info = document.createElement('div');
+        info.className = 'game-info';
+        const title = document.createElement('h3');
+        title.textContent = g.title;
+        const desc = document.createElement('p');
+        desc.textContent = g.desc;
+        info.appendChild(title);
+        info.appendChild(desc);
+        (g.tags || []).forEach(t => {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = t;
+          info.appendChild(tag);
+        });
+
+        link.appendChild(thumb);
+        link.appendChild(info);
+        card.appendChild(link);
+        grid.appendChild(card);
+      });
+    }
+  </script>
+</body>
+</html>
