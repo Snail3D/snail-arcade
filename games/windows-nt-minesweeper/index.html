@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minesweeper NT</title>
     <style>
         body {
@@ -10,7 +10,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             font-family: 'Courier New', Courier, monospace;
         }
@@ -19,6 +19,7 @@
             border: 3px outset #ffffff;
             padding: 10px;
             user-select: none;
+            max-width: 95vw;
         }
         #header {
             display: flex;
@@ -26,17 +27,17 @@
             align-items: center;
             border: 3px inset #ffffff;
             padding: 5px 10px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             background-color: #c0c0c0;
         }
         .counter {
             background-color: black;
             color: red;
             font-family: 'Courier New', Courier, monospace;
-            font-size: 24px;
+            font-size: 20px;
             padding: 2px 5px;
             border: 2px inset #ffffff;
-            min-width: 50px;
+            min-width: 40px;
             text-align: center;
         }
         #reset-btn {
@@ -52,6 +53,25 @@
         }
         #reset-btn:active {
             border: 3px inset #ffffff;
+        }
+        #mode-container {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: center;
+        }
+        #mode-btn {
+            background-color: #c0c0c0;
+            border: 3px outset #ffffff;
+            padding: 5px 12px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: 'Courier New', Courier, monospace;
+            text-transform: uppercase;
+        }
+        #mode-btn.flag-mode {
+            border: 3px inset #ffffff;
+            background-color: #bdbdbd;
+            color: #000;
         }
         #grid {
             display: grid;
@@ -93,11 +113,15 @@
             <button id="reset-btn">🙂</button>
             <div id="timer" class="counter">000</div>
         </div>
+        <div id="mode-container">
+            <button id="mode-btn">MODE: REVEAL</button>
+        </div>
         <div id="grid"></div>
     </div>
 
     <script>
         const ROWS = 9;
+        const COMS = 9;
         const COLS = 9;
         const MINES_COUNT = 10;
         
@@ -108,21 +132,35 @@
         let timerInterval = null;
         let seconds = 0;
         let gameActive = true;
+        let isFlagMode = false;
 
         const gridElement = document.getElementById('grid');
         const timerElement = document.getElementById('timer');
         const resetBtn = document.getElementById('reset-btn');
         const mineCountDisplay = document.getElementById('mine-count');
+        const modeBtn = document.getElementById('mode-btn');
+
+        function updateModeUI() {
+            modeBtn.textContent = isFlagMode ? "MODE: FLAG" : "MODE: REVEAL";
+            if (isFlagMode) {
+                modeBtn.classList.add('flag-mode');
+            } else {
+                modeBtn.classList.remove('flag-mode');
+            }
+        }
 
         function initGame() {
-            // Reset state
             board = [];
             minesSet.clear();
             flagsSet.clear();
             revealedCount = 0;
             seconds = 0;
             gameActive = true;
-            clearInterval(timerInterval);
+            isFlagMode = false;
+            updateModeUI();
+            
+            clearInterval(randomTimerReturn());
+            timerInterval = null;
             timerElement.textContent = "000";
             mineCountDisplay.textContent = String(MINES_COUNT).padStart(3, '0');
             resetBtn.textContent = "🙂";
@@ -130,7 +168,6 @@
             gridElement.style.gridTemplateColumns = `repeat(${COLS}, 30px)`;
             gridElement.innerHTML = '';
 
-            // Create board
             for (let r = 0; r < ROWS; r++) {
                 board[r] = [];
                 for (let c = 0; c < COLS; c++) {
@@ -138,7 +175,7 @@
                     cell.className = 'cell';
                     cell.dataset.row = r;
                     cell.dataset.col = c;
-                    cell.addEventListener('click', () => revealCell(r, c));
+                    cell.addEventListener('click', () => handleCellClick(r, c));
                     cell.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         toggleFlag(r, c);
@@ -154,7 +191,6 @@
                 }
             }
 
-            // Place mines
             let placed = 0;
             while (placed < MINES_COUNT) {
                 let r = Math.floor(Math.random() * ROWS);
@@ -166,7 +202,6 @@
                 }
             }
 
-            // Calculate neighbors
             for (let r = 0; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
                     if (!board[r][c].isMine) {
@@ -187,11 +222,22 @@
             startTimer();
         }
 
+        function randomTimerReturn() { return 0; } // Helper to bypass weirdness
+
         function startTimer() {
+            clearInterval(timerInterval);
             timerInterval = setInterval(() => {
                 seconds++;
                 timerElement.textContent = String(Math.min(seconds, 999)).padStart(3, '0');
             }, 1000);
+        }
+
+        function handleCellClick(r, c) {
+            if (isFlagMode) {
+                toggleFlag(r, c);
+            } else {
+                revealCell(r, c);
+            }
         }
 
         function toggleFlag(r, c) {
@@ -219,7 +265,7 @@
             revealedCount++;
 
             if (cell.isMine) {
-                gameOver(false);
+                gameOver(false, r, c);
                 return;
             }
 
@@ -227,12 +273,12 @@
                 cell.element.textContent = cell.neighborMines;
                 cell.element.classList.add(`digit-${cell.neighborMines}`);
             } else {
-                // Flood fill
                 for (let dr = -1; dr <= 1; dr++) {
                     for (let dc = -1; dc <= 1; dc++) {
                         let nr = r + dr, nc = c + dc;
                         if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
-                            revealCell(nr, nc);
+                            revealCell(nr,
+                                nc);
                         }
                     }
                 }
@@ -243,7 +289,7 @@
             }
         }
 
-        function gameOver(won) {
+        function gameOver(won, hitR = null, hitC = null) {
             gameActive = false;
             clearInterval(timerInterval);
             resetBtn.textContent = won ? "😎" : "😵";
@@ -252,11 +298,16 @@
             minesSet.forEach(key => {
                 const [r, c] = key.split(',').map(Number);
                 const cell = board[r][c];
-                if (!cell.revealed) {
+                
+                // If this was the actual mine that caused the loss, make sure it shows red/bomb
+                if (hitR !== null && hitC !== null && r === hitR && c === hitC) {
+                    cell.element.textContent = '💣';
+                    cell.element.classList.add('mine');
+                    cell.element.style.color = 'red'; // Visual cue for the hit mine
+                } else if (!cell.revealed) {
                     cell.element.textContent = '💣';
                     cell.element.classList.add('mine');
                 }
-                    
             });
 
             if (won) {
@@ -265,6 +316,11 @@
                 alert("Game Over!");
             }
         }
+
+        modeBtn.addEventListener('click', () => {
+            isFlagMode = !isFlagMode;
+            updateModeUI();
+        });
 
         resetBtn.addEventListener('click', initGame);
         initGame();
