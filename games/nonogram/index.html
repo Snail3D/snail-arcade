@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لعبة النونوجرام - Nonogram</title>
+    <style>
+        :root {
+            --bg-color: #f0f4f8;
+            --grid-border: #334e68;
+            --cell-empty: #ffffff;
+            --cell-filled: #243b53;
+            --cell-cross: #eb4d4b;
+            --text-color: #102a43;
+            --accent-color: #3c6382;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 { margin-bottom: 10px; }
+        p { margin-bottom: 20px; font-size: 1.1em; }
+
+        .game-container {
+            display: grid;
+            grid-template-columns: auto auto;
+            gap: 5px;
+            background: var://grid-border;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .spacer { background: transparent; }
+
+        /* Clue Sections */
+        .col-clues {
+            display: flex;
+            grid-column: 2;
+        }
+
+        .col-clue {
+            width: 30px;
+            height: 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            background: #dbeafe;
+            border: 1px solid var(--grid-border);
+            font-size: 12px;
+            font-weight: bold;
+            padding-bottom: 5px;
+        }
+
+        .row-clues {
+            display: flex;
+            flex-direction: column;
+            grid-column: 1;
+        }
+
+        .row-clue {
+            height: 30px;
+            width: 120px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            background: #dbeafe;
+            border: 1px solid var(--grid-border);
+            font-size: 12px;
+            font-weight: bold;
+            padding-right: 8px;
+        }
+
+        /* The Grid */
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(5, 30px);
+            grid-template-rows: repeat(5, 30px);
+            gap: 2px;
+            background-color: var(--grid-border);
+            border: 2px solid var(--grid-border);
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: var(--cell-empty);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            font-weight: bold;
+            font-size: 20px;
+            transition: background 0.2s;
+        }
+
+        .cell.filled { background-color: var(--cell-filled); }
+        .cell.crossed::after { content: '×'; color: var(--cell-cross); }
+
+        .controls {
+            margin-top: 30px;
+            display: flex;
+            gap: 15px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: opacity 0.2s;
+        }
+
+        button:hover { opacity: 0.8; }
+
+        #message {
+            margin-top: 20px;
+            font-weight: bold;
+            color: #27ae60;
+            font-size: 1.5em;
+            height: 1.5em;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>لعبة النونوجرام 🧩</h1>
+    <p>انقر لتلوين المربعات، أو انقر بزر الماوس الأيمن لوضع علامة (X)</p>
+
+    <div id="game-wrapper">
+        <div class="game-container" id="game-container">
+            <div class="spacer"></div>
+            <div class="col-clues" id="col-clues"></div>
+            <div class="row-clues" id="row-clues"></div>
+            <div id="grid"></div>
+        </div>
+    </div>
+
+    <div id="message"></div>
+
+    <div class="controls">
+        <button onclick="initGame()">لعبة جديدة</button>
+    </div>
+
+    <script>
+        const SIZE = 5;
+        let solution = [];
+        let currentGrid = [];
+
+        function generateRandomGrid(size) {
+            let grid = [];
+            for (let r = 0; r < size; r++) {
+                let row = [];
+                for (let c = 0; c < size; c++) {
+                    row.push(Math.random() > 0.4 ? 1 : 0);
+                }
+                grid.push(row);
+            }
+            return grid;
+        }
+
+        function getClues(line) {
+            let clues = [];
+            let count = 0;
+            for (let val of line) {
+                if (val === 1) {
+                    count++;
+                } else {
+                    if (count > 0) clues.push(count);
+                    count = 0;
+                }
+            }
+            if (count > 0) clues.push(count);
+            return clues.length > 0 ? clues : [0];
+        }
+
+        function initGame() {
+            solution = generateRandomGrid(SIZE);
+            currentGrid = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+            document.getElementById('message').innerText = '';
+            
+            renderClues();
+            renderGrid();
+        }
+
+        function renderClues() {
+            const rowCluesEl = document.getElementById('row-clues');
+            const colCluesEl = document.getElementById('col-clues');
+            rowCluesEl.innerHTML = '';
+            colCluesEl.innerHTML = '';
+
+            // Row Clues
+            for (let r = 0; r < SIZE; r++) {
+                const clues = getClues(solution[r]);
+                const div = document.createElement('div');
+                div.className = 'row-clue';
+                div.innerText = clues.join(' ');
+                rowCluesEl.appendChild(div);
+            }
+
+            // Col Clues
+            for (let c = 0; c < SIZE; c++) {
+                let colArr = [];
+                for (let r = 0; r < SIZE; r++) {
+                    colArr.push(solution[r][c]);
+                }
+                const clues = getClues(colArr);
+                const div = document.createElement('div');
+                div.className = 'col-clue';
+                // Wrap text in spans for stacking
+                clues.forEach(num => {
+                    const span = document.createElement('span');
+                    span.innerText = num;
+                    div.appendChild(span);
+                });
+                colCluesEl.appendChild(div);
+            }
+        }
+
+        function renderGrid() {
+            const gridEl = document.getElementById('grid');
+            gridEl.innerHTML = '';
+            gridEl.style.gridTemplateColumns = `repeat(${SIZE}, 30px)`;
+            gridEl.style.gridTemplateRows = `repeat(${SIZE}, 30px)`;
+
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+
+                    cell.addEventListener('click', () => toggleCell(r, c, 'fill'));
+                    cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        toggleCell(r, c, 'cross');
+                    });
+
+                    gridEl.appendChild(cell);
+                }
+            }
+        }
+
+        function toggleCell(r, c, type) {
+            const cell = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+            
+            if (type === 'fill') {
+                if (currentGrid[r][c] === 1) {
+                    currentGrid[r][c] = 0;
+                    cell.classList.remove('filled');
+                } else {
+                    currentGrid[r][c] = 1;
+                    cell.classList.remove('crossed');
+                    cell.classList.add('filled');
+                }
+            } else {
+                if (cell.classList.contains('crossed')) {
+                    cell.classList.remove('crossed');
+                } else {
+                    cell.classList.add('cross');
+                    cell.classList.remove('filled');
+                    cell.classList.add('crossed');
+                    currentGrid[r][c] = 0;
+                }
+            }
+            checkWin();
+        }
+
+        function checkWin() {
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (currentGrid[r][c] !== solution[r][c]) return;
+                }
+            }
+            document.getElementById('message').innerText = '🎉 مبروك! لقد حللت اللغز!';
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
