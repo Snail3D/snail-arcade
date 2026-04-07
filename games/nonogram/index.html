@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar" id="html-tag" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لعبة النونوجرام - Nonogram</title>
+    <title id="page-title">لعبة النونوجرام - Nonogram</title>
     <style>
         :root {
             --bg-color: #f0f4f8;
@@ -33,7 +33,7 @@
             display: grid;
             grid-template-columns: auto auto;
             gap: 5px;
-            background: var://grid-border;
+            background: var(--grid-border);
             padding: 10px;
             border-radius: 8px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.1);
@@ -41,7 +41,6 @@
 
         .spacer { background: transparent; }
 
-        /* Clue Sections */
         .col-clues {
             display: flex;
             grid-column: 2;
@@ -72,7 +71,7 @@
             width: 120px;
             display: flex;
             justify-content: flex-end;
-            align-items: center;
+            align: center;
             background: #dbeafe;
             border: 1px solid var(--grid-border);
             font-size: 12px;
@@ -80,7 +79,6 @@
             padding-right: 8px;
         }
 
-        /* The Grid */
         #grid {
             display: grid;
             grid-template-columns: repeat(5, 30px);
@@ -111,6 +109,8 @@
             margin-top: 30px;
             display: flex;
             gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
 
         button {
@@ -133,12 +133,16 @@
             font-size: 1.5em;
             height: 1.5em;
         }
+        
+        .lang-btn {
+            background-color: #7f8c8d;
+        }
     </style>
 </head>
-<body>
+<body id="body-tag">
 
-    <h1>لعبة النونوجرام 🧩</h1>
-    <p>انقر لتلوين المربعات، أو انقر بزر الماوس الأيمن لوضع علامة (X)</p>
+    <h1 id="main-title">لعبة النونوجرام 🧩</h1>
+    <p id="main-instruction">انقر لتلوين المربعات، أو انقر بزر الماوس الأيمن لوضع علامة (X)</p>
 
     <div id="game-wrapper">
         <div class="game-container" id="game-container">
@@ -152,13 +156,64 @@
     <div id="message"></div>
 
     <div class="controls">
-        <button onclick="initGame()">لعبة جديدة</button>
+        <button id="new-game-int" onclick="initGame()">لعبة جديدة</button>
+        <button id="lang-btn" class="lang-btn" onclick="toggleLanguage()">English</button>
     </div>
 
     <script>
         const SIZE = 5;
         let solution = [];
         let currentGrid = [];
+        let currentLang = 'ar';
+
+        const translations = {
+            ar: {
+                title: 'لعبة النونوجرام 🧩',
+                instruction: 'انقر لتلوين المربعات، أو انقر بزر الماوس الأيمن لوضع علامة (X)',
+                newGame: 'لعبة جديدة',
+                langBtn: 'English',
+                winMsg: '🎉 مبروك! لقد حللت اللغز!',
+                dir: 'rtl'
+            },
+            en: {
+                title: 'Nonogram Game 🧩',
+                instruction: 'Click to fill cells, or right-click to mark (X)',
+                newGame: 'New Game',
+                langBtn: 'العربية',
+                winMsg: '🎉 Congrats! You solved it!',
+                dir: 'ltr'
+            }
+        };
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'ar' ? 'en' : 'ar';
+            updateUI();
+        }
+
+        function updateUI() {
+            const t = translations[currentTRL || currentLang]; // Safety check
+            const lang = currentLang;
+            const trans = translations[lang];
+            
+            document.getElementById('html-tag').dir = trans.dir;
+            document.getElementById('main-title').innerText = trans.title;
+            document.getElementById('main-instruction').innerText = trans.instruction;
+            document.getElementById('new-game-int').innerText = trans.newGame;
+            document.getElementById('lang-btn').innerText = trans.langBtn;
+            
+            const msgEl = document.getElementById('message');
+            const currentMsg = msgEl.innerText;
+            if (currentMsg.includes('🎉') || currentMsg.includes('Congrats')) {
+                msgEl.innerText = trans.winMsg;
+            }
+            
+            const rows = document.querySelectorAll('.row-clue');
+            rows.forEach(clue => {
+                clue.style.justifyContent = trans.dir === 'rtl' ? 'flex-end' : 'flex-start';
+                clue.style.paddingRight = trans.dir === 'rtl' ? '8px' : '0';
+                clue.style.paddingLeft = trans.dir === 'ltr' ? '8px' : '0';
+            });
+        }
 
         function generateRandomGrid(size) {
             let grid = [];
@@ -191,7 +246,6 @@
             solution = generateRandomGrid(SIZE);
             currentGrid = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
             document.getElementById('message').innerText = '';
-            
             renderClues();
             renderGrid();
         }
@@ -202,7 +256,6 @@
             rowCluesEl.innerHTML = '';
             colCluesEl.innerHTML = '';
 
-            // Row Clues
             for (let r = 0; r < SIZE; r++) {
                 const clues = getClues(solution[r]);
                 const div = document.createElement('div');
@@ -211,7 +264,6 @@
                 rowCluesEl.appendChild(div);
             }
 
-            // Col Clues
             for (let c = 0; c < SIZE; c++) {
                 let colArr = [];
                 for (let r = 0; r < SIZE; r++) {
@@ -220,7 +272,6 @@
                 const clues = getClues(colArr);
                 const div = document.createElement('div');
                 div.className = 'col-clue';
-                // Wrap text in spans for stacking
                 clues.forEach(num => {
                     const span = document.createElement('span');
                     span.innerText = num;
@@ -228,27 +279,23 @@
                 });
                 colCluesEl.appendChild(div);
             }
+            updateUI(); 
         }
 
         function renderGrid() {
             const gridEl = document.getElementById('grid');
             gridEl.innerHTML = '';
-            gridEl.style.gridTemplateColumns = `repeat(${SIZE}, 30px)`;
-            gridEl.style.gridTemplateRows = `repeat(${SIZE}, 30px)`;
-
             for (let r = 0; r < SIZE; r++) {
                 for (let c = 0; c < SIZE; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     cell.dataset.r = r;
                     cell.dataset.c = c;
-
                     cell.addEventListener('click', () => toggleCell(r, c, 'fill'));
                     cell.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         toggleCell(r, c, 'cross');
                     });
-
                     gridEl.appendChild(cell);
                 }
             }
@@ -256,7 +303,6 @@
 
         function toggleCell(r, c, type) {
             const cell = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-            
             if (type === 'fill') {
                 if (currentGrid[r][c] === 1) {
                     currentGrid[r][c] = 0;
@@ -270,9 +316,8 @@
                 if (cell.classList.contains('crossed')) {
                     cell.classList.remove('crossed');
                 } else {
-                    cell.classList.add('cross');
-                    cell.classList.remove('filled');
                     cell.classList.add('crossed');
+                    cell.classList.remove('filled');
                     currentGrid[r][c] = 0;
                 }
             }
@@ -285,7 +330,7 @@
                     if (currentGrid[r][c] !== solution[r][c]) return;
                 }
             }
-            document.getElementById('message').innerText = '🎉 مبروك! لقد حللت اللغز!';
+            document.getElementById('message').innerText = translations[currentLang].winMsg;
         }
 
         initGame();
