@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Racer</title>
+<meta property="og:title" content="Snail Racer">
+<meta property="og:description" content="Tap to race your snail to the finish line!">
+<meta property="og:type" content="website">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a1a0a;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  user-select: none;
+}
+#game {
+  width: 100%;
+  max-width: 600px;
+  padding: 20px;
+}
+h1 {
+  text-align: center;
+  color: #00ff88;
+  font-size: 1.8em;
+  margin-bottom: 20px;
+  text-shadow: 0 0 15px rgba(0,255,136,0.4);
+}
+.track {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  height: 50px;
+  margin: 8px 0;
+  position: relative;
+  overflow: hidden;
+}
+.track::after {
+  content: '';
+  position: absolute;
+  right: 40px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #00ff88;
+  opacity: 0.3;
+}
+.snail {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.8em;
+  left: 10px;
+  transition: left 0.15s ease-out;
+}
+.label {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7em;
+  color: #555;
+}
+#tap-zone {
+  width: 100%;
+  max-width: 600px;
+  height: 100px;
+  background: #141414;
+  border: 2px solid #00ff88;
+  border-radius: 12px;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2em;
+  color: #00ff88;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+#tap-zone:active { background: #0a2a0a; }
+#status {
+  text-align: center;
+  margin-top: 15px;
+  font-size: 1.1em;
+  color: #888;
+  min-height: 1.5em;
+}
+#score {
+  text-align: center;
+  margin-top: 8px;
+  color: #00ff88;
+  font-size: 0.9em;
+}
+</style>
+</head>
+<body>
+<script src="../../sdk/discord-activity.bundle.js"></script>
+<div id="game">
+  <h1>Snail Racer</h1>
+  <div class="track" id="track-you">
+    <span class="snail" id="snail-you">🐌</span>
+    <span class="label">YOU</span>
+  </div>
+  <div class="track" id="track-cpu1">
+    <span class="snail" id="snail-cpu1">🐌</span>
+    <span class="label">CPU 1</span>
+  </div>
+  <div class="track" id="track-cpu2">
+    <span class="snail" id="snail-cpu2">🐌</span>
+    <span class="label">CPU 2</span>
+  </div>
+  <div id="tap-zone">TAP TO RACE!</div>
+  <div id="status">Tap as fast as you can!</div>
+  <div id="score"></div>
+</div>
+<script>
+(window.__discordReady || Promise.resolve()).then(() => {
+  const finishPx = 480;
+  let youPos = 10, cpu1Pos = 10, cpu2Pos = 10;
+  let racing = false, finished = false, wins = 0, races = 0;
+
+  const snailYou = document.getElementById('snail-you');
+  const snailCpu1 = document.getElementById('snail-cpu1');
+  const snailCpu2 = document.getElementById('snail-cpu2');
+  const tapZone = document.getElementById('tap-zone');
+  const status = document.getElementById('status');
+  const scoreEl = document.getElementById('score');
+
+  function reset() {
+    youPos = 10; cpu1Pos = 10; cpu2Pos = 10;
+    snailYou.style.left = '10px';
+    snailCpu1.style.left = '10px';
+    snailCpu2.style.left = '10px';
+    finished = false;
+    racing = true;
+    status.textContent = 'TAP TAP TAP!';
+    tapZone.textContent = 'TAP!';
+  }
+
+  function checkWin() {
+    if (finished) return;
+    if (youPos >= finishPx) {
+      finished = true; racing = false; wins++; races++;
+      status.textContent = 'YOU WIN!';
+      tapZone.textContent = 'TAP TO RACE AGAIN';
+      scoreEl.textContent = 'Wins: ' + wins + ' / ' + races;
+    } else if (cpu1Pos >= finishPx || cpu2Pos >= finishPx) {
+      finished = true; racing = false; races++;
+      const winner = cpu1Pos >= finishPx ? 'CPU 1' : 'CPU 2';
+      status.textContent = winner + ' WINS! Try again!';
+      tapZone.textContent = 'TAP TO RACE AGAIN';
+      scoreEl.textContent = 'Wins: ' + wins + ' / ' + races;
+    }
+  }
+
+  function moveCPUs() {
+    if (!racing || finished) return;
+    cpu1Pos += Math.random() * 6;
+    cpu2Pos += Math.random() * 5;
+    snailCpu1.style.left = Math.min(cpu1Pos, finishPx) + 'px';
+    snailCpu2.style.left = Math.min(cpu2Pos, finishPx) + 'px';
+    checkWin();
+  }
+
+  setInterval(moveCPUs, 100);
+
+  function onTap() {
+    if (finished || !racing) {
+      reset();
+      return;
+    }
+    youPos += 8 + Math.random() * 4;
+    snailYou.style.left = Math.min(youPos, finishPx) + 'px';
+    checkWin();
+  }
+
+  tapZone.addEventListener('click', onTap);
+  tapZone.addEventListener('touchstart', (e) => { e.preventDefault(); onTap(); });
+
+  reset();
+});
+</script>
+</body>
+</html>
