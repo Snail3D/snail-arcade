@@ -1,114 +1,182 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Minesweeper (Windows NT) – Mobile</title>
-<style>
-  body {font-family:sans-serif;margin:0;padding:10px;background:#fff;}
-  #game {max-width:400px;width:100%;margin:auto;position:relative;}
-  .board {display:grid; grid-template-columns: repeat(var(--cols,9),1fr); width:100%; aspect-ratio:1; margin:auto;}
-  .cell {aspect-ratio:1;background:#e0e0e0;border:1px solid #777;font-size:1.2rem;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-  .cell.flag::after {content:"🚩";color:#ff3b30;}
-  .cell.mine::after {content:"💣";color:#000;}
-  .cell.revealed {background:#c0c0c0;}
-  .cell.empty {background:#c0c0c0;font-size:0;}
-  .hidden {visibility:hidden;}
-  .control {margin:10px 0;text-align:center;}
-  .control button{
-    padding:8px 12px;
-    font-size:1rem;
-    border-radius:4px;
-    border:none;
-    background:#6a5acd;
-    color:#fff;
-    cursor:pointer;
-  }
-  .control button:hover{background:#5d58c5;}
-</style>
+  <meta charset="UTF-8" />
+  <title>Minesweeper (Windows NT) – Mobile</title>
+  <style>
+    body {font-family: sans-serif; margin:0; padding:10px; background:#fff;}
+    #game {width: 100%; max-width: 400px; margin:auto;}
+    .board {
+      display:grid;
+      grid-template-columns: repeat(var(--cols,9),1fr);
+      width:100%; gap:2px; margin:auto;
+      padding:2px;
+    }
+    .cell {
+      aspect-ratio:1; background:#e0e0e0; border:1px solid #777; font-size:1.2rem;
+      display:flex; align-items:center; justify-content:center; cursor:pointer;
+    }
+    .cell.flag::after {content:"🚩"; color:#ff3b30;}
+    .cell.mine::after {content:"💣"; color:#000;}
+    .cell.revealed {background:#c0c0c0; font-size:0;}
+    .cell.empty {background:#c0c0c0; font-size:0;}
+    .control {margin:10px 0; text-align:center;}
+    .control button{
+      padding:8px 12px; font-size:1rem; border-radius:4px; border:none; background:#6a5acd; color:#fff; cursor:pointer;
+    }
+    .control button:hover{background:#5d58c5;}
+  </style>
 </head>
 <body>
-<h3 style="text-align:center;">Minesweeper (Windows NT) – Mobile</h3>
-<div class="control">
-  <span id="mode-label">Flag placement</span>
-  <input type="radio" name="mode" id="clsr" checked><label for="clsr">Clear</label>
-  <input type="radio" name="mode" id="flg"><label for="flg">Flag</label>
-</div>
-<div id="game">
-  <div class="board" id="board"></div>
-  <div class="control"><button id="btnRestart">Restart</button></div>
-</div>
-<script>
-const cols=9, rows=9, mines=10;
-const board=document.getElementById('board'), btnRestart=document.getElementById('btnRestart');
-const modeR=document.querySelector('input[name="mode"]:checked'), modeLabel=document.getElementById('mode-label');
-document.querySelectorAll('input[name="mode"]').forEach(el=>el.addEventListener('change',()=>{modeR.innerText=el.id==='flg?'Flag placement':'Clear mode';modeLabel.innerText=el.id==='flg?'Flag mode':'Clear'}));
-let cells=[], minesPos=[];
-function init(){board.innerHTML='';cells=[];minesPos=[];const positions=[...Array(cols*rows).keys()];for(let i=0;i<mines;i++){const idx=Math.floor(Math.random()*positions.length);const val=positions.splice(idx,1)[0];minesPos.push([val%cols,Math.floor(val/cols)]);}
-document.documentElement.style.setProperty('--cols',cols);
-for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){const cell=document.createElement('div');cell.classList.add('cell','hidden');cell.dataset.r=r;cell.dataset.c=c;cell.addEventListener('click',()=>onCellClick(cell));board.appendChild(cell);cells.push(cell);} }
-for(let p of minesPos){const [c,r]=p;const idx=r*cols+c;cells[idx].classList.add('minesquare');}
-}
-function onCellClick(cell){
-  if(cell.classList.contains('hidden')){
-    cell.classList.remove('hidden');
-    const r=+cell.dataset.r, c=+cell.dataset.c, idx=r*cols+c;
-    const cellEle=cells[idx];
-    if(cellEle.classList.contains('minesquare')){
-      cellEle.classList.remove('minesquare');
-      cellEle.classList.add('revealed','mine');
-      cellEle.innerText='💣';
-      alert('Boom! Game over.');
-      return;
+  <h3 style="text-align:center;">Minesweeper (Windows NT) – Mobile</h3>
+  <div class="control">
+    <span id="mode-label">Flag placement</span>
+    <input type="radio" name="mode" id="clsr" checked><label for="clsr">Clear</label>
+    <input type="radio" name="mode" id="flg"><label for="flg">Flag</label>
+  </div>
+  <div id="game">
+    <div class="board" id="board"></div>
+    <div class="control"><button id="btnRestart">Restart</button></div>
+  </div>
+  <script>
+    const cols = 9;
+    const rows = 9;
+    const mines = 10;
+    const board = document.getElementById('board');
+    const btnRestart = document.getElementById('btnRestart');
+    const modeR = document.querySelector('input[name="mode"]:checked');
+    const modeLabel = document.getElementById('mode-label');
+    document.querySelectorAll('input[name="mode"]').forEach(el=> {
+      el.addEventListener('change',()=>{modeR.innerText = el.id==='flg?'Flag placement':'Clear mode';modeLabel.innerText = el.id==='flg?'Flag mode':'Clear'}); 
+    });
+    let cells = [];
+    let minesPos = [];
+
+    function init() {
+      // reset state
+      board.innerHTML = '';
+      cells = [];
+      minesPos = [];
+
+      // generate mine positions
+      const positions = [...Array(cols*rows).keys()];
+      for(let i=0;i<mines;i++){
+        const idx = Math.floor(Math.random()*positions.length);
+        const val = positions.splice(idx,1)[0];
+        minesPos.push([val%cols, Math.floor(val/cols)]);
+      }
+
+      // set grid css var
+      document.documentElement.style.setProperty('--cols', cols);
+
+      // create cells (unrevealed)
+      for(let r=0;r<rows;r++){
+        for(let c=0;c<cols;c++){
+          const cell = document.createElement('div');
+          cell.classList.add('cell');
+          cell.dataset.r = r;
+          cell.dataset.c = c;
+          const flatIdx = r*cols + c;
+          cell.dataset.idx = flatIdx;
+          cell.addEventListener('click',()=>onCellClick(cell));
+          board.appendChild(cell);
+          cells.push(cell);
+        }
+      }
+
+      // mark mine cells (stay hidden until clicked)
+      for(let p of minesPos){
+        const [c,r]=p;
+        const idx = r*cols + c;
+        const cell = cells[idx];
+        cell.classList.add('minesquare');
+        // leave as hidden (unrevealed) – will show when clicked
+      }
     }
-    const adjacent=countMines(r,c);
-    cellEle.classList.add('revealed');
-    if(adjacent>0){
+
+    function onCellClick(cell){
+      // ignore if already revealed or flagged
+      if(cell.classList.contains('revealed') || cell.classList.contains('flag')) return;
+      if(cell.classList.contains('hidden')){ /* not used now */ }
+
+      // reveal cell
+      const r = +cell.dataset.r, c = +cell.dataset.c;
+      const idx = r*cols + c;
+      const cellEle = cells[idx];
+
+      if(cellEle.classList.contains('minesquare')){
+        // hit mine
+        cellEle.classList.remove('minesquare');
+        cellEle.classList.add('revealed','mine');
+        cellEle.innerText = '💣';
+        alert('Boom! Game over.');
+        return;
+      }
+
+      const adjacent = countMines(r,c);
+      cellEle.classList.add('revealed');
+      if(adjacent>0){
+        cellEle.classList.add('empty');
+        cellEle.innerText = adjacent;
+        return;
+      }
+      // empty cell – flood reveal
       cellEle.classList.add('empty');
-      cellEle.innerText=adjacent;
-      // mode: in Clear mode we would auto-place flags after game, but for now just reveal.
-      return;
+      cellEle.innerText = '';
+      flood(r,c);
     }
-    cellEle.classList.add('empty');
-    cellEle.innerText='';
-    flood(r,c);
-  }
-}
-function countMines(r,c){
-  let cnt=0;
-  for(let dr=-1;dr<=1;dr++){
-    for(let dc=-1;dc<=1;dc++){
-      if(dr===0 && dc===0) continue;
-      const nr=r+dr, nc=c+dc;
-      if(nr>=0 && nr<rows && nc>=0 && nc<cols && minesPos.some(m=>m[0]===nc && m[1]===nr)) cnt++;
+
+    function countMines(r,c){
+      let cnt = 0;
+      for(let dr=-1; dr<=1; dr++){
+        for(let dc=-1; dc<=1; dc++){
+          if(dr===0 && dc===0) continue;
+          const nr = r+dr, nc = c+dc;
+          if(nr>=0 && nr<rows && nc>=0 && nc<cols){
+            if(minesPos.some(m=>m[0]===nc && m[1]===nr)) cnt++;
+          }
+        }
+      }
+      return cnt;
     }
-  }
-  return cnt;
-}
-function flood(r,c){
-  const q=[[r,c]];
-  const visited=new Set();
-  while(q.length){
-    const [rr,cc]=q.shift();
-    if(rr<0||rr>=rows||cc<0||cc>=cols) continue;
-    const idx=rr*cols+cc;
-    if(visited.has(idx)) continue;
-    visited.add(idx);
-    const cell=cells[idx];
-    if(cell.classList.contains('mine') || cell.classList.contains('revealed')) continue;
-    const adjacent=countMines(rr,cc);
-    cell.classList.add('revealed');
-    if(adjacent>0){
-      cell.classList.add('empty');
-      cell.innerText=adjacent;
-    } else {
-      cell.classList.add('empty');
-      cell.innerText='';
-      q.push([rr-1,cc]); q.push([rr+1,cc]); q.push([rr,cc-1]); q.push([rr,cc+1]);
+
+    function flood(r,c){
+      const q = [[r,c]];
+      const visited = new Set();
+      while(q.length){
+        const [rr,cc] = q.shift();
+        if(rr<0||rr>=rows||cc<0||cc>=cols) continue;
+        const idx = rr*cols + cc;
+        if(visited.has(idx)) continue;
+        visited.add(idx);
+        const cell = cells[idx];
+        if(cell.classList.contains('minesquare') || cell.classList.contains('revealed') || cell.classList.contains('flag')) continue;
+        const adjacent = countMines(rr,cc);
+        cell.classList.add('revealed');
+        if(adjacent>0){
+          cell.classList.add('empty');
+          cell.innerText = adjacent;
+          continue;
+        }
+        cell.classList.add('empty');
+        cell.innerText = '';
+        q.push([rr-1,cc]); q.push([rr+1,cc]); q.push([rr,cc-1]); q.push([rr,cc+1]);
+      }
     }
-  }
-}
-btnRestart.addEventListener('click',init);
-init();
-</script>
+
+    // Flag mode – right click toggles a flag on a cell
+    board.addEventListener('contextmenu', (e)=> {
+      e.preventDefault();
+      const cell = e.target.closest('.cell');
+      if(!cell) return;
+      const isFlagMode = document.querySelector('input[name="mode"]:checked').id === 'flg';
+      if(!isFlagMode) return;
+      const currentlyFlagged = cell.classList.toggle('flag');
+      cell.innerText = currentlyFlagged ? '🚩' : '';
+    });
+
+    btnRestart.addEventListener('click',init);
+    init();
+  </script>
 </body>
 </html>
