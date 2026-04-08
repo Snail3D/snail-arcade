@@ -2,28 +2,89 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Pong Bug - Snail Twist</title>
-<style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#111;}canvas{background:#222;}</style>
+<title>Snail Pong - Mobile</title>
+<style>
+body,html{margin:0;height:100%;display:flex;justify-content:center;align-items:center;background:#111;color:#fff;font-family:sans-serif;overflow:hidden;}
+canvas{background:#222;display:block;}
+</style>
 </head>
 <body>
 <canvas id="game" width="800" height="500"></canvas>
 <script>
-const canvas=document.getElementById('game');const ctx=canvas.getContext('2d');
-let paddleWidth=20,paddleHeight=100;
-let leftPaddle={x:10,y:canvas.height/2-paddleHeight/2,speed:5};
-let rightPaddle={x:canvas.width-paddleWidth-20,y:canvas.height/2-paddleHeight/2,speed:5};
-let ball={x:canvas.width/2,y:canvas.height/2,vx:5,vy:2};
-function draw(){ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
-ctx.fillStyle='#0f0';ctx.fillRect(leftPaddle.x,leftPaddle.y,paddleWidth,paddleHeight);
-// snail head
-ctx.fillStyle='#ff0';ctx.fillRect(leftPaddle.x,leftPaddle.y-15,10,15);
-ctx.fillRect(rightPaddle.x,rightPaddle.y,paddleWidth,paddleHeight);
-ctx.arc(ball.x,ball.y,10,0,Math.PI*2);ctx.fillStyle='#ff0';ctx.fill();
-if(ball.y+10>canvas.height||ball.y-10<0)ball.vy=-ball.vy;
-if(ball.x-10<leftPaddle.x+paddleWidth&&ball.y>leftPaddle.y&&ball.y<leftPaddle.y+paddleHeight){ball.vx=-ball.vx+0.1;ball.x=leftPaddle.x+paddleWidth;}
-if(ball.x+10>rightPaddle.x&&ball.y>rightPaddle.y&&ball.y<rightPaddle.y+paddleHeight){ball.vx=-ball.vx+0.1;ball.x=rightPaddle.x-10;}}
-function loop(){draw();}
-setInterval(loop,1000/60);
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const W=800;const H=500;
+const paddleW=20; const paddleH=100;
+const ballR=10;
+let paddle={x:10, y:H/2-paddleH/2};
+let ball={x:W/2, y:H/2, vx:4, vy:2};
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // left snail paddle
+  ctx.fillStyle='#0ff';
+  ctx.fillRect(paddle.x,paddle.y,paddleW,paddleH);
+  // snail head (yellow square)
+  ctx.fillStyle='#ff0';
+  ctx.fillRect(paddle.x,paddle.y-15,10,15);
+  // ball
+  ctx.fillStyle='#f33';
+  ctx.arc(ball.x,ball.y,ballR,0,Math.PI*2);
+  ctx.fill();
+}
+function update(){
+  ball.x+=ball.vx; ball.y+=ball.vy;
+  if(ball.y-ballR<0 || ball.y+ballR>H) ball.vy=-ball.vy;
+  // left paddle collision
+  if(ball.vx<0 && ball.x-ballR<paddle.x+paddleW && ball.y>paddle.y && ball.y<paddle.y+paddleH){
+    ball.vx=-ball.vx*1.1; ball.x=paddle.x+paddleW;
+  }
+  // right wall bounce
+  if(ball.x+ballR>W-paddleW-10) ball.vx=-ball.vx;
+  // left side missed
+  if(ball.x-ballR<0) resetBall();
+}
+function resetBall(){
+  ball.x=W/2; ball.y=H/2;
+  ball.vx=4*(Math.random()<0.5?-1:1);
+  ball.vy=(Math.random()*2-1)*3;
+}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+function init(){
+  draw(); requestAnimationFrame(loop);
+}
+// ------- MOBILE / TOUCH CONTROL -------
+let dragging=false;
+function setPaddleY(y){
+  const newY=y;
+  if(newY<0) newY=0;
+  else if(newY>H-paddleH) newY=H-paddleH;
+  paddle.y=newY;
+  draw();
+}
+canvas.addEventListener('pointerdown', e=>{ dragging=true; });
+canvas.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  setPaddleY(e.clientY);
+});
+canvas.addEventListener('pointerup', ()=>{ dragging=false; });
+// Touch fallback
+let touchId=null;
+canvas.addEventListener('touchstart', e=>{
+  if(touchId!==null) return;
+  const t=e.touches[0];
+  touchId=t.identifier;
+  setPaddleY(t.clientY);
+});
+canvas.addEventListener('touchmove', e=>{
+  if(touchId===null) return;
+  const t=e.touches[0];
+  setPaddleY(t.clientY);
+});
+canvas.addEventListener('touchend', e=>{ touchId=null; });
+canvas.addEventListener('touchcancel', e=>{ touchId=null; });
+// ------------ START ------------
+init();
 </script>
 </body>
 </html>
