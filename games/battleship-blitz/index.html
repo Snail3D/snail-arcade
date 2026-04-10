@@ -608,9 +608,6 @@ let playerBoard, enemyBoard, playerShips, enemyShips;
 let playerTurn = true;
 let gameOver = false;
 let shotsFired = 0;
-let aiLastHit = null;
-let aiTargetQueue = [];
-let aiHuntStack = [];
 
 function createEmptyBoard() {
   return Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(null));
@@ -756,19 +753,21 @@ function handlePlayerShot(row, col) {
   shotsFired++;
   const result = fireAt(enemyBoard, enemyShips, row, col);
   showHitAnimation(row, col, result, true);
-  renderBoards();
 
   if (result === 'sunk') {
-    setStatus(`💥 ${enemyShips.find(s => s.cells.some(c => c.row === row && c.col === col)).name} DESTROYED!`, 'sunk-msg');
+    const name = enemyShips.find(s => s.cells.some(c => c.row === row && c.col === col)).name;
+    setStatus(`💥 ${name} DESTROYED!`, 'sunk-msg');
   } else if (result === 'hit') {
-    setStatus('💢 HIT! Direct target assessment positive!', 'hit-msg');
+    setStatus('💢 HIT! Keep firing, Commander!', 'hit-msg');
   } else {
-    setStatus('🌊 Miss... Enemy waters clear at this coordinate.', 'miss-msg');
+    setStatus('🌊 Miss... Enemy waters clear. AI tactical systems engaging.', 'miss-msg');
+    // End player turn — schedule AI
     playerTurn = false;
     document.getElementById('enemyGrid').classList.add('shots-disabled');
-    setTimeout(aiTurn, 900);
+    setTimeout(doAiTurn, 900);
   }
 
+  renderBoards();
   checkGameOver();
 }
 
@@ -817,89 +816,111 @@ function showHitAnimation(row, col, result, isPlayer) {
   }
 }
 
-function aiTurn() {
-  if (gameOver) return;
+// AI state: huntStack for cross-hatch pattern, targetStack for follow-up on hits
+let aiHuntStack = [];
+let aiTargetStack = [];
 
-  // Build list of untried cells
-  const untried = [];
-  for (let r = 0; r < GRID_SIZE; r++) {
-    for (let c = 0; c < GRID_SIZE; c++) {
-      const cell = playerBoard[r][c];
-      if (cell === null || (typeof cell === 'object' && !cell.hit)) {
-        untried.push({ row: r, col: c });
-      }
-    }
-  }
+function doAiTurn() {
+  if (gameOver || playerTurn) return;
 
-  if (untried.length === 0) return; // no valid targets
-
-  // Prefer target queue; fall back to random untried
   let row, col;
-  if (aiTargetQueue.length > 0) {
-    let candidate = aiTargetQueue.shift();
-    // Skip any already-shot cells in the queue
-    while (candidate) {
-      const cell = playerBoard[candidate.row][candidate.col];
+
+  // Target stack takes priority — follow up on damaged ships
+  if (aiTargetStack.length > 0) {
+    let found = false;
+    while (aiTargetStack.length > 0 && !found) {
+      const cand = aiTargetStack.pop();
+      const cell = playerBoard[cand.row][cand.col];
       if (cell === null || (typeof cell === 'object' && !cell.hit)) {
-        row = candidate.row;
-        col = candidate.col;
-        break;
+        row = cand.row;
+        col = cand.col;
+        found = true;
       }
-      if (aiTargetQueue.length === 0) {
-        candidate = null;
-        break;
-      }
-      candidate = aiTargetQueue.shift();
     }
-    // Queue exhausted or drained — pick random
-    if (candidate === null || candidate === undefined) {
-      const idx = Math.floor(Math.random() * untried.length);
-      row = untried[idx].row;
-      col = untried[idx].col;
+    if (!found) {
+      // Target stack exhausted — fall back to hunt
+      aiTargetStack = [];
+      row = null;
     }
-  } else {
-    const idx = Math.floor(Math.random() * untried.length);
-    row = untried[idx].row;
-    col = untried[idx].col;
   }
 
-  // Shoot
+  // Hunt mode: use cross-hatch pattern for efficiency
+  if (row === undefined) {
+    if (aiHuntStack.length === 0) {
+      // Rebuild hunt stack: checkerboard pattern
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if ((r + c) % 2 === 0) {
+            const cell = playerBoard[r][c];
+            if (cell === null || (typeof cell === 'object' && !cell.hit)) {
+              aiHuntStack.push({ row: r, col: c });
+            }
+          }
+        }
+      }
+      // Shuffle hunt stack so AI doesn't fire in predictable order
+      for (let i = aiHuntStack.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [aiHuntStack[i], aiHuntStack[j]] = [aiHuntStack[j], aiHuntStack[i]];
+      }
+    }
+
+    // Pull from hunt stack until we find an untried cell
+    while (aiHuntStack.length > 0) {
+      const cand = aiHuntStack.pop();
+      const cell = playerBoard[cand.row][cand.col];
+      if (cell === null || (typeof cell === 'object' && !cell.hit)) {
+        row = cand.row;
+        col = cand.col;
+        break;
+      }
+    }
+
+    // Fallback: linear scan for any untried cell
+    if (row === undefined) {
+      outer:
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const cell = playerBoard[r][c];
+          if (cell === null || (typeof cell === 'object' && !cell.hit)) {
+            row = r; col = c; break outer;
+          }
+        }
+      }
+    }
+  }
+
+  // All cells exhausted
+  if (row === undefined) return;
+
   const result = fireAt(playerBoard, playerShips, row, col);
   showHitAnimation(row, col, result, false);
 
   if (result === 'sunk') {
-    aiTargetQueue = []; // clear queue — ship fully sunk
     const shipName = playerShips.find(s => s.cells.some(c => c.row === row && c.col === col)).name;
     setStatus(`⚠️ Enemy sunk your <strong>${shipName}</strong>!`, 'sunk-msg');
-    // Turn over — player goes next
-    playerTurn = true;
-    document.getElementById('enemyGrid').classList.remove('shots-disabled');
+    aiTargetStack = []; // clear targeting — ship sunk
   } else if (result === 'hit') {
     setStatus(`💢 Your ship was HIT at <strong>${COLS[col]}${row + 1}</strong>!`, 'hit-msg');
-    // Add adjacent untried cells to target queue
+    // Add adjacent cells to target stack
     const dirs = [{ dr: -1, dc: 0 }, { dr: 1, dc: 0 }, { dr: 0, dc: -1 }, { dr: 0, dc: 1 }];
     for (const { dr, dc } of dirs) {
       const nr = row + dr, nc = col + dc;
       if (nr < 0 || nr >= GRID_SIZE || nc < 0 || nc >= GRID_SIZE) continue;
       const cell = playerBoard[nr][nc];
       if (cell === null || (typeof cell === 'object' && !cell.hit)) {
-        if (!aiTargetQueue.some(t => t.row === nr && t.col === nc)) {
-          aiTargetQueue.push({ row: nr, col: nc });
+        if (!aiTargetStack.some(t => t.row === nr && t.col === nc)) {
+          aiTargetStack.push({ row: nr, col: nc });
         }
       }
     }
-    // Keep firing — stay in target mode
-    renderBoards();
-    checkGameOver();
-    if (!gameOver) setTimeout(aiTurn, 900);
-    return;
   } else {
-    // Miss — turn over
     setStatus(`🌊 Enemy missed at <strong>${COLS[col]}${row + 1}</strong>. Your move, Commander.`, 'miss-msg');
-    playerTurn = true;
-    document.getElementById('enemyGrid').classList.remove('shots-disabled');
   }
 
+  // End AI turn — hand back to player
+  playerTurn = true;
+  document.getElementById('enemyGrid').classList.remove('shots-disabled');
   renderBoards();
   checkGameOver();
 }
@@ -957,7 +978,9 @@ function initGame() {
   playerTurn = true;
   gameOver = false;
   shotsFired = 0;
-  aiTargetQueue = [];
+
+  aiHuntStack = [];
+  aiTargetStack = [];
 
   buildGridDOM('enemyGrid', enemyBoard, true);
   buildGridDOM('ownGrid', playerBoard, false);
