@@ -5,9 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Hang-On 1985 Clone</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; color: #fff; text-shadow: 2px 2px #000; pointer-events: none; font-weight: bold; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; touch-action: none; user-select: none; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 14px; text-shadow: 2px 2px #000; z-index: 10; }
+        #controls { 
+            position: absolute; 
+            bottom: 20px; 
+            left: 0; 
+            width: 100%; 
+            display: flex; 
+            justify-content: space-around; 
+            z-index: 10;
+        }
+        .btn { 
+            width: 60px; 
+            height: 60px; 
+            background: rgba(255, 255, 255, 0.3); 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 24px; 
+            color: white; 
+            border: 2px solid rgba(255,255,255,0.5);
+            cursor: pointer;
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.6); }
     </style>
 </head>
 <body>
@@ -24,58 +48,17 @@
     </div>
     <canvas id="gameCanvas"></canvas>
 
-    <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
-        canvas { display: block; width: 100vw; height: 100vh; }
-        #ui { position: absolute; top: 10px; left: 10px; color: #fff; text-shadow: 2px 2px #000; pointer-events: none; font-weight: bold; z-index: 10; }
-        #controls { 
-            position: absolute; 
-            bottom: 20px; 
-            left: 0; 
-            width: 100%; 
-            display: flex; 
-            justify-content: space-around; 
-            pointer-events: none; 
-            z-index: 10;
-        }
-        .btn { 
-            width: 60px; 
-            height: 60px; 
-            background: rgba(255, 255, 255, 0.3); 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 24px; 
-            color: white; 
-            user-select: none; 
-            pointer-events: auto;
-            border: 2px solid rgba(255,255,255,0.5);
-        }
-        .btn:active { background: rgba(255, 255, 255, 0.6); }
-    </style>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const speedEl = document.getElementById('speed');
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
 
-
-        // Game Constants
         const FPS = 60;
-        const STEP = 1/FPS;
-        const ROAD_WIDTH = 2000;
         const SEGMENT_LENGTH = 200;
-        const RENDER_DISTANCE = 50;
-        const CAMERA_HEIGHT = 1000;
-        const CAMERA_DEPTH = 0.8;
-
-        // Road Segments
-        class Segment {
-            constructor(index, curve) {
-                this.index = index;
-                this.p1 = { world: { z: index * SEGMENT_LENGTH }, screen: { x: 0, y: 0, w: 0 } };
-                this.p2 = { world: { z: (index + 1) * SEGMENT_LENGTH }, screen: { x: 0, y: 0, w: 0 } };
-                this.curve = curve;
-                this.color = Math.floor(index/3) % 2 ? '#333' : '#444';
-                this.grassColor = Math.floor(index/3) % 2 ? '#106e10' : '#157e15';
-            }
-        }
+        const RENDER_DISTANCE = 60;
+        const ROAD_WIDTH = 2000;
 
         let segments = [];
         let playerX = 0;
@@ -86,8 +69,17 @@
         let lastTime = Date.now();
         let keys = {};
 
-        // Initialize Road
+        class Segment {
+            constructor(index, curve) {
+                this.index = index;
+                this.curve = curve;
+                this.color = Math.floor(index / 4) % 2 ? '#333' : '#444';
+                this.grassColor = Math.floor(index / 4) % 2 ? '#0a4a0a' : '#0d5a0d';
+            }
+        }
+
         function initRoad() {
+            segments = [];
             for (let i = 0; i < 500; i++) {
                 let curve = 0;
                 if (i > 50 && i < 150) curve = 2;
@@ -97,87 +89,58 @@
             }
         }
 
-        // Projection Helper
-        function project(p, cameraX, cameraY, cameraZ, width, height) {
-            let scale = CAMERA_DEPTH / (p.world.z - cameraZ);
-            p.screen.x = (width/2) + (scale * (p.world.x - cameraX) * width/2); // Simplified for 1D road
-            // Since we are doing segment-based, we'll use a simpler projection
-            // x = screenCenter + (curve_acc_offset * scale)
+        function setupControls() {
+            const setupBtn = (id, key) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                const setKey = (val) => { keys[key] = val; };
+                btn.addEventListener('touchstart', (e) => { e.preventDefault(); setKey(true); }, { passive: false });
+                btn.addEventListener('touchend', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
+                btn.addEventListener('mousedown', () => setKey(true));
+                btn.addEventListener('mouseup', () => setKey(false));
+                btn.addEventListener('mouseleave', () => setKey(false));
+            };
+
+            setupBtn('btn-left', 'ArrowLeft');
+            setupBtn('btn-up', 'ArrowUp');
+            setupBtn('btn-down', 'ArrowDown');
+            setupBtn('btn-right', 'ArrowRight');
+
+            window.addEventListener('keydown', (e) => { keys[e.key] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); });
+            window.addEventListener('keyup', (e) => { keys[e.key] = false; });
         }
 
-        // Main Game Loop
-        function update() {
-            const now = Date.now();
-            const dt = (now - lastTime) / 1000;
-            lastronTime = now;
-
-        // Input
-        const handleInput = (key, isPressed) => {
-            keys[key] = isPressed;
-        };
-
-        // Touch Controls
-        const setupTouchBtn = (id, key) => {
-            const btn = document.getElementById(id);
-            if (btn) {
-                btn.addEventListener('touchstart', (e) => { e.preventDefault(); handleInput(key, true); }, {passive: false});
-                btn.addEventListener('touchend', (e) => { e.preventDefault(); handleInput(key, false); }, {passive: false});
-                btn.addEventListener('mousedown', () => handleInput(key, true));
-                btn.addEventListener('mouseup', () => handleInput(key, false));
+        function update(dt) {
+            if (timer <= 0) {
+                speed = 0;
+                return;
             }
-        };
 
-        setupTouchBtn('btn-left', 'ArrowLeft');
-        setupTouchBtn('btn-up', 'ArrowUp');
-        setupTouchBtn('btn-down', 'ArrowDown');
-        setupTouchBtn('btn-right', 'ArrowRight');
-
-        // Initialize Road
-        function initRoad() {
-            for (let i = 0; i < 500; i++) {
-                let curve = 0;
-                if (i > 50 && i < 150) curve = 2;
-                if (i > 200 && i < 300) curve = -3;
-                if (i > 350 && i < 450) curve = 1.5;
-                segments.push(new Segment(i, curve));
-            }
-        }
-
-        // Main Game Loop
-        function update() {
-            const now = Date.now();
-            const dt = (now - lastTime) / 1000;
-            lastTime = now;
-
-            // Input
-            if (keys['ArrowUp'] || keys['w']) speed += 100 * dt;
+            if (keys['ArrowUp'] || keys['w']) speed += 200 * dt;
             if (keys['ArrowDown'] || keys['s']) speed -= 150 * dt;
-            if (keys['ArrowLeft'] || keys['a']) playerX -= 0.05 * (speed/2000) + 0.01;
-            if (keys['ArrowRight'] || keys['d']) playerX += 0.05 * (speed/2000) + 0.01;
+            if (keys['ArrowLeft'] || keys['a']) playerX -= (0.05 * speed / 2000) + 0.01;
+            if (keys['ArrowRight'] || keys['d']) playerX += (0.05 * speed / 2000) + 0.01;
 
-            // Physics
-            speed *= 0.98; // Friction
+            speed *= 0.98;
             if (speed < 0) speed = 0;
+            if (speed > 2000) speed = 2000;
+
             playerZ += speed * dt;
-            
-            // Centrifugal force (simplified)
+            score += speed * dt * 0.1;
+
             let currentSegIdx = Math.floor(playerZ / SEGMENT_LENGTH) % segments.length;
             let currentSeg = segments[currentSegIdx];
             if (currentSeg) playerX -= currentSeg.curve * (speed / 5000);
 
-            // Bounds
             if (playerX < -1.5) playerX = -1.5;
             if (playerX > 1.5) playerX = 1.5;
 
-            // UI
-            speedEl.innerText = Math.floor(speed/10);
-            scoreEl.innerText = Math.floor(score);
             timer -= dt;
-            timerEl.innerText = Math.max(0, Math.floor(timer));
 
-            if (timer <= 0) speed = 0;
+            speedEl.textContent = Math.floor(speed / 10);
+            scoreEl.textContent = Math.floor(score);
+            timerEl.textContent = Math.max(0, Math.floor(timer));
         }
-}
 
         function draw() {
             canvas.width = window.innerWidth;
@@ -186,11 +149,9 @@
             const h = canvas.height;
             const horizon = h * 0.45;
 
-            // Sky
             ctx.fillStyle = '#87CEEB';
             ctx.fillRect(0, 0, w, horizon);
 
-            // Mountains (Simple)
             ctx.fillStyle = '#556b2f';
             ctx.beginPath();
             ctx.moveTo(0, horizon);
@@ -200,71 +161,58 @@
             ctx.lineTo(w, horizon);
             ctx.fill();
 
-            // Grass
-            ctx.fillStyle = '#106e10';
+            ctx.fillStyle = '#0d5a0d';
             ctx.fillRect(0, horizon, w, h - horizon);
 
-            // Road Drawing
             let startIdx = Math.floor(playerZ / SEGMENT_LENGTH);
-            let currentX = 0;
-            let currentCurveAccum = 0;
 
-            // To make it look real, we need to iterate from far to near
-            // But for a prototype, we'll do a segment-based approach
             for (let i = startIdx + RENDER_DISTANCE; i > startIdx; i--) {
                 if (i >= segments.length || i < 0) continue;
                 let seg = segments[i];
-                
-                // Calculate projection
-                let scale = CAMERA_DEPTH / ((seg.p1.world.z - playerZ) / 1000);
-                if (scale < 0) continue;
+                let baseZ = i * SEGMENT_LENGTH - playerZ;
+                if (baseZ <= 0) continue;
 
-                let y = horizon + (h - horizon) * (1 - (1 / (1 + (seg.p1.world.z - playerZ) / 1000))); 
-                // Simplification: use a basic perspective formula
-                let zDist = (seg.p1.world.z - playerZ);
-                if (zDist <= 0) continue;
-                
-                let perspective = 1 / (zDist / 1000);
-                let screenY = horizon + (h - horizon) * (1 - perspective);
-                let screenW = ROAD_WIDTH * perspective;
-                
-                // Horizontal offset based on curve
-                // We need to calculate the cumulative curve
-                // For prototype, we'll just use a simple oscillation
-                let curveOffset = Math.sin(i * 0.05) * 100 * perspective;
+                let scale = 300 / baseZ;
+                if (scale < 0 || scale > 1) continue;
+
+                let y = horizon + (h - horizon) * (1 - scale);
+                let roadWidth = ROAD_WIDTH * scale;
+                let centerX = w / 2 + (playerX * roadWidth / 2);
+
+                ctx.fillStyle = seg.grassColor;
+                ctx.fillRect(0, y, centerX - roadWidth / 2, y + 20);
+                ctx.fillRect(centerX + roadWidth / 2, y, w - (centerX + roadWidth / 2), y + 20);
 
                 ctx.fillStyle = seg.color;
-                ctx.beginPath();
-                ctx.moveTo(w/2 - (screenW/2) + curveOffset + (playerX * screenW/2), screenY);
-                ctx.lineTo(w/2 + (screenW/2) + curveOffset + (playerX * screenW/2), screenY);
-                ctx.lineTo(w/2 + (screenW/2) + curveOffset + (playerX * screenW/2) + 20, screenY + 20);
-                ctx.lineTo(w/2 - (screenW/2) + curveOffset + (playerX * screenW/2) - 20, screenY + 20);
-                ctx.fill();
+                ctx.fillRect(centerX - roadWidth / 2, y, roadWidth, y + 20);
+
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(centerX - roadWidth / 2, y + 10, roadWidth, 2);
             }
 
-            // Player (Motorcycle Placeholder)
             ctx.fillStyle = '#ff0000';
             ctx.save();
-            ctx.translate(w/2, h - 100);
-            // Lean effect
-            let lean = (keys['ArrowLeft'] || keys['a']) ? -0.2 : (keys['ArrowRight'] || keys['d'] ? 0.2 : 0);
+            ctx.translate(w / 2, h - 80);
+            let lean = 0;
+            if (keys['ArrowLeft'] || keys['a']) lean = -0.2;
+            if (keys['ArrowRight'] || keys['d']) lean = 0.2;
             ctx.rotate(lean);
-            ctx.fillRect(-15, -50, 30, 50);
-            ctx.fillStyle = '#000';
-            ctx.fillRect(-10, -10, 20, 10); // Tire
+            ctx.fillRect(-10, -40, 20, 40);
             ctx.restore();
         }
 
         function loop() {
-            update();
+            const now = Date.now();
+            const dt = Math.min((now - lastTime) / 1000, 0.05);
+            lastTime = now;
+
+            update(dt);
             draw();
             requestAnimationFrame(loop);
         }
 
-        window.addEventListener('keydown', e => keys[e.key] = true);
-        window.addEventListener('keyup', e => keys[e.key] = false);
-
         initRoad();
+        setupControls();
         loop();
     </script>
 </body>
