@@ -60,7 +60,7 @@
         }
         .enemy-board .cell { cursor: crosshair; }
         .cell.miss { background: #010a0a; }
-        .cell.miss::after { content: '·'; color: #0a0; font-size: 1.2em; }
+        .cell.miss::after { content: '○'; color: #0a0; font-size: 1.5em; text-shadow: 0 0 4px #0a0; }
         .cell.hit { background: #200; }
         .cell.hit::after { content: 'X'; color: #f60; font-weight: bold; }
         .cell.sunk { background: #300; }
@@ -300,7 +300,7 @@ function fire(r, c) {
         hits++;
         const id = eBoard[r][c].ship;
         eShips[id].hits++;
-        if (sunk(eShips, id)) { eShips[id].sunk = true; setStatus(SHMS[id].name + ' SUNK!'); }
+        if (sunk(eShips, id)) { eShips[id].sunk = true; setStatus(SHIPS[id].name + ' SUNK!'); }
         else setStatus('HIT!');
     } else {
         setStatus('MISS — ENEMY MOVING');
@@ -314,25 +314,24 @@ function fire(r, c) {
 
 function aiTurn() {
     if (!gameOn) return;
-    let r, c;
+    let r = -1, c = -1;
 
     if (!aiHunt && aiQueue.length > 0) {
         const t = aiQueue.shift();
         r = t[0]; c = t[1];
-    } else {
-        aiHunt = true;
-        r = Math.floor(Math.random() * SIZE);
-        c = Math.floor(Math.random() * SIZE);
     }
 
-    while (pBoard[r][c].hit) {
-        if (!aiHunt && aiQueue.length > 0) {
-            const t = aiQueue.shift(); r = t[0]; c = t[1];
-        } else {
-            r = Math.floor(Math.random() * SIZE);
-            c = Math.floor(Math.random() * SIZE);
+    if (r < 0 || c < 0 || pBoard[r][c].hit) {
+        aiHunt = true;
+        outer:
+        for (let rr = 0; rr < SIZE; rr++) {
+            for (let cc = 0; cc < SIZE; cc++) {
+                if (!pBoard[rr][cc].hit) { r = rr; c = cc; break outer; }
+            }
         }
     }
+
+    if (r < 0 || c < 0) { endGame(false); return; }
 
     pBoard[r][c].hit = true;
     const hit = pBoard[r][c].ship;
