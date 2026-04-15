@@ -494,8 +494,8 @@ function renderTray() {
     btn.disabled = item.used;
 
     const mini = document.createElement("canvas");
-    mini.width = 140;
-    mini.height = 110;
+    mini.width = 80;
+    mini.height = 70;
     renderPiecePreview(mini, item);
 
     btn.appendChild(mini);
