@@ -126,7 +126,7 @@ async function loadState(key) {
 // ---------- Game logic ----------
 const PIECES = [
   // each piece is list of (x,y) cells, normalized to min x/y = 0
-  { id: "dot", cells: [[0, 0]] },
+  { id: "dot", cells: [[0, 0], [1, 0], [0, 1], [1, 1]] },
   { id: "i2", cells: [[0, 0], [1, 0]] },
   { id: "i3", cells: [[0, 0], [1, 0], [2, 0]] },
   { id: "i4", cells: [[0, 0], [1, 0], [2, 0], [3, 0]] },
