@@ -357,10 +357,11 @@ function requestImmersiveChrome() {
 function resizeCanvasToDevice() {
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  const maxSize = Math.floor(Math.min(rect.width, 400) * dpr);
-  const size = Math.floor(Math.min(maxSize, 560 * dpr));
-  canvas.width = size;
-  canvas.height = size;
+  const size = Math.floor(Math.min(rect.width, rect.height) * dpr);
+  if (size > 0) {
+    canvas.width = size;
+    canvas.height = size;
+  }
 }
 
 function drawRoundedRect(x, y, w, h, r) {
