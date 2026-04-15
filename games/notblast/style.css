@@ -69,7 +69,7 @@ body{
   border-radius:18px;
   padding:14px;
 }
-#board{width:100%; height:auto; display:block; border-radius:14px; background:rgba(0,0,0,0.2)}
+#board{width:100%; aspect-ratio:1; height:auto; display:block; border-radius:14px; background:rgba(0,0,0,0.2); max-height:100%}
 .status{min-height:22px; margin-top:10px; font-size:13px; color:var(--muted)}
 
 .trayWrap{
