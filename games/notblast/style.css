@@ -68,8 +68,9 @@ body{
   border:1px solid rgba(255,255,255,0.07);
   border-radius:18px;
   padding:14px;
-  max-width:360px;
+  max-width:348px;
   width:100%;
+  margin:0 auto;
 }
 #board{width:320px; height:320px; max-width:100%; display:block; border-radius:14px; background:rgba(0,0,0,0.2); margin:0 auto}
 .status{min-height:22px; margin-top:10px; font-size:13px; color:var(--muted)}
