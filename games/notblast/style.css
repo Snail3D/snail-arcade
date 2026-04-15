@@ -17,7 +17,7 @@ body{
   background: radial-gradient(1200px 600px at 50% 0%, #0b1b2a 0%, var(--bg) 60%);
   color:var(--ink);
 }
-#root{height:100%; display:flex; flex-direction:column}
+#root{height:100%; display:flex; flex-direction:column; max-width:800px; margin:0 auto}
 
 .top{
   display:flex; align-items:center; justify-content:space-between;
@@ -53,7 +53,7 @@ body{
 .main{
   flex:1;
   display:grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(280px, 420px);
+  grid-template-columns: minmax(280px, 360px) minmax(240px, 380px);
   gap:14px;
   padding:14px;
   align-items:start;
@@ -68,7 +68,7 @@ body{
   border:1px solid rgba(255,255,255,0.07);
   border-radius:18px;
   padding:14px;
-  max-width:520px;
+  max-width:360px;
   width:100%;
 }
 #board{width:100%; aspect-ratio:1; height:auto; display:block; border-radius:14px; background:rgba(0,0,0,0.2); max-height:100%}
