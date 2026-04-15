@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>NotBlast (Block Puzzle)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="root">
+    <header class="top">
+      <div class="brand">
+        <img src="assets/icon.svg" alt="" width="28" height="28" />
+        <div>
+          <div class="title">NotBlast</div>
+          <div class="subtitle">Block puzzle</div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="statLabel">Score</div>
+          <div id="score" class="statValue">0</div>
+        </div>
+        <div class="stat">
+          <div class="statLabel">Best</div>
+          <div id="best" class="statValue">0</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btnNew" class="btn">New</button>
+        <button id="btnHelp" class="btn btnGhost">Help</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="boardWrap">
+        <canvas id="board" width="600" height="600"></canvas>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section class="trayWrap">
+        <div class="trayHeader">
+          <div class="trayTitle">Pieces</div>
+          <div class="trayHint">Tap a piece, then tap the grid to place it.</div>
+        </div>
+        <div id="tray" class="tray"></div>
+      </section>
+    </main>
+
+    <dialog id="dlgHelp" class="dlg">
+      <form method="dialog" class="dlgInner">
+        <h2>How to play</h2>
+        <ul>
+          <li>Pick one of the 3 pieces.</li>
+          <li>Tap the grid to place it.</li>
+          <li>Complete a full row or column to clear it.</li>
+          <li>Game ends when none of the pieces fit.</li>
+        </ul>
+        <p class="muted">Keyboard: 1–3 selects a piece. Arrow keys move ghost preview. Enter places. Esc cancels selection.</p>
+        <menu>
+          <button class="btn" value="ok">Got it</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="dlgNew" class="dlg">
+      <form method="dialog" class="dlgInner">
+        <h2>New game?</h2>
+        <p class="muted">This resets the board and score.</p>
+        <menu class="menuRow">
+          <button class="btn btnGhost" value="cancel">Cancel</button>
+          <button id="btnConfirmNew" class="btn" value="new">New game</button>
+        </menu>
+      </form>
+    </dialog>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

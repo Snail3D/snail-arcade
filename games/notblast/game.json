@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "puzzle.notblast",
+  "name": "NotBlast (Block Puzzle)",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "description": "Block Blast-style grid puzzle. Offline, deterministic seed, TealClaw Game Mode compatible.",
+  "permissions": {
+    "chrome": ["layout:full", "chat:hide"],
+    "audio": [],
+    "storage": ["session"]
+  },
+  "assets": {
+    "icon": "assets/icon.svg"
+  }
+}
