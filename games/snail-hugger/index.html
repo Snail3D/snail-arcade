@@ -2,671 +2,675 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🐌 Snail Hugger FPS 🐌</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🐌 Snail Hugger</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { overflow: hidden; background: #1a0a2e; font-family: 'Segoe UI', sans-serif; }
-  canvas { display: block; }
-  
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #1a0a2e; font-family: 'Segoe UI', system-ui, sans-serif; }
+  canvas { display: block; touch-action: none; }
+
   #hud {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 100;
+    pointer-events: none; z-index: 10;
   }
-  
+
+  #score-panel {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(135deg, #ff6b6b, #ffa500);
+    border: 3px solid #fff;
+    border-radius: 50px;
+    padding: 8px 28px;
+    font-size: 22px;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    box-shadow: 0 4px 20px rgba(255,107,107,0.5);
+    white-space: nowrap;
+  }
+
+  #hug-prompt {
+    position: absolute; bottom: 180px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.75);
+    color: #ffa500;
+    padding: 10px 24px;
+    border-radius: 30px;
+    font-size: 18px;
+    font-weight: bold;
+    border: 2px solid #ffa500;
+    display: none;
+    animation: pulse 0.8s ease-in-out infinite alternate;
+    white-space: nowrap;
+  }
+  @keyframes pulse { from { transform: translateX(-50%) scale(1); } to { transform: translateX(-50%) scale(1.08); } }
+
   #crosshair {
     position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 24px; height: 24px;
+    width: 20px; height: 20px;
+    opacity: 0.8;
   }
   #crosshair::before, #crosshair::after {
-    content: ''; position: absolute; background: rgba(255,255,255,0.8);
+    content: '';
+    position: absolute; background: rgba(255,255,255,0.9);
     border-radius: 2px;
   }
-  #crosshair::before { width: 2px; height: 24px; left: 11px; top: 0; }
-  #crosshair::after { width: 24px; height: 2px; top: 11px; left: 0; }
-  
-  #hug-indicator {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, 30px);
-    color: #fff; font-size: 18px; font-weight: bold;
-    text-shadow: 0 0 10px #ff6b9d, 0 2px 4px rgba(0,0,0,0.8);
-    opacity: 0; transition: opacity 0.2s;
-    text-align: center;
-  }
-  #hug-indicator.show { opacity: 1; }
-  
-  #score-panel {
-    position: absolute; top: 20px; right: 20px;
-    background: rgba(0,0,0,0.6); border: 2px solid #ff6b9d;
-    border-radius: 12px; padding: 12px 20px;
-    color: #fff; text-align: right;
-  }
-  #score-panel .label { font-size: 12px; color: #ff6b9d; text-transform: uppercase; letter-spacing: 2px; }
-  #score-panel .value { font-size: 36px; font-weight: bold; color: #fff; text-shadow: 0 0 20px #ff6b9d; }
-  
-  #controls-panel {
-    position: absolute; bottom: 20px; left: 20px;
-    background: rgba(0,0,0,0.5); border-radius: 8px; padding: 10px 14px;
-    color: rgba(255,255,255,0.7); font-size: 13px; line-height: 1.6;
-  }
-  #controls-panel span { color: #ff6b9d; font-weight: bold; }
-  
-  #message {
-    position: absolute; top: 30%; left: 50%;
-    transform: translateX(-50%);
-    font-size: 32px; font-weight: bold; color: #fff;
-    text-shadow: 0 0 30px #ff6b9d, 0 0 60px #ff6b9d;
-    opacity: 0; transition: opacity 0.5s;
-    text-align: center;
-  }
-  #message.show { opacity: 1; }
-  
-  #click-to-start {
+  #crosshair::before { width: 2px; height: 16px; top: 2px; left: 9px; }
+  #crosshair::after { width: 16px; height: 2px; top: 9px; left: 2px; }
+
+  #win-screen {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(10, 5, 30, 0.95); z-index: 200;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    cursor: pointer;
+    background: rgba(0,0,0,0.9);
+    display: none;
+    justify-content: center; align-items: center;
+    flex-direction: column;
+    z-index: 100;
   }
-  #click-to-start h1 {
-    font-size: 64px; color: #ff6b9d; text-shadow: 0 0 40px #ff6b9d;
-    margin-bottom: 10px;
-  }
-  #click-to-start h2 {
-    font-size: 28px; color: #fff; margin-bottom: 40px;
-  }
-  #click-to-start p { color: rgba(255,255,255,0.6); font-size: 18px; margin: 5px 0; }
-  #click-to-start .start-btn {
-    margin-top: 30px; padding: 15px 50px; font-size: 24px; font-weight: bold;
-    background: linear-gradient(135deg, #ff6b9d, #c44569);
+  #win-screen h1 { font-size: 48px; color: #ffa500; margin-bottom: 16px; text-align: center; }
+  #win-screen p { color: #fff; font-size: 20px; margin-bottom: 24px; text-align: center; padding: 0 20px; }
+  #win-screen button {
+    padding: 14px 36px; font-size: 20px; font-weight: bold;
+    background: linear-gradient(135deg, #ff6b6b, #ffa500);
     color: #fff; border: none; border-radius: 50px; cursor: pointer;
     pointer-events: all;
-    box-shadow: 0 0 30px rgba(255,107,157,0.5);
-    transition: transform 0.2s, box-shadow 0.2s;
   }
-  #click-to-start .start-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 50px rgba(255,107,157,0.8);
+
+  #start-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: radial-gradient(ellipse at center, #2d1b69 0%, #1a0a2e 100%);
+    display: flex;
+    justify-content: center; align-items: center;
+    flex-direction: column;
+    z-index: 200;
+    padding: 20px;
   }
-  
+  #start-screen h1 {
+    font-size: clamp(40px, 10vw, 64px);
+    background: linear-gradient(135deg, #ff6b6b, #ffa500, #ffdd00);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  #start-screen h2 { color: #e0c3fc; font-size: clamp(16px, 4vw, 22px); margin-bottom: 30px; text-align: center; }
+  #start-screen .instructions {
+    color: rgba(255,255,255,0.75); font-size: clamp(14px, 3.5vw, 17px);
+    text-align: center; line-height: 2.2; margin-bottom: 30px;
+  }
+  #start-screen button {
+    padding: 16px 44px; font-size: clamp(18px, 5vw, 24px); font-weight: bold;
+    background: linear-gradient(135deg, #ff6b6b, #ffa500);
+    color: #fff; border: none; border-radius: 50px;
+    cursor: pointer; pointer-events: all;
+    box-shadow: 0 4px 30px rgba(255,107,107,0.4);
+  }
+
+  /* Mobile controls */
+  #mobile-controls {
+    position: fixed; bottom: 0; left: 0; width: 100%;
+    pointer-events: none;
+    z-index: 50;
+    display: none;
+  }
+
+  #joystick-zone {
+    position: absolute; bottom: 30px; left: 30px;
+    width: 120px; height: 120px;
+    pointer-events: all;
+  }
+  #joystick-base {
+    position: absolute; width: 120px; height: 120px;
+    background: rgba(255,255,255,0.15);
+    border: 3px solid rgba(255,255,255,0.4);
+    border-radius: 50%;
+  }
+  #joystick-thumb {
+    position: absolute; width: 50px; height: 50px;
+    background: rgba(255,165,0,0.8);
+    border: 3px solid #fff;
+    border-radius: 50%;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    transition: none;
+  }
+
+  #hug-btn {
+    position: absolute; bottom: 40px; right: 30px;
+    width: 90px; height: 90px;
+    background: linear-gradient(135deg, #ffa500, #ff6b6b);
+    border: 4px solid #fff;
+    border-radius: 50%;
+    font-size: 14px; font-weight: 900;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+    pointer-events: all;
+    box-shadow: 0 4px 20px rgba(255,107,107,0.5);
+    cursor: pointer;
+    line-height: 1.2;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #hug-btn:active { transform: scale(0.92); }
+
+  #look-zone {
+    position: absolute; top: 0; right: 0;
+    width: 60%; height: 70%;
+    pointer-events: all;
+  }
+
+  /* Desktop controls hint (hidden on mobile) */
+  #controls-hint {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px;
+    text-align: center;
+    display: none;
+  }
+
   .heart-burst {
     position: fixed; pointer-events: none; z-index: 150;
-    font-size: 32px; animation: heartBurst 1s ease-out forwards;
+    font-size: 28px;
+    animation: heartFloat 1s ease-out forwards;
   }
-  @keyframes heartBurst {
-    0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); }
-    50% { opacity: 1; transform: translate(-50%, -100%) scale(1.2); }
-    100% { opacity: 0; transform: translate(-50%, -150%) scale(0.8); }
+  @keyframes heartFloat {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-70px) scale(1.4); }
   }
 </style>
 </head>
 <body>
 
-<div id="click-to-start">
+<div id="start-screen">
   <h1>🐌 SNAIL HUGGER 🐌</h1>
-  <h2>First Person Hugging Adventure</h2>
-  <p><span style="color:#ff6b9d">WASD</span> — Move</p>
-  <p><span style="color:#ff6b9d">MOUSE</span> — Look around</p>
-  <p><span style="color:#ff6b9d">E</span> — Hug nearby snails!</p>
-  <p style="margin-top:15px; color:#ff6b9d;">Hug all the SnailKing subjects to spread joy! 💖</p>
-  <button class="start-btn" onclick="startGame()">CLICK TO PLAY</button>
+  <h2>First-Person Hugging Adventure!</h2>
+  <div class="instructions">
+    <div>🎮 <strong>WASD / Joystick</strong> — Move</div>
+    <div>🖱 / <strong>Touch</strong> — Look around</div>
+    <div>💛 <strong>E / Hug Button</strong> — Hug snails!</div>
+    <div>🏆 Hug all 12 snails to win!</div>
+  </div>
+  <button onclick="startGame()">LET'S HUG! 🐌</button>
 </div>
 
 <div id="hud">
+  <div id="score-panel">HUGS: <span id="hug-count">0</span> / 12</div>
   <div id="crosshair"></div>
-  <div id="hug-indicator">💖 Press E to HUG!</div>
-  <div id="score-panel">
-    <div class="label">Hugs</div>
-    <div class="value" id="score">0</div>
+  <div id="hug-prompt">💛 Press E to HUG!</div>
+  <div id="controls-hint">WASD to move | Mouse to look | E to hug</div>
+</div>
+
+<div id="win-screen">
+  <h1>🎉 YOU WIN! 🎉</h1>
+  <p>You hugged ALL the snails! The Snail Kingdom is filled with love! 💖</p>
+  <button onclick="location.reload()">Play Again 🐌</button>
+</div>
+
+<div id="mobile-controls">
+  <div id="joystick-zone">
+    <div id="joystick-base"></div>
+    <div id="joystick-thumb"></div>
   </div>
-  <div id="controls-panel">
-    <span>WASD</span> Move &nbsp;|&nbsp; <span>MOUSE</span> Look &nbsp;|&nbsp; <span>E</span> Hug
-  </div>
-  <div id="message"></div>
+  <div id="look-zone"></div>
+  <div id="hug-btn">💛<br>HUG</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-// Game state
+// ── Device detection ──────────────────────────────────────────────────────────
+const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
 let camera, scene, renderer;
-let playerHeight = 1.7;
-let moveSpeed = 0.12;
-let npcs = [];
-let score = 0;
-let gameStarted = false;
-let isLocked = false;
+let gameStarted = false, gameWon = false, hugCount = 0;
+let nearestSnail = null;
+let snails = [];
+const TOTAL_SNAILS = 12;
+const HUG_DIST = 3.0;
+const MOVE_SPEED = 80;
 
-let keys = { w: false, a: false, s: false, d: false, e: false };
-let mouse = { x: 0, y: 0, dx: 0, dy: 0 };
-let yaw = 0, pitch = 0;
+// FPS camera euler
+const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const PI_2 = Math.PI / 2;
 
-const NPC_COUNT = 12;
-const HUG_DIST = 2.5;
+// Joystick state
+const joystick = { active: false, x: 0, y: 0, startX: 0, startY: 0 };
+// Look state (touch-based)
+const lookTouch = { active: false, id: null, lastX: 0, lastY: 0 };
+// WASD
+const keys = { w: false, a: false, s: false, d: false };
+let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3();
+let prevTime = performance.now();
 
-// Snail names for messages
-const SNAIL_NAMES = ['Sir Slimebert', 'Princess Shelly', 'Sir Hugsworth', 'Lady Mozzarella', 'Duke Squash', 'Baron von Slug', 'Queen Helix', 'Sir Crawley', 'Lady Spiral', 'Duke Nautilus', 'Sir Gloop', 'Baron Muffin'];
-const HUG_MESSAGES = [
-  "WARM HUGS! 💖", "SQUISHY LOVE! 🐌", "SNAIL LOVE! 💕", "COZY HUGS! 🥰",
-  "BEST FRIENDS! 🤗", "LOVE EXPLOSION! 💥", "SNAIL POWER! ⚡", "HUG ATTACK! 💪"
-];
-
-function startGame() {
-  document.getElementById('click-to-start').style.display = 'none';
-  gameStarted = true;
-  init();
-  document.body.requestPointerLock();
-}
-
-document.addEventListener('pointerlockchange', () => {
-  isLocked = document.pointerLockElement === document.body;
-});
-
-document.addEventListener('mousemove', (e) => {
-  if (!isLocked || !gameStarted) return;
-  yaw -= e.movementX * 0.002;
-  pitch -= e.movementY * 0.002;
-  pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
-});
-
-document.addEventListener('keydown', (e) => {
-  if (!gameStarted) return;
-  const k = e.key.toLowerCase();
-  if (k === 'w') keys.w = true;
-  if (k === 'a') keys.a = true;
-  if (k === 's') keys.s = true;
-  if (k === 'd') keys.d = true;
-  if (k === 'e' && !keys.e) { keys.e = true; tryHug(); }
-});
-
-document.addEventListener('keyup', (e) => {
-  const k = e.key.toLowerCase();
-  if (k === 'w') keys.w = false;
-  if (k === 'a') keys.a = false;
-  if (k === 's') keys.s = false;
-  if (k === 'd') keys.d = false;
-  if (k === 'e') keys.e = false;
-});
-
+// ── Init ─────────────────────────────────────────────────────────────────────
 function init() {
-  // Scene
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 30, 120);
+  scene.fog = new THREE.Fog(0x87ceeb, 60, 280);
 
-  // Camera
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, playerHeight, 0);
+  camera.position.set(0, 2, 0);
 
-  // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ antialias: !isMobile });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
 
   // Lights
-  const ambient = new THREE.AmbientLight(0xfff0f5, 0.6);
-  scene.add(ambient);
-
-  const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
-  sun.position.set(50, 80, 30);
+  scene.add(new THREE.AmbientLight(0xffeedd, 0.6));
+  const sun = new THREE.DirectionalLight(0xfff5e0, 1.0);
+  sun.position.set(80, 120, 60);
   sun.castShadow = true;
-  sun.shadow.mapSize.width = 2048;
-  sun.shadow.mapSize.height = 2048;
+  sun.shadow.mapSize.width = 1024;
+  sun.shadow.mapSize.height = 1024;
   sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 200;
-  sun.shadow.camera.left = -60;
-  sun.shadow.camera.right = 60;
-  sun.shadow.camera.top = 60;
-  sun.shadow.camera.bottom = -60;
+  sun.shadow.camera.far = 400;
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -120;
+  sun.shadow.camera.right = sun.shadow.camera.top = 120;
   scene.add(sun);
 
-  // Sky dome
-  const skyGeo = new THREE.SphereGeometry(400, 32, 32);
-  const skyMat = new THREE.MeshBasicMaterial({ color: 0x87ceeb, side: THREE.BackSide });
-  scene.add(new THREE.Mesh(skyGeo, skyMat));
-
   // Ground
-  const groundGeo = new THREE.PlaneGeometry(200, 200, 50, 50);
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0x7cba5f });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(400, 400),
+    new THREE.MeshLambertMaterial({ color: 0x56c55a })
+  );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Add grass variation
-  const grassGeo = new THREE.PlaneGeometry(200, 200, 80, 80);
-  const positions = groundGeo.attributes.position;
-  for (let i = 0; i < positions.count; i++) {
-    positions.setZ(i, Math.random() * 0.15);
+  // Sky
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(400, 20, 20),
+    new THREE.MeshBasicMaterial({ color: 0x87ceeb, side: THREE.BackSide })
+  ));
+
+  // Environment
+  for (let i = 0; i < 20; i++) addCloud();
+  for (let i = 0; i < 35; i++) addTree();
+  for (let i = 0; i < 20; i++) addRock();
+  for (let i = 0; i < 150; i++) addFlower();
+
+  // Snails
+  spawnSnails();
+
+  // Events
+  if (!isMobile) {
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('pointerlockchange', onPointerLock);
+  } else {
+    setupMobileControls();
   }
-  positions.needsUpdate = true;
-  groundGeo.computeVertexNormals();
 
-  // Scattered trees and decorations
-  createEnvironment();
-
-  // NPCs
-  createNPCs();
-
-  // Movement listeners
-  document.addEventListener('click', () => {
-    if (gameStarted && !isLocked) document.body.requestPointerLock();
-  });
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
+  window.addEventListener('resize', onResize);
   animate();
 }
 
-function createEnvironment() {
-  // Trees
-  const treePositions = [];
-  for (let i = 0; i < 40; i++) {
-    let x, z;
-    do {
-      x = (Math.random() - 0.5) * 150;
-      z = (Math.random() - 0.5) * 150;
-    } while (Math.sqrt(x*x + z*z) < 8);
-    treePositions.push([x, z]);
-    createTree(x, z);
-  }
-
-  // Mushrooms
-  for (let i = 0; i < 30; i++) {
-    createMushroom((Math.random() - 0.5) * 140, (Math.random() - 0.5) * 140);
-  }
-
-  // Flowers
-  const flowerColors = [0xff6b9d, 0xffeb3b, 0xff5722, 0x9c27b0, 0x03a9f4, 0xe91e63];
-  for (let i = 0; i < 60; i++) {
-    createFlower(
-      (Math.random() - 0.5) * 130,
-      (Math.random() - 0.5) * 130,
-      flowerColors[Math.floor(Math.random() * flowerColors.length)]
-    );
-  }
-
-  // Small rocks
-  for (let i = 0; i < 25; i++) {
-    createRock((Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120);
-  }
-
-  // Wooden fences / boundary
-  for (let i = -70; i <= 70; i += 10) {
-    createFence(i, -70);
-    createFence(i, 70);
-    createFence(-70, i);
-    createFence(70, i);
-  }
+// ── Environment ────────────────────────────────────────────────────────────────
+function addCloud() {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  [[0,0,0,1.2],[1.1,0.2,0,0.9],[-0.9,0.1,0,0.8],[0.4,0.45,0,0.65],[-0.5,0.35,0,0.65]].forEach(([x,y,z,r]) => {
+    g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(r, 7, 7), m), { position: new THREE.Vector3(x,y,z) }));
+  });
+  g.position.set((Math.random()-0.5)*300, 38+Math.random()*28, (Math.random()-0.5)*300);
+  scene.add(g);
 }
 
-function createTree(x, z) {
-  // Trunk
-  const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 2.5, 8);
-  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
-  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-  trunk.position.set(x, 1.25, z);
-  trunk.castShadow = true;
-  scene.add(trunk);
+function addTree() {
+  let x, z;
+  do { x = (Math.random()-0.5)*280; z = (Math.random()-0.5)*280; } while (Math.abs(x)<8 && Math.abs(z)<8);
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.4,3,8), new THREE.MeshLambertMaterial({ color: 0x8b4513 }));
+  trunk.position.y = 1.5; trunk.castShadow = true;
+  const top = new THREE.Mesh(new THREE.SphereGeometry(2.4,8,8), new THREE.MeshLambertMaterial({ color: 0x228b22 }));
+  top.position.y = 4.5; top.castShadow = true;
+  g.add(trunk, top);
+  g.position.set(x, 0, z);
+  scene.add(g);
+}
 
-  // Foliage layers
-  const colors = [0x2d7d2d, 0x3a9e3a, 0x4caf50];
-  const sizes = [2.5, 2.0, 1.5];
-  const heights = [2.8, 4.0, 5.0];
-  for (let i = 0; i < 3; i++) {
-    const geo = new THREE.ConeGeometry(sizes[i], 1.8, 8);
-    const mat = new THREE.MeshLambertMaterial({ color: colors[i] });
-    const cone = new THREE.Mesh(geo, mat);
-    cone.position.set(x, heights[i], z);
-    cone.castShadow = true;
-    scene.add(cone);
+function addRock() {
+  let x, z;
+  do { x = (Math.random()-0.5)*250; z = (Math.random()-0.5)*250; } while (Math.abs(x)<6 && Math.abs(z)<6);
+  const r = new THREE.Mesh(
+    new THREE.DodecahedronGeometry(0.5+Math.random(), 0),
+    new THREE.MeshLambertMaterial({ color: 0x888888 })
+  );
+  r.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+  r.scale.y = 0.5 + Math.random()*0.5;
+  r.position.set(x, 0, z);
+  r.castShadow = true;
+  scene.add(r);
+}
+
+function addFlower() {
+  const colors = [0xff6b6b, 0xffdd00, 0xff69b4, 0xffa500, 0xe0c3fc, 0x87ceeb];
+  const c = colors[Math.floor(Math.random()*colors.length)];
+  const g = new THREE.Group();
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.3,4), new THREE.MeshLambertMaterial({ color: 0x228b22 }));
+  stem.position.y = 0.15;
+  for (let i = 0; i < 5; i++) {
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), new THREE.MeshLambertMaterial({ color: c }));
+    petal.position.set(Math.cos(i*Math.PI*2/5)*0.09, 0.3, Math.sin(i*Math.PI*2/5)*0.09);
+    g.add(petal);
   }
+  g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6), new THREE.MeshLambertMaterial({ color: 0xffff00 })), { position: new THREE.Vector3(0, 0.3, 0) }));
+  g.add(stem);
+  g.position.set((Math.random()-0.5)*280, 0, (Math.random()-0.5)*280);
+  scene.add(g);
 }
 
-function createMushroom(x, z) {
-  const stemGeo = new THREE.CylinderGeometry(0.1, 0.12, 0.4, 8);
-  const stemMat = new THREE.MeshLambertMaterial({ color: 0xf5f5dc });
-  const stem = new THREE.Mesh(stemGeo, stemMat);
-  stem.position.set(x, 0.2, z);
-  scene.add(stem);
-
-  const capGeo = new THREE.SphereGeometry(0.25, 8, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-  const capMat = new THREE.MeshLambertMaterial({ color: Math.random() > 0.5 ? 0xe53935 : 0xff8c00 });
-  const cap = new THREE.Mesh(capGeo, capMat);
-  cap.position.set(x, 0.4, z);
-  scene.add(cap);
+// ── Snails ────────────────────────────────────────────────────────────────────
+function spawnSnails() {
+  const palettes = [
+    {b:0xf4a460,s:0x8b4513},{b:0x90ee90,s:0x2e8b57},{b:0xf08080,s:0xcd5c5c},
+    {b:0xadd8e6,s:0x4682b4},{b:0xffd700,s:0xdaa520},{b:0xffa07a,s:0xe9967a},
+    {b:0xe6e6fa,s:0x9370db},{b:0x98fb98,s:0x228b22},{b:0xf0e68c,s:0xbdb76b},
+    {b:0xffb6c1,s:0xdb7093},{b:0xb0e0e6,s:0x5f9ea0},{b:0xdda0dd,s:0x8b008b},
+  ];
+  const positions = [[20,0,15],[-25,0,20],[30,0,-20],[-18,0,-30],[40,0,5],[-40,0,10],[10,0,40],[-12,0,-45],[50,0,-35],[-50,0,-15],[35,0,40],[-35,0,35]];
+  positions.forEach((p, i) => {
+    const snail = createSnailMesh(palettes[i].b, palettes[i].s);
+    snail.position.set(p[0], p[1], p[2]);
+    snail.rotation.y = Math.random()*Math.PI*2;
+    snail.userData = { hugged: false, phase: Math.random()*Math.PI*2 };
+    scene.add(snail);
+    snails.push(snail);
+  });
 }
 
-function createFlower(x, z, color) {
-  const stemGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 6);
-  const stemMat = new THREE.MeshLambertMaterial({ color: 0x4caf50 });
-  const stem = new THREE.Mesh(stemGeo, stemMat);
-  stem.position.set(x, 0.15, z);
-  scene.add(stem);
+function createSnailMesh(bodyC, shellC) {
+  const g = new THREE.Group();
+  const bMat = new THREE.MeshLambertMaterial({ color: bodyC });
+  const sMat = new THREE.MeshLambertMaterial({ color: shellC });
 
-  const petalGeo = new THREE.SphereGeometry(0.08, 6, 6);
-  const petalMat = new THREE.MeshLambertMaterial({ color });
-  const petal = new THREE.Mesh(petalGeo, petalMat);
-  petal.position.set(x, 0.32, z);
-  scene.add(petal);
-}
-
-function createRock(x, z) {
-  const geo = new THREE.DodecahedronGeometry(0.3 + Math.random() * 0.3, 0);
-  const mat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-  const rock = new THREE.Mesh(geo, mat);
-  rock.position.set(x, 0.2, z);
-  rock.rotation.set(Math.random(), Math.random(), Math.random());
-  rock.castShadow = true;
-  scene.add(rock);
-}
-
-function createFence(x, z) {
-  const postGeo = new THREE.BoxGeometry(0.15, 1.2, 0.15);
-  const postMat = new THREE.MeshLambertMaterial({ color: 0xa0522d });
-  const post = new THREE.Mesh(postGeo, postMat);
-  post.position.set(x, 0.6, z);
-  post.castShadow = true;
-  scene.add(post);
-}
-
-function createNPCs() {
-  for (let i = 0; i < NPC_COUNT; i++) {
-    let x, z;
-    do {
-      x = (Math.random() - 0.5) * 80;
-      z = (Math.random() - 0.5) * 80;
-    } while (Math.sqrt(x*x + z*z) < 6);
-
-    const npc = createSnailNPC(x, z, i);
-    npcs.push(npc);
-    scene.add(npc.group);
-  }
-}
-
-function createSnailNPC(x, z, index) {
-  const group = new THREE.Group();
-  group.position.set(x, 0, z);
-
-  // Snail body (shell + body)
-  const bodyGeo = new THREE.CylinderGeometry(0.25, 0.3, 0.5, 12);
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5cba7 });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.3;
+  // Body
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), bMat);
+  body.scale.set(1.6, 0.7, 1.0);
   body.castShadow = true;
-  group.add(body);
-
-  // Shell
-  const shellGeo = new THREE.SphereGeometry(0.4, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.7);
-  const shellMat = new THREE.MeshLambertMaterial({ color: 0xc9a66b });
-  const shell = new THREE.Mesh(shellGeo, shellMat);
-  shell.position.set(-0.1, 0.45, 0);
-  shell.rotation.x = -Math.PI / 6;
-  shell.castShadow = true;
-  group.add(shell);
-
-  // Shell spiral detail
-  const spiralGeo = new THREE.TorusGeometry(0.25, 0.04, 8, 16);
-  const spiralMat = new THREE.MeshLambertMaterial({ color: 0xa07840 });
-  const spiral = new THREE.Mesh(spiralGeo, spiralMat);
-  spiral.position.set(-0.1, 0.55, 0);
-  spiral.rotation.x = -Math.PI / 2.5;
-  group.add(spiral);
+  g.add(body);
 
   // Head
-  const headGeo = new THREE.SphereGeometry(0.22, 12, 12);
-  const headMat = new THREE.MeshLambertMaterial({ color: 0xf5cba7 });
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.set(0.3, 0.45, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), bMat);
+  head.position.set(0.9, 0.1, 0);
   head.castShadow = true;
-  group.add(head);
+  g.add(head);
 
-  // Crown
-  const crownGroup = new THREE.Group();
-  const crownBase = new THREE.TorusGeometry(0.15, 0.03, 6, 12);
-  const crownMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
-  const crownBaseMesh = new THREE.Mesh(crownBase, crownMat);
-  crownGroup.add(crownBaseMesh);
+  // Eye stalks
+  [-0.2, 0.2].forEach(z => {
+    g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.28,8), bMat), { position: new THREE.Vector3(1.1, 0.28, z) }));
+    g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.07,8,8), new THREE.MeshLambertMaterial({ color: 0x111111 })), { position: new THREE.Vector3(1.1, 0.45, z) }));
+  });
 
-  // Crown spikes
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const spikeGeo = new THREE.ConeGeometry(0.04, 0.15, 4);
-    const spike = new THREE.Mesh(spikeGeo, crownMat);
-    spike.position.set(Math.cos(angle) * 0.15, 0.07, Math.sin(angle) * 0.15);
-    crownGroup.add(spike);
-  }
-  crownGroup.position.set(0.3, 0.72, 0);
-  group.add(crownGroup);
+  // Shell
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 16), sMat);
+  shell.position.set(-0.55, 0.2, 0);
+  shell.castShadow = true;
+  g.add(shell);
 
-  // Eyes (on stalks)
-  for (let side = -1; side <= 1; side += 2) {
-    const stalkGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.2, 6);
-    const stalkMat = new THREE.MeshLambertMaterial({ color: 0xf5cba7 });
-    const stalk = new THREE.Mesh(stalkGeo, stalkMat);
-    stalk.position.set(0.38 + side * 0.05, 0.6, side * 0.08);
-    stalk.rotation.z = side * 0.3;
-    group.add(stalk);
+  // Shell spiral
+  const spiral = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.04, 8, 18), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 }));
+  spiral.position.set(-0.55, 0.2, 0);
+  spiral.rotation.y = Math.PI/2;
+  g.add(spiral);
 
-    const eyeGeo = new THREE.SphereGeometry(0.05, 8, 8);
-    const eyeMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(0.38 + side * 0.1, 0.72, side * 0.08);
-    group.add(eye);
-
-    const pupilGeo = new THREE.SphereGeometry(0.02, 6, 6);
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupil = new THREE.Mesh(pupilGeo, pupilMat);
-    pupil.position.set(0.38 + side * 0.13, 0.74, side * 0.08);
-    group.add(pupil);
+  // Crown!
+  const crown = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.03, 6, 8), new THREE.MeshLambertMaterial({ color: 0xffd700 }));
+  crown.position.set(1.1, 0.52, 0);
+  g.add(crown);
+  for (let i = 0; i < 4; i++) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.14, 4), new THREE.MeshLambertMaterial({ color: 0xffd700 }));
+    spike.position.set(1.1 + Math.cos(i*Math.PI/2)*0.18, 0.62, Math.sin(i*Math.PI/2)*0.18);
+    g.add(spike);
   }
 
-  // Antennae
-  for (let side = -1; side <= 1; side += 2) {
-    const antGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.15, 6);
-    const antMat = new THREE.MeshLambertMaterial({ color: 0xf5cba7 });
-    const ant = new THREE.Mesh(antGeo, antMat);
-    ant.position.set(0.35, 0.62, side * 0.12);
-    ant.rotation.z = side * 0.4;
-    group.add(ant);
+  return g;
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+function onDocClick() {
+  if (!gameStarted || gameWon) return;
+  document.body.requestPointerLock();
+}
+
+function onPointerLock() {
+  if (document.pointerLockElement) document.addEventListener('mousemove', onMouseMove, false);
+  else document.removeEventListener('mousemove', onMouseMove, false);
+}
+
+function onMouseMove(e) {
+  if (!document.pointerLockElement) return;
+  euler.setFromQuaternion(camera.quaternion);
+  euler.y -= e.movementX * 0.002;
+  euler.x -= e.movementY * 0.002;
+  euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+  camera.quaternion.setFromEuler(euler);
+}
+
+function onKeyDown(e) {
+  if (!gameStarted || gameWon) return;
+  if (e.code==='KeyW'||e.code==='ArrowUp') keys.w=true;
+  if (e.code==='KeyS'||e.code==='ArrowDown') keys.s=true;
+  if (e.code==='KeyA'||e.code==='ArrowLeft') keys.a=true;
+  if (e.code==='KeyD'||e.code==='ArrowRight') keys.d=true;
+  if (e.code==='KeyE') tryHug();
+}
+
+function onKeyUp(e) {
+  if (e.code==='KeyW'||e.code==='ArrowUp') keys.w=false;
+  if (e.code==='KeyS'||e.code==='ArrowDown') keys.s=false;
+  if (e.code==='KeyA'||e.code==='ArrowLeft') keys.a=false;
+  if (e.code==='KeyD'||e.code==='ArrowRight') keys.d=false;
+}
+
+// ── Mobile Controls ───────────────────────────────────────────────────────────
+function setupMobileControls() {
+  document.getElementById('mobile-controls').style.display = 'block';
+  document.getElementById('controls-hint').style.display = 'none';
+
+  const joyZone = document.getElementById('joystick-zone');
+  const joyThumb = document.getElementById('joystick-thumb');
+  const lookZone = document.getElementById('look-zone');
+  const hugBtn = document.getElementById('hug-btn');
+
+  const MAX_DIST = 45;
+
+  // Joystick
+  joyZone.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    const rect = joyZone.getBoundingClientRect();
+    joystick.active = true;
+    joystick.startX = rect.left + rect.width/2;
+    joystick.startY = rect.top + rect.height/2;
+    joystick.id = t.identifier;
+    updateJoystick(t.clientX, t.clientY, joyThumb);
+  }, { passive: false });
+
+  joyZone.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.id) updateJoystick(t.clientX, t.clientY, joyThumb);
+    }
+  }, { passive: false });
+
+  joyZone.addEventListener('touchend', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.id) {
+        joystick.active = false;
+        joystick.x = 0; joystick.y = 0;
+        joyThumb.style.transform = 'translate(-50%, -50%)';
+      }
+    }
+  }, { passive: false });
+
+  function updateJoystick(cx, cy, thumb) {
+    const dx = cx - joystick.startX;
+    const dy = cy - joystick.startY;
+    const dist = Math.min(Math.sqrt(dx*dx+dy*dy), MAX_DIST);
+    const angle = Math.atan2(dy, dx);
+    joystick.x = Math.cos(angle) * dist / MAX_DIST;
+    joystick.y = Math.sin(angle) * dist / MAX_DIST;
+    const ox = Math.cos(angle) * dist;
+    const oy = Math.sin(angle) * dist;
+    thumb.style.transform = `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`;
   }
 
-  // Cute blush marks
-  for (let side = -1; side <= 1; side += 2) {
-    const blushGeo = new THREE.CircleGeometry(0.04, 8);
-    const blushMat = new THREE.MeshBasicMaterial({ color: 0xff9999, transparent: true, opacity: 0.7 });
-    const blush = new THREE.Mesh(blushGeo, blushMat);
-    blush.position.set(0.42, 0.45, side * 0.22);
-    blush.rotation.y = side * 0.5;
-    group.add(blush);
-  }
+  // Look (touch drag on right side)
+  lookZone.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    lookTouch.active = true;
+    lookTouch.id = t.identifier;
+    lookTouch.lastX = t.clientX;
+    lookTouch.lastY = t.clientY;
+  }, { passive: false });
 
-  // Name label (floating above)
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.roundRect(0, 0, 256, 64, 10);
-  ctx.fill();
-  ctx.fillStyle = '#ff6b9d';
-  ctx.font = 'bold 22px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(SNAIL_NAMES[index % SNAIL_NAMES.length], 128, 40);
+  lookZone.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === lookTouch.id) {
+        const dx = t.clientX - lookTouch.lastX;
+        const dy = t.clientY - lookTouch.lastY;
+        lookTouch.lastX = t.clientX;
+        lookTouch.lastY = t.clientY;
+        // Scale for mobile
+        euler.setFromQuaternion(camera.quaternion);
+        euler.y -= dx * 0.004;
+        euler.x -= dy * 0.004;
+        euler.x = Math.max(-PI_2, Math.min(PI_2, euler.x));
+        camera.quaternion.setFromEuler(euler);
+      }
+    }
+  }, { passive: false });
 
-  const labelTex = new THREE.CanvasTexture(canvas);
-  const labelMat = new THREE.SpriteMaterial({ map: labelTex, transparent: true });
-  const label = new THREE.Sprite(labelMat);
-  label.scale.set(1.5, 0.4, 1);
-  label.position.set(0, 1.2, 0);
-  group.add(label);
+  lookZone.addEventListener('touchend', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === lookTouch.id) lookTouch.active = false;
+    }
+  }, { passive: false });
 
-  // Animation params
-  group.userData = {
-    baseY: 0,
-    bobPhase: Math.random() * Math.PI * 2,
-    rotSpeed: 0.5 + Math.random() * 0.5,
-    rotDir: Math.random() > 0.5 ? 1 : -1,
-    index,
-    hugged: false,
-    label
-  };
+  // Hug button
+  hugBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (gameStarted && !gameWon) tryHug();
+  }, { passive: false });
+}
 
-  return { group, x, z };
+// ── Game Logic ────────────────────────────────────────────────────────────────
+function findNearestSnail() {
+  let nearest = null, minDist = Infinity;
+  snails.forEach(s => {
+    if (s.userData.hugged) return;
+    const d = camera.position.distanceTo(s.position);
+    if (d < minDist) { minDist = d; nearest = s; }
+  });
+  return { snail: nearest, dist: minDist };
 }
 
 function tryHug() {
-  const playerPos = camera.position;
-  let closestNPC = null;
-  let closestDist = HUG_DIST;
-
-  for (const npc of npcs) {
-    if (npc.group.userData.hugged) continue;
-    const dx = npc.group.position.x - playerPos.x;
-    const dz = npc.group.position.z - playerPos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < closestDist) {
-      closestDist = dist;
-      closestNPC = npc;
-    }
-  }
-
-  if (closestNPC) {
-    hugNPC(closestNPC);
-  }
-}
-
-function hugNPC(npc) {
-  npc.group.userData.hugged = true;
-  score++;
-  document.getElementById('score').textContent = score;
-
-  // Heart burst effect
+  if (!nearestSnail || nearestSnail.userData.hugged) return;
+  nearestSnail.userData.hugged = true;
+  hugCount++;
+  document.getElementById('hug-count').textContent = hugCount;
   spawnHeartBurst();
 
-  // Show hug message
-  const msg = HUG_MESSAGES[Math.floor(Math.random() * HUG_MESSAGES.length)];
-  showMessage(msg, 1500);
+  const snail = nearestSnail;
+  let t = 0;
+  const interval = setInterval(() => {
+    t += 0.06;
+    snail.scale.setScalar(1 - t);
+    snail.position.y = -t * 0.5;
+    snail.rotation.y += 0.15;
+    if (t >= 1) { clearInterval(interval); scene.remove(snail); }
+  }, 30);
 
-  // Fade out the NPC (they got hugged and left happy!)
-  const startScale = npc.group.scale.clone();
-  const targetScale = 0;
-  const startTime = performance.now();
-  const duration = 800;
+  if (hugCount >= TOTAL_SNAILS) setTimeout(showWin, 600);
+}
 
-  function shrink() {
-    const elapsed = performance.now() - startTime;
-    const t = Math.min(elapsed / duration, 1);
-    const eased = 1 - Math.pow(1 - t, 3);
-    const s = startScale.x * (1 - eased);
-    npc.group.scale.set(s, s, s);
-    npc.group.position.y = npc.group.userData.baseY + eased * 0.5;
-    npc.group.rotation.y += 0.1;
-    if (t < 1) {
-      requestAnimationFrame(shrink);
-    } else {
-      scene.remove(npc.group);
-      // Check win condition
-      const remaining = npcs.filter(n => !n.group.userData.hugged).length;
-      if (remaining === 0) {
-        showMessage("🎉 YOU HUGGED THEM ALL! 🎉", 5000);
-        setTimeout(() => showMessage("Snail Kingdom is filled with love! 💖", 5000), 2000);
-      }
-    }
-  }
-  shrink();
-
-  // Spawn hearts around NPC
-  for (let i = 0; i < 8; i++) {
-    setTimeout(() => spawnHeartBurst(npc.group.position), i * 60);
+function spawnHeartBurst() {
+  for (let i = 0; i < 6; i++) {
+    const h = document.createElement('div');
+    h.className = 'heart-burst';
+    h.textContent = ['💛','🧡','💖','💗','✨','🐌'][i];
+    h.style.left = (40 + Math.random()*20) + '%';
+    h.style.top = (40 + Math.random()*15) + '%';
+    h.style.animationDelay = (i*0.08)+'s';
+    document.body.appendChild(h);
+    setTimeout(() => h.remove(), 1200);
   }
 }
 
-function spawnHeartBurst(pos) {
-  const heart = document.createElement('div');
-  heart.className = 'heart-burst';
-  heart.textContent = ['💖', '💕', '🩷', '💗', '🐌'][Math.floor(Math.random() * 5)];
-  
-  if (pos) {
-    const vector = pos.clone();
-    vector.project(camera);
-    heart.style.left = ((vector.x + 1) / 2 * window.innerWidth) + 'px';
-    heart.style.top = ((-vector.y + 1) / 2 * window.innerHeight) + 'px';
-  } else {
-    heart.style.left = (window.innerWidth / 2 + (Math.random() - 0.5) * 100) + 'px';
-    heart.style.top = (window.innerHeight / 2 + (Math.random() - 0.5) * 60) + 'px';
-  }
-  document.body.appendChild(heart);
-  setTimeout(() => heart.remove(), 1000);
+function showWin() {
+  gameWon = true;
+  document.getElementById('win-screen').style.display = 'flex';
 }
 
-function showMessage(text, duration) {
-  const el = document.getElementById('message');
-  el.textContent = text;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), duration);
+// ── Resize ────────────────────────────────────────────────────────────────────
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-let lastEPress = 0;
+// ── Animate ───────────────────────────────────────────────────────────────────
 function animate() {
   requestAnimationFrame(animate);
+  const now = performance.now();
+  const delta = Math.min((now - prevTime) / 1000, 0.1);
+  prevTime = now;
 
-  if (!gameStarted) return;
+  if (gameStarted && !gameWon) {
+    // Movement direction
+    direction.z = Number(keys.w || (isMobile && joystick.y < -0.2)) - Number(keys.s || (isMobile && joystick.y > 0.2));
+    direction.x = Number(keys.d || (isMobile && joystick.x > 0.2)) - Number(keys.a || (isMobile && joystick.x < -0.2));
+    direction.normalize();
 
-  // Player movement
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    velocity.x = -(direction.x) * MOVE_SPEED * delta;
+    velocity.z = -(direction.z) * MOVE_SPEED * delta;
 
-  if (keys.w) camera.position.addScaledVector(forward, moveSpeed);
-  if (keys.s) camera.position.addScaledVector(forward, -moveSpeed);
-  if (keys.a) camera.position.addScaledVector(right, -moveSpeed);
-  if (keys.d) camera.position.addScaledVector(right, moveSpeed);
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    camDir.y = 0; camDir.normalize();
+    const right = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0,1,0));
 
-  // Keep player at correct height
-  camera.position.y = playerHeight;
+    camera.position.addScaledVector(camDir, -velocity.z);
+    camera.position.addScaledVector(right, -velocity.x);
+    camera.position.y = 2;
 
-  // Boundary
-  camera.position.x = Math.max(-68, Math.min(68, camera.position.x));
-  camera.position.z = Math.max(-68, Math.min(68, camera.position.z));
+    camera.position.x = Math.max(-190, Math.min(190, camera.position.x));
+    camera.position.z = Math.max(-190, Math.min(190, camera.position.z));
 
-  // Camera rotation
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
+    // Animate snails
+    snails.forEach(s => {
+      if (s.userData.hugged) return;
+      s.userData.phase += delta * 2.5;
+      s.position.y = Math.sin(s.userData.phase) * 0.08;
+      s.rotation.y += delta * 0.35;
+    });
 
-  // Animate NPCs (bob and rotate)
-  const time = performance.now() * 0.001;
-  for (const npc of npcs) {
-    if (npc.group.userData.hugged) continue;
-    npc.group.position.y = Math.sin(time * 2 + npc.group.userData.bobPhase) * 0.05;
-    npc.group.rotation.y += 0.005 * npc.group.userData.rotDir;
-
-    // Face toward player
-    const dx = camera.position.x - npc.group.position.x;
-    const dz = camera.position.z - npc.group.position.z;
-    const angle = Math.atan2(dx, dz);
-    npc.group.rotation.y = angle;
+    // Nearest snail
+    const { snail, dist } = findNearestSnail();
+    nearestSnail = snail;
+    document.getElementById('hug-prompt').style.display = (snail && dist < HUG_DIST) ? 'block' : 'none';
   }
-
-  // Check proximity for hug indicator
-  const playerPos = camera.position;
-  let nearNPC = false;
-  for (const npc of npcs) {
-    if (npc.group.userData.hugged) continue;
-    const dx = npc.group.position.x - playerPos.x;
-    const dz = npc.group.position.z - playerPos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < HUG_DIST) { nearNPC = true; break; }
-  }
-  document.getElementById('hug-indicator').classList.toggle('show', nearNPC);
 
   renderer.render(scene, camera);
 }
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+function startGame() {
+  gameStarted = true;
+  document.getElementById('start-screen').style.display = 'none';
+  if (!isMobile) {
+    document.body.requestPointerLock();
+  }
+}
+
+init();
 </script>
 </body>
 </html>
