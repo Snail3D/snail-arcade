@@ -298,8 +298,8 @@ const TOTAL_SNAILS = 12;
 const HUG_DIST = 3.0;
 const MOVE_SPEED = 80;
 
-// FPS camera euler
-const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+// FPS camera euler — created in init() after THREE is loaded
+let euler;
 const PI_2 = Math.PI / 2;
 
 // Joystick state
@@ -308,8 +308,7 @@ const joystick = { active: false, x: 0, y: 0, startX: 0, startY: 0 };
 const lookTouch = { active: false, id: null, lastX: 0, lastY: 0 };
 // WASD
 const keys = { w: false, a: false, s: false, d: false };
-let velocity = new THREE.Vector3();
-let direction = new THREE.Vector3();
+let velocity, direction;
 let prevTime = performance.now();
 
 // ── Init ─────────────────────────────────────────────────────────────────────
@@ -323,6 +322,11 @@ function init() {
     return false;
   }
   try {
+    dbg('init: creating THREE-dependent objects');
+    euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    velocity = new THREE.Vector3();
+    direction = new THREE.Vector3();
+
     dbg('init: creating scene');
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87ceeb);
@@ -796,11 +800,26 @@ function bindStartButton() {
   btn.addEventListener('pointerup', handler);
 }
 
+async function main() {
+  dbg('main() entered');
+  try {
+    dbg('main: awaiting Three.js load');
+    await loadThree(0);
+    if (typeof THREE === 'undefined') {
+      fatal('Three.js loaded but THREE global is missing');
+      return;
+    }
+    dbg('main: THREE confirmed loaded (r' + THREE.REVISION + '), binding start button');
+    bindStartButton();
+    dbg('main: ready for user gesture');
+  } catch (err) {
+    fatal('main() failed: ' + (err && err.message ? err.message : err));
+  }
+}
+
 function boot() {
-  dbg('boot: loading Three.js');
-  loadThree(0).then(bindStartButton).catch(err => {
-    fatal('Three.js load failed: ' + err.message);
-  });
+  dbg('boot: scheduling main()');
+  main();
 }
 
 if (document.readyState === 'loading') {
