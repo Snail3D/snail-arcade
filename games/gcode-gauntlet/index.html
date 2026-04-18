@@ -466,15 +466,7 @@ initGrain();
 window.addEventListener('resize', () => { grainCanvas.width = W; grainCanvas.height = H; });
 
 function drawGrain() {
-  const id = grainCtx.createImageData(W, H);
-  const d = id.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const v = Math.random() * 20;
-    d[i] = d[i + 1] = d[i + 2] = v;
-    d[i + 3] = 12;
-  }
-  grainCtx.putImageData(id, 0, 0);
-  ctx.drawImage(grainCanvas, 0, 0);
+  // Disabled: full-screen ImageData every frame was crashing mobile/low-memory browsers
 }
 
 // ─── INPUT ───────────────────────────────────────────────────────────────────
