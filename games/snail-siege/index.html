@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Siege</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#00ffcc;font-family:'Orbitron',monospace;overflow:hidden;touch-action:none;user-select:none}
+canvas{display:block;image-rendering:pixelated}
+#overlay{position:fixed;inset:0;background:rgba(5,5,15,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10}
+#overlay.hidden{display:none}
+.title{font-size:clamp(2rem,8vw,5rem);font-weight:900;color:#00ffcc;text-shadow:0 0 20px #00ffcc,0 0 60px #0ff;letter-spacing:4px;margin-bottom:.3em;text-align:center}
+.sub{font-size:clamp(0.7rem,2.5vw,1.1rem);color:#ff00aa;text-shadow:0 0 10px #f0f;margin-bottom:2em;text-align:center;padding:0 1em}
+.btn{padding:.8em 2.5em;font-size:clamp(1rem,3vw,1.4rem);background:transparent;border:2px solid #00ffcc;color:#00ffcc;font-family:Orbitron;font-weight:700;cursor:pointer;letter-spacing:2px;text-transform:uppercase;transition:all .2s;margin:.5em}
+.btn:hover,.btn:active{background:#00ffcc;color:#0a0a0f;box-shadow:0 0 30px #0ff}
+.hint{font-size:.65rem;color:#888;margin-top:1.5em;text-align:center;line-height:1.6}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;z-index:5;pointer-events:none;font-size:clamp(0.6rem,2vw,.9rem)}
+#score span{color:#ff00aa;text-shadow:0 0 8px #f0f}
+#hp{color:#00ff88;text-shadow:0 0 8px #0f8}
+#levelDisp{color:#ffcc00;text-shadow:0 0 8px #fc0}
+#waveMsg{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:clamp(1.2rem,5vw,2.5rem);font-weight:900;color:#ff00aa;text-shadow:0 0 20px #f0f;pointer-events:none;z-index:6;display:none;animation:fadeMsg 2s forwards}
+@keyframes fadeMsg{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}30%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}70%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
+</style>
+</head>
+<body>
+<div id="overlay">
+<div class="title">🐌 SIEGE 🐌</div>
+<div class="sub">Defend the lettuce patch from salt, birds & beetles!</div>
+<button class="btn" id="startBtn">START GAME</button>
+<div class="hint">Desktop: WASD / Arrow keys to move<br>Mouse click or Spacebar to shoot slime<br>Mobile: Drag to move · Tap to shoot</div>
+</div>
+<div id="hud">
+<div id="score">SCORE: <span>0</span></div>
+<div id="levelDisp">WAVE 1</div>
+<div id="hp">🐌 ×3</div>
+</div>
+<canvas id="c"></canvas>
+<div id="waveMsg"></div>
+<script>
+// ─── SETUP ─────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const scoreEl = document.querySelector('#score span');
+const hpEl = document.getElementById('hp');
+const levelEl = document.getElementById('levelDisp');
+const waveMsgEl = document.getElementById('waveMsg');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── GAME STATE ────────────────────────────────────────────────────
+let game = {
+  score: 0,
+  hp: 3,
+  wave: 1,
+  running: false,
+  enemies: [],
+  projectiles: [],
+  enemyProjectiles: [],
+  particles: [],
+  spawnTimer: 0,
+  spawnInterval: 120,
+  waveTimer: 0,
+  waveMax: 900,
+  invincible: 0,
+  shake: 0,
+};
+
+// snail
+let snail = {
+  x: 0, y: 0, r: 22,
+  vx: 0, vy: 0,
+  angle: 0,
+  shootCD: 0,
+  shootMax: 14,
+  speed: 3.5,
+  trail: [],
+};
+
+// lettuce patch (center of garden)
+let lettuceX, lettuceY, lettuceR;
+
+// ─── INPUT ─────────────────────────────────────────────────────────
+const keys = {};
+const mouse = { x: 0, y: 0, down: false };
+let touchStart = null;
+let touchDir = { x: 0, y: 0 };
+
+window.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='Space') e.preventDefault(); });
+window.addEventListener('keyup', e => keys[e.code] = false);
+canvas.addEventListener('mousedown', e => { mouse.down = true; mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  touchStart = { x: t.clientX, y: t.clientY };
+  mouse.down = true; mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  if (touchStart) {
+    touchDir.x = t.clientX - touchStart.x;
+    touchDir.y = t.clientY - touchStart.y;
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touchStart = null;
+  touchDir = { x: 0, y: 0 };
+  mouse.down = false;
+}, { passive: false });
+
+// ─── HELPERS ───────────────────────────────────────────────────────
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function angleTo(a, b) { return Math.atan2(b.y - a.y, b.x - a.x); }
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function rndInt(a, b) { return Math.floor(rnd(a, b + 1)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function showWaveMsg(text) {
+  waveMsgEl.textContent = text;
+  waveMsgEl.style.display = 'block';
+  setTimeout(() => waveMsgEl.style.display = 'none', 2000);
+}
+
+function spawnParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = rnd(0, Math.PI * 2);
+    const s = rnd(speed * 0.3, speed);
+    game.particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      decay: rnd(0.02, 0.05),
+      r: rnd(2, 5),
+      color,
+    });
+  }
+}
+
+// ─── SHOOT ─────────────────────────────────────────────────────────
+function shoot() {
+  if (snail.shootCD > 0) return;
+  snail.shootCD = snail.shootMax;
+  const angle = snail.angle;
+  game.projectiles.push({
+    x: snail.x + Math.cos(angle) * 28,
+    y: snail.y + Math.sin(angle) * 28,
+    vx: Math.cos(angle) * 9,
+    vy: Math.sin(angle) * 9,
+    r: 5,
+    life: 1,
+  });
+  // muzzle flash particle
+  spawnParticles(snail.x + Math.cos(angle) * 30, snail.y + Math.sin(angle) * 30, '#00ffcc', 3, 2);
+}
+
+// ─── SPAWN ENEMY ────────────────────────────────────────────────────
+function spawnEnemy() {
+  const side = rndInt(0, 3);
+  let x, y;
+  const pad = 60;
+  if (side === 0) { x = rnd(pad, W - pad); y = -40; }
+  else if (side === 1) { x = W + 40; y = rnd(pad, H - pad); }
+  else if (side === 2) { x = rnd(pad, W - pad); y = H + 40; }
+  else { x = -40; y = rnd(pad, H - pad); }
+
+  const types = ['beetle', 'bird', 'salt'];
+  const waveBonus = Math.min(game.wave - 1, 5);
+  const weights = [
+    Math.max(1, 8 - waveBonus),
+    Math.max(1, 4 + waveBonus),
+    Math.max(1, 3 + waveBonus),
+  ];
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let type = 'beetle';
+  for (let i = 0; i < types.length; i++) {
+    r -= weights[i];
+    if (r <= 0) { type = types[i]; break; }
+  }
+
+  let hp = 1, speed = rnd(1, 1.8 + waveBonus * 0.2), r_enemy = 14, pts = 10, canShoot = false;
+  if (type === 'beetle') {
+    hp = 1 + Math.floor(game.wave / 3);
+    speed = rnd(1.2, 2 + waveBonus * 0.15);
+    r_enemy = 14;
+    pts = 15;
+  } else if (type === 'bird') {
+    hp = 2 + Math.floor(game.wave / 2);
+    speed = rnd(2, 3 + waveBonus * 0.1);
+    r_enemy = 20;
+    pts = 25;
+    canShoot = game.wave >= 3;
+  } else { // salt
+    hp = 1;
+    speed = rnd(0.8, 1.5);
+    r_enemy = 11;
+    pts = 5;
+  }
+
+  game.enemies.push({ x, y, vx: 0, vy: 0, type, hp, maxHp: hp, speed, r: r_enemy, pts, canShoot, shootCD: rnd(60, 180), color: type === 'beetle' ? '#8B4513' : type === 'bird' ? '#ff4444' : '#ffffff' });
+}
+
+// ─── ENEMY AI ───────────────────────────────────────────────────────
+function updateEnemy(e) {
+  // move toward lettuce
+  const target = { x: lettuceX, y: lettuceY };
+  const ang = angleTo(e, target);
+  e.vx = Math.cos(ang) * e.speed;
+  e.vy = Math.sin(ang) * e.speed;
+
+  // birds also strafe
+  if (e.type === 'bird' && game.wave >= 2) {
+    const strafe = Math.sin(Date.now() * 0.002 + e.x) * 1.5;
+    e.vx += Math.cos(ang + Math.PI / 2) * strafe;
+    e.vy += Math.sin(ang + Math.PI / 2) * strafe;
+  }
+
+  e.x += e.vx;
+  e.y += e.vy;
+
+  // shoot
+  if (e.canShoot) {
+    e.shootCD--;
+    if (e.shootCD <= 0) {
+      e.shootCD = rnd(120, 240);
+      const a = angleTo(e, snail);
+      game.enemyProjectiles.push({
+        x: e.x, y: e.y,
+        vx: Math.cos(a) * 4,
+        vy: Math.sin(a) * 4,
+        r: 4,
+        life: 1,
+      });
+    }
+  }
+}
+
+// ─── DRAW SNAIL ─────────────────────────────────────────────────────
+function drawSnail() {
+  ctx.save();
+  ctx.translate(snail.x, snail.y);
+  ctx.rotate(snail.angle);
+
+  // shell
+  ctx.beginPath();
+  ctx.arc(0, 0, snail.r, 0, Math.PI * 2);
+  const shellGrad = ctx.createRadialGradient(-5, -5, 2, 0, 0, snail.r);
+  shellGrad.addColorStop(0, '#ffcc88');
+  shellGrad.addColorStop(0.5, '#cc8844');
+  shellGrad.addColorStop(1, '#774422');
+  ctx.fillStyle = shellGrad;
+  ctx.fill();
+  ctx.strokeStyle = '#ffaa66';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // shell swirl
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const ra = (i / 3) * Math.PI * 1.8;
+    ctx.arc(0, 0, snail.r * (0.4 + i * 0.2), ra, ra + Math.PI * 0.6);
+  }
+  ctx.strokeStyle = '#dd9955';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // eye stalks
+  ctx.strokeStyle = '#cc8844';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(8, -6); ctx.lineTo(16, -12); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, 6); ctx.lineTo(16, 12); ctx.stroke();
+
+  // eyes
+  ctx.fillStyle = '#00ffcc';
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.arc(16, -12, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(16, 12, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // slime trail
+  ctx.restore();
+
+  // draw trail
+  for (let i = 0; i < snail.trail.length; i++) {
+    const t = snail.trail[i];
+    const alpha = (i / snail.trail.length) * 0.3;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 4 * (i / snail.trail.length), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,255,200,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// ─── DRAW ENEMY ─────────────────────────────────────────────────────
+function drawEnemy(e) {
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const ang = angleTo(e, { x: lettuceX, y: lettuceY });
+  ctx.rotate(ang);
+
+  if (e.type === 'beetle') {
+    // body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, e.r, e.r * 0.7, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#5a3010';
+    ctx.fill();
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // shell line
+    ctx.beginPath(); ctx.moveTo(-e.r, 0); ctx.lineTo(e.r * 0.5, 0); ctx.stroke();
+    // legs
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath(); ctx.moveTo(i * 5, -e.r * 0.7); ctx.lineTo(i * 5, -e.r - 3); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(i * 5, e.r * 0.7); ctx.lineTo(i * 5, e.r + 3); ctx.stroke();
+    }
+  } else if (e.type === 'bird') {
+    // bird body
+    ctx.beginPath();
+    ctx.ellipse(0, 0, e.r, e.r * 0.6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#aa2222';
+    ctx.fill();
+    // wing
+    ctx.beginPath();
+    ctx.ellipse(-5, -e.r * 0.5, e.r * 0.7, e.r * 0.3, -0.3, 0, Math.PI * 2);
+    ctx.fillStyle = '#cc3333';
+    ctx.fill();
+    // beak
+    ctx.beginPath();
+    ctx.moveTo(e.r, 0); ctx.lineTo(e.r + 10, 3); ctx.lineTo(e.r, 6); ctx.closePath();
+    ctx.fillStyle = '#ffaa00';
+    ctx.fill();
+    // eye
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath(); ctx.arc(e.r * 0.3, -3, 3, 0, Math.PI * 2); ctx.fill();
+  } else { // salt
+    ctx.beginPath();
+    ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // salt symbol
+    ctx.fillStyle = '#aaa';
+    ctx.font = `${e.r}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NaCl', 0, 0);
+  }
+
+  // hp bar
+  if (e.hp < e.maxHp) {
+    ctx.rotate(-ang);
+    const bw = e.r * 2;
+    ctx.fillStyle = '#300';
+    ctx.fillRect(-bw / 2, -e.r - 10, bw, 4);
+    ctx.fillStyle = '#0f0';
+    ctx.fillRect(-bw / 2, -e.r - 10, bw * (e.hp / e.maxHp), 4);
+  }
+
+  ctx.restore();
+}
+
+// ─── DRAW LETTUCE ───────────────────────────────────────────────────
+function drawLettuce() {
+  const pulse = Math.sin(Date.now() * 0.003) * 3;
+  ctx.save();
+  ctx.translate(lettuceX, lettuceY);
+
+  // glow
+  ctx.beginPath();
+  ctx.arc(0, 0, lettuceR + 15 + pulse, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,255,100,0.08)';
+  ctx.fill();
+
+  // leaves
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.ellipse(lettuceR * 0.5, 0, lettuceR * 0.5, lettuceR * 0.25, 0, 0, Math.PI * 2);
+    ctx.fillStyle = i % 2 === 0 ? '#22cc44' : '#33dd55';
+    ctx.fill();
+    ctx.strokeStyle = '#116622';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // center
+  ctx.beginPath();
+  ctx.arc(0, 0, lettuceR * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = '#88ff88';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ─── DRAW BACKGROUND ────────────────────────────────────────────────
+function drawBG() {
+  // garden dirt
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, '#1a1a0a');
+  grad.addColorStop(1, '#0a0a05');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // subtle grid
+  ctx.strokeStyle = 'rgba(0,255,100,0.04)';
+  ctx.lineWidth = 1;
+  const g = 50;
+  for (let x = 0; x < W; x += g) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += g) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.7);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  // film grain (cheap)
+  if (Math.random() < 0.4) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.03})`;
+    for (let i = 0; i < 50; i++) {
+      ctx.fillRect(rnd(0, W), rnd(0, H), 1, 1);
+    }
+  }
+}
+
+// ─── UPDATE ────────────────────────────────────────────────────────
+function update() {
+  if (!game.running) return;
+
+  // wave management
+  game.waveTimer++;
+  if (game.waveTimer >= game.waveMax) {
+    game.wave++;
+    game.waveTimer = 0;
+    game.spawnInterval = Math.max(40, 120 - game.wave * 8);
+    showWaveMsg(`WAVE ${game.wave}`);
+    levelEl.textContent = `WAVE ${game.wave}`;
+  }
+
+  // snail movement
+  let mx = 0, my = 0;
+  if (keys['ArrowLeft'] || keys['KeyA']) mx -= 1;
+  if (keys['ArrowRight'] || keys['KeyD']) mx += 1;
+  if (keys['ArrowUp'] || keys['KeyW']) my -= 1;
+  if (keys['ArrowDown'] || keys['KeyS']) my += 1;
+
+  // touch drag
+  if (touchDir.x !== 0 || touchDir.y !== 0) {
+    const len = Math.hypot(touchDir.x, touchDir.y);
+    if (len > 10) {
+      mx = touchDir.x / len;
+      my = touchDir.y / len;
+    }
+  }
+
+  // mouse aim (desktop)
+  if (mouse.down && !touchStart) {
+    const dx = mouse.x - snail.x;
+    const dy = mouse.y - snail.y;
+    snail.angle = Math.atan2(dy, dx);
+  }
+
+  if (mx !== 0 || my !== 0) {
+    const len = Math.hypot(mx, my);
+    mx /= len; my /= len;
+    snail.angle = Math.atan2(my, mx);
+  }
+
+  snail.vx = lerp(snail.vx, mx * snail.speed, 0.3);
+  snail.vy = lerp(snail.vy, my * snail.speed, 0.3);
+  snail.x += snail.vx;
+  snail.y += snail.vy;
+  snail.x = clamp(snail.x, snail.r, W - snail.r);
+  snail.y = clamp(snail.y, snail.r, H - snail.r);
+
+  // trail
+  if (Math.hypot(snail.vx, snail.vy) > 0.5) {
+    snail.trail.push({ x: snail.x, y: snail.y });
+    if (snail.trail.length > 20) snail.trail.shift();
+  }
+
+  // shoot
+  if (snail.shootCD > 0) snail.shootCD--;
+  if ((mouse.down || keys['Space']) && snail.shootCD <= 0) shoot();
+
+  // auto-shoot toward mouse on desktop if holding
+  if (mouse.down) {
+    snail.angle = Math.atan2(mouse.y - snail.y, mouse.x - snail.x);
+  }
+
+  // spawn enemies
+  game.spawnTimer++;
+  if (game.spawnTimer >= game.spawnInterval) {
+    game.spawnTimer = 0;
+    const count = 1 + Math.floor(game.wave / 4);
+    for (let i = 0; i < count; i++) spawnEnemy();
+  }
+
+  // update projectiles
+  for (let i = game.projectiles.length - 1; i >= 0; i--) {
+    const p = game.projectiles[i];
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+      game.projectiles.splice(i, 1); continue;
+    }
+    // hit enemy
+    let hit = false;
+    for (let j = game.enemies.length - 1; j >= 0; j--) {
+      const e = game.enemies[j];
+      if (dist(p, e) < p.r + e.r) {
+        e.hp--;
+        spawnParticles(p.x, p.y, '#ff00aa', 5, 3);
+        if (e.hp <= 0) {
+          game.score += e.pts;
+          spawnParticles(e.x, e.y, e.color, 12, 5);
+          game.enemies.splice(j, 1);
+        }
+        hit = true; break;
+      }
+    }
+    if (hit) game.projectiles.splice(i, 1);
+  }
+
+  // update enemy projectiles
+  for (let i = game.enemyProjectiles.length - 1; i >= 0; i--) {
+    const p = game.enemyProjectiles[i];
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+      game.enemyProjectiles.splice(i, 1); continue;
+    }
+    // hit snail
+    if (game.invincible <= 0 && dist(p, snail) < p.r + snail.r) {
+      game.hp--;
+      game.invincible = 90;
+      game.shake = 15;
+      spawnParticles(snail.x, snail.y, '#ff0000', 10, 4);
+      game.enemyProjectiles.splice(i, 1);
+      updateHUD();
+      if (game.hp <= 0) endGame();
+    }
+  }
+
+  // update enemies
+  for (let i = game.enemies.length - 1; i >= 0; i--) {
+    const e = game.enemies[i];
+    updateEnemy(e);
+    // hit snail
+    if (game.invincible <= 0 && dist(e, snail) < e.r + snail.r - 4) {
+      game.hp--;
+      game.invincible = 90;
+      game.shake = 20;
+      spawnParticles(snail.x, snail.y, '#ff0000', 8, 4);
+      updateHUD();
+      if (game.hp <= 0) endGame();
+    }
+    // hit lettuce
+    if (dist(e, { x: lettuceX, y: lettuceY }) < e.r + lettuceR) {
+      game.hp--;
+      game.shake = 15;
+      spawnParticles(lettuceX, lettuceY, '#22cc44', 15, 6);
+      game.enemies.splice(i, 1);
+      updateHUD();
+      if (game.hp <= 0) endGame();
+    }
+  }
+
+  // update particles
+  for (let i = game.particles.length - 1; i >= 0; i--) {
+    const p = game.particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.92; p.vy *= 0.92;
+    p.life -= p.decay;
+    if (p.life <= 0) game.particles.splice(i, 1);
+  }
+
+  // timers
+  if (game.invincible > 0) game.invincible--;
+  if (game.shake > 0) game.shake--;
+
+  // score (time bonus)
+  if (game.waveTimer % 30 === 0) {
+    game.score += game.wave;
+    updateHUD();
+  }
+}
+
+// ─── RENDER ─────────────────────────────────────────────────────────
+function render() {
+  ctx.save();
+  // screen shake
+  if (game.shake > 0) {
+    ctx.translate(rnd(-game.shake, game.shake), rnd(-game.shake, game.shake));
+  }
+
+  drawBG();
+  drawLettuce();
+
+  // draw enemy projectiles
+  for (const p of game.enemyProjectiles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff4444';
+    ctx.shadowColor = '#f00';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // draw projectiles
+  for (const p of game.projectiles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#00ffcc';
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 12;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // draw enemies
+  for (const e of game.enemies) drawEnemy(e);
+
+  // draw snail (flash when invincible)
+  if (game.invincible <= 0 || Math.floor(game.invincible / 5) % 2 === 0) {
+    drawSnail();
+  }
+
+  // draw particles
+  for (const p of game.particles) {
+    ctx.globalAlpha = p.life;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // wave progress bar
+  const barW = Math.min(W - 40, 400);
+  const barX = (W - barW) / 2;
+  const barY = H - 20;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(barX, barY, barW, 6);
+  const prog = game.waveTimer / game.waveMax;
+  ctx.fillStyle = '#ff00aa';
+  ctx.shadowColor = '#f0f';
+  ctx.shadowBlur = 6;
+  ctx.fillRect(barX, barY, barW * prog, 6);
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+// ─── HUD ────────────────────────────────────────────────────────────
+function updateHUD() {
+  scoreEl.textContent = game.score;
+  hpEl.textContent = '🐌 ×' + game.hp;
+}
+
+// ─── GAME LOOP ──────────────────────────────────────────────────────
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ─── START / END ────────────────────────────────────────────────────
+function startGame() {
+  lettuceX = W / 2;
+  lettuceY = H / 2;
+  lettuceR = Math.min(W, H) * 0.08;
+
+  snail.x = W / 2;
+  snail.y = H * 0.7;
+  snail.vx = 0; snail.vy = 0;
+  snail.angle = -Math.PI / 2;
+  snail.trail = [];
+  snail.shootCD = 0;
+
+  game = {
+    score: 0,
+    hp: 3,
+    wave: 1,
+    running: true,
+    enemies: [],
+    projectiles: [],
+    enemyProjectiles: [],
+    particles: [],
+    spawnTimer: 0,
+    spawnInterval: 120,
+    waveTimer: 0,
+    waveMax: 900,
+    invincible: 0,
+    shake: 0,
+  };
+
+  overlay.classList.add('hidden');
+  overlay.style.display = 'none';
+  updateHUD();
+  levelEl.textContent = 'WAVE 1';
+}
+
+function endGame() {
+  game.running = false;
+  showWaveMsg('GAME OVER');
+  setTimeout(() => {
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+    document.querySelector('.title').textContent = 'GAME OVER';
+    document.querySelector('.sub').textContent = `Score: ${game.score} · Wave: ${game.wave}`;
+    startBtn.textContent = 'PLAY AGAIN';
+  }, 1500);
+}
+
+startBtn.addEventListener('click', () => {
+  document.querySelector('.title').textContent = '🐌 SIEGE 🐌';
+  startGame();
+});
+
+loop();
+</script>
+</body>
+</html>
