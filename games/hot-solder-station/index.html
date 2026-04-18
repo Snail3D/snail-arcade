@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hot Solder Station</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #start-screen, #game-over-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0f;
+    z-index: 10;
+  }
+  #game-over-screen { display: none; }
+  h1 {
+    font-size: clamp(1.8em, 6vw, 3em);
+    color: #ff6b35;
+    text-shadow: 0 0 20px rgba(255,107,53,0.5), 0 0 40px rgba(255,107,53,0.3);
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 0.9em;
+    margin-bottom: 32px;
+  }
+  .btn {
+    background: linear-gradient(135deg, #ff6b35, #ff3d00);
+    color: #fff;
+    border: none;
+    padding: 14px 40px;
+    font-size: 1.1em;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    border-radius: 6px;
+    box-shadow: 0 0 20px rgba(255,107,53,0.4);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .btn:active { transform: scale(0.96); }
+  .instructions {
+    color: #666;
+    font-size: 0.8em;
+    margin-top: 24px;
+    text-align: center;
+    line-height: 1.6;
+    max-width: 320px;
+  }
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: linear-gradient(to bottom, rgba(10,10,15,0.9), transparent);
+    z-index: 5;
+    pointer-events: none;
+  }
+  .hud-item {
+    font-size: 0.9em;
+    color: #aaa;
+  }
+  .hud-item span { color: #ff6b35; font-weight: bold; }
+  #canvas {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .final-score {
+    font-size: 1.4em;
+    color: #ff6b35;
+    margin: 16px 0;
+  }
+  .high-score {
+    color: #888;
+    font-size: 0.85em;
+    margin-bottom: 24px;
+  }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>🔥 HOT SOLDER STATION</h1>
+  <p class="subtitle">Connect the circuits before they overheat!</p>
+  <button class="btn" id="start-btn">START</button>
+  <p class="instructions">
+    Match circuit pads in pairs.<br>
+    Miss too many & the board overheats!<br>
+    Tap or click to connect.
+  </p>
+</div>
+
+<div id="game-over-screen">
+  <h1>🔥 GAME OVER</h1>
+  <p class="final-score">Score: <span id="final-score">0</span></p>
+  <p class="high-score">Best: <span id="high-score">0</span></p>
+  <button class="btn" id="restart-btn">RETRY</button>
+</div>
+
+<div id="hud">
+  <div class="hud-item">SCORE <span id="score">0</span></div>
+  <div class="hud-item">LEVEL <span id="level">1</span></div>
+  <div class="hud-item">🔥 <span id="heat">0</span>%</div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+// === GAME ENGINE ===
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, PAD_SIZE, ROWS, COLS;
+let pads = [];
+let selected = null;
+let score = 0;
+let level = 1;
+let heat = 0;
+let misses = 0;
+let gameRunning = false;
+let animFrame;
+let lastTime = 0;
+let rippleEffect = null;
+let highScore = parseInt(localStorage.getItem('hss_high') || '0');
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  const minDim = Math.min(W, H);
+  PAD_SIZE = Math.floor(minDim * 0.14);
+  ROWS = Math.max(3, Math.floor(H / PAD_SIZE) - 1);
+  COLS = Math.max(4, Math.floor(W / PAD_SIZE));
+  if (gameRunning) buildBoard();
+}
+
+function padColor(idx) {
+  const colors = ['#00ff88','#ff6b35','#00d4ff','#ff00aa','#ffee00','#aa00ff','#ff4466','#44ff88'];
+  return colors[idx % colors.length];
+}
+
+function buildBoard() {
+  pads = [];
+  const total = ROWS * COLS;
+  const pairs = Math.floor(total / 2);
+  let values = [];
+  for (let i = 0; i < pairs; i++) values.push(i % 8, i % 8);
+  // shuffle
+  for (let i = values.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [values[i], values[j]] = [values[j], values[i]];
+  }
+  let x0 = (W - COLS * PAD_SIZE) / 2;
+  let y0 = (H - ROWS * PAD_SIZE) / 2;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const idx = r * COLS + c;
+      if (idx < values.length) {
+        pads.push({
+          x: x0 + c * PAD_SIZE + PAD_SIZE / 2,
+          y: y0 + r * PAD_SIZE + PAD_SIZE / 2,
+          val: values[idx],
+          matched: false,
+          pulse: Math.random() * Math.PI * 2,
+          overheat: false,
+        });
+      }
+    }
+  }
+}
+
+function drawPCBBackground() {
+  // circuit board bg
+  ctx.fillStyle = '#0d1a0d';
+  ctx.fillRect(0, 0, W, H);
+  // grid lines
+  ctx.strokeStyle = 'rgba(0,255,136,0.06)';
+  ctx.lineWidth = 1;
+  const grid = PAD_SIZE;
+  for (let x = 0; x < W; x += grid) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += grid) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  // traces
+  ctx.strokeStyle = 'rgba(0,200,100,0.1)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    ctx.beginPath();
+    ctx.moveTo(Math.random() * W, Math.random() * H);
+    ctx.bezierCurveTo(Math.random() * W, Math.random() * H, Math.random() * W, Math.random() * H, Math.random() * W, Math.random() * H);
+    ctx.stroke();
+  }
+}
+
+function drawPad(p, t) {
+  if (p.matched) return;
+  const pulse = Math.sin(p.pulse + t * 2) * 0.2 + 0.8;
+  const col = padColor(p.val);
+  const sz = PAD_SIZE * 0.38 * pulse;
+  const sel = selected === p;
+
+  // glow
+  ctx.shadowBlur = sel ? 20 : 8;
+  ctx.shadowColor = col;
+
+  // outer ring
+  ctx.strokeStyle = col;
+  ctx.lineWidth = sel ? 3 : 2;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // inner dot
+  ctx.fillStyle = col;
+  ctx.globalAlpha = 0.4 + pulse * 0.3;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, sz * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // selection ring
+  if (sel) {
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, sz + 6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // overheat flash
+  if (p.overheat) {
+    ctx.fillStyle = `rgba(255,50,0,${0.3 + Math.sin(t * 15) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, sz + 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+}
+
+function drawRipple() {
+  if (!rippleEffect) return;
+  const { x, y, r, alpha } = rippleEffect;
+  ctx.strokeStyle = `rgba(0,255,136,${alpha})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  rippleEffect.r += 2;
+  rippleEffect.alpha -= 0.02;
+  if (rippleEffect.alpha <= 0) rippleEffect = null;
+}
+
+function drawHeatBar() {
+  if (heat <= 0) return;
+  const bw = 120, bh = 8;
+  const bx = W / 2 - bw / 2, by = 12;
+  ctx.fillStyle = '#222';
+  ctx.fillRect(bx, by, bw, bh);
+  const hue = Math.max(0, 120 - heat * 1.2);
+  ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+  ctx.fillRect(bx, by, bw * (heat / 100), bh);
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+}
+
+function draw(timestamp) {
+  const dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+  const t = timestamp / 1000;
+
+  drawPCBBackground();
+
+  pads.forEach(p => drawPad(p, t));
+  drawRipple();
+  drawHeatBar();
+
+  // Update pulse
+  pads.forEach(p => p.pulse += dt);
+
+  animFrame = requestAnimationFrame(draw);
+}
+
+function getPadAt(x, y) {
+  for (let i = pads.length - 1; i >= 0; i--) {
+    const p = pads[i];
+    if (p.matched) continue;
+    const dx = x - p.x, dy = y - p.y;
+    if (Math.sqrt(dx*dx + dy*dy) < PAD_SIZE * 0.4) return p;
+  }
+  return null;
+}
+
+function handleTap(x, y) {
+  if (!gameRunning) return;
+  const pad = getPadAt(x, y);
+  if (!pad) return;
+
+  if (!selected) {
+    selected = pad;
+    rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 0.8 };
+  } else {
+    if (selected === pad) { selected = null; return; }
+    if (selected.val === pad.val) {
+      // Match!
+      selected.matched = true;
+      pad.matched = true;
+      score += 10 * level;
+      misses = 0;
+      heat = Math.max(0, heat - 5);
+      rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 1.0 };
+      selected = null;
+      document.getElementById('score').textContent = score;
+      checkLevelUp();
+    } else {
+      // Wrong!
+      selected.overheat = true;
+      pad.overheat = true;
+      setTimeout(() => { selected.overheat = false; pad.overheat = false; }, 400);
+      selected = null;
+      misses++;
+      heat = Math.min(100, heat + 8 * level);
+      if (heat >= 100) endGame();
+    }
+  }
+  document.getElementById('heat').textContent = Math.floor(heat);
+}
+
+function checkLevelUp() {
+  const remaining = pads.filter(p => !p.matched).length;
+  if (remaining === 0) {
+    level++;
+    document.getElementById('level').textContent = level;
+    heat = Math.max(0, heat - 20);
+    setTimeout(() => {
+      buildBoard();
+      selected = null;
+    }, 300);
+  }
+}
+
+function endGame() {
+  gameRunning = false;
+  cancelAnimationFrame(animFrame);
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('hss_high', highScore);
+  }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('high-score').textContent = highScore;
+  document.getElementById('game-over-screen').style.display = 'flex';
+  document.getElementById('hud').style.display = 'none';
+}
+
+function startGame() {
+  score = 0;
+  level = 1;
+  heat = 0;
+  misses = 0;
+  selected = null;
+  gameRunning = true;
+  document.getElementById('score').textContent = '0';
+  document.getElementById('level').textContent = '1';
+  document.getElementById('heat').textContent = '0';
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('game-over-screen').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  resize();
+  lastTime = performance.now();
+  animFrame = requestAnimationFrame(draw);
+}
+
+// Input handlers
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  handleTap(e.clientX - rect.left, e.clientY - rect.top);
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  handleTap(t.clientX - rect.left, t.clientY - rect.top);
+}, { passive: false });
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+window.addEventListener('resize', resize);
+
+// grain overlay
+(function addGrain() {
+  const grain = document.createElement('canvas');
+  grain.width = 128; grain.height = 128;
+  const gctx = grain.getContext('2d');
+  const id = gctx.createImageData(128, 128);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const v = Math.random() * 30;
+    id.data[i] = id.data[i+1] = id.data[i+2] = v;
+    id.data[i+3] = 25;
+  }
+  gctx.putImageData(id, 0, 0);
+  grain.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:.04;z-index:99;mix-blend-mode:overlay;';
+  document.body.appendChild(grain);
+  function animateGrain() {
+    gctx.putImageData(id, Math.random() * 64, Math.random() * 64);
+    requestAnimationFrame(animateGrain);
+  }
+  animateGrain();
+})();
+
+resize();
+draw(0);
+</script>
+</body>
+</html>
