@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Layer of Faith</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+  }
+  #wrap {
+    position: relative;
+    width: 100vmin;
+    height: 100vmin;
+    max-width: 600px;
+    max-height: 600px;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(5,5,8,0.92);
+    color: #00f0ff;
+    text-align: center;
+    padding: 20px;
+    transition: opacity 0.4s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    font-size: clamp(1.8em, 6vw, 3em);
+    text-shadow: 0 0 20px #00f0ff88, 0 0 60px #00f0ff44;
+    margin-bottom: 8px;
+    letter-spacing: 0.08em;
+  }
+  #overlay .sub {
+    color: #ff00aa;
+    font-size: clamp(0.7em, 2.5vw, 1em);
+    text-shadow: 0 0 10px #ff00aa88;
+    margin-bottom: 24px;
+  }
+  #overlay p {
+    color: #7a8899;
+    font-size: clamp(0.65em, 2vw, 0.85em);
+    max-width: 340px;
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+  .btn {
+    background: transparent;
+    border: 1px solid #00f0ff;
+    color: #00f0ff;
+    padding: 12px 40px;
+    font-family: inherit;
+    font-size: clamp(0.8em, 2.5vw, 1em);
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    box-shadow: 0 0 16px #00f0ff44, inset 0 0 16px #00f0ff11;
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:hover, .btn:active {
+    background: #00f0ff22;
+    box-shadow: 0 0 32px #00f0ff66, inset 0 0 24px #00f0ff22;
+  }
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: none;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 10px 14px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  #hud.show { display: flex; }
+  .hud-box {
+    background: rgba(5,5,8,0.75);
+    border: 1px solid #00f0ff44;
+    padding: 6px 12px;
+    font-size: clamp(0.6em, 2vw, 0.8em);
+    color: #00f0ff;
+    text-shadow: 0 0 8px #00f0ff66;
+  }
+  #verse-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 40px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5,5,8,0.8);
+    border-top: 1px solid #ff00aa44;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 2;
+  }
+  #verse-bar.show { display: flex; }
+  #verse-text {
+    color: #ff00aa;
+    font-size: clamp(0.55em, 1.8vw, 0.72em);
+    text-shadow: 0 0 10px #ff00aa88;
+    white-space: nowrap;
+    animation: scrollVerse 12s linear infinite;
+    letter-spacing: 0.04em;
+  }
+  @keyframes scrollVerse {
+    0% { transform: translateX(50%); }
+    100% { transform: translateX(-50%); }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <div id="hud">
+    <div class="hud-box" id="score-box">SCORE: 0</div>
+    <div class="hud-box" id="layer-box">LAYER 1</div>
+    <div class="hud-box" id="lives-box">LIVES: ❤❤❤</div>
+  </div>
+
+  <div id="verse-bar">
+    <div id="verse-text"></div>
+  </div>
+
+  <div id="overlay">
+    <h1>LAYER OF FAITH</h1>
+    <div class="sub">3D PRINTING SIMULATOR</div>
+    <p>Watch your print build layer by layer. Tap glowing problem zones — layer shifts, clogs, heat loss — before the layer completes. Fix enough and your print succeeds.</p>
+    <button class="btn" id="start-btn">START PRINT</button>
+  </div>
+</div>
+
+<script>
+// ─── Canvas Setup ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('wrap');
+
+const VERSES = [
+  "Colossians 3:23 — Whatever you do, work heartily, as for the Lord.",
+  "Philippians 1:6 — He who began a good work in you will carry it to completion.",
+  "Psalm 127:1 — Unless the Lord builds the house, they labor in vain who build it.",
+  "Proverbs 16:3 — Commit your work to the Lord, and your plans will be established.",
+  "Lamentations 3:23 — Great is your faithfulness; His mercies are new every morning.",
+  "Galatians 6:9 — Let us not grow weary in doing good.",
+  "1 Corinthians 10:31 — Whether you eat or drink, do all to the glory of God.",
+  "Ecclesiastes 3:1 — For everything there is a season.",
+  "Isaiah 40:31 — They who wait for the Lord shall renew their strength.",
+  "James 1:2 — Count it all joy when you meet trials of various kinds.",
+];
+
+const PROBLEM_TYPES = [
+  { emoji: '↗', label: 'LAYER SHIFT', color: '#ff4444', hint: 'Misaligned stepper!' },
+  { emoji: '⬇', label: 'CLOG', color: '#ff8800', hint: 'Nozzle clogged!' },
+  { emoji: '❄', label: 'HEAT LOSS', color: '#4488ff', hint: 'Bed temp dropping!' },
+  { emoji: '⚡', label: 'TANGLE', color: '#aa00ff', hint: 'Filament tangle!' },
+];
+
+const PRINT_OBJECTS = ['ROOK', 'CALIPER', 'GEAR', 'HEX NUT', 'BRACKET', 'HOUSING'];
+const PRINT_COLORS = ['#00f0ff', '#ff00aa', '#aaff00', '#ff8800', '#aa44ff'];
+
+// ─── State ───
+let W, H;
+let gameState = 'menu'; // menu, playing, gameover
+let score = 0;
+let lives = 3;
+let currentLayer = 0;
+let maxLayers = 20;
+let buildProgress = 0; // 0-1 per layer
+let layerSpeed = 0.004;
+let printObj = '';
+let printColor = '#00f0ff';
+let problems = [];
+let particles = [];
+let sparks = [];
+let screenShake = 0;
+let successFlash = 0;
+let printRows = []; // the printed layer rows
+let verseIdx = 0;
+let lastProblemTime = 0;
+let problemInterval = 2500;
+let completedPrints = 0;
+let grainCanvas, grainCtx;
+let lastTime = 0;
+
+// ─── Init ───
+function resize() {
+  const s = Math.min(wrap.clientWidth, wrap.clientHeight, 600);
+  W = canvas.width = s * window.devicePixelRatio;
+  H = canvas.height = s * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  W /= window.devicePixelRatio;
+  H /= window.devicePixelRatio;
+  buildGrain();
+}
+
+function buildGrain() {
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = W;
+  grainCanvas.height = H;
+  grainCtx = grainCanvas.getContext('2d');
+  const id = grainCtx.createImageData(W, H);
+  for (let i = 0; i < id.data.length; i += 4) {
+    const v = Math.random() * 30;
+    id.data[i] = v; id.data[i+1] = v; id.data[i+2] = v+5; id.data[i+3] = 18;
+  }
+  grainCtx.putImageData(id, 0, 0);
+}
+
+function initPrint() {
+  printObj = PRINT_OBJECTS[Math.floor(Math.random() * PRINT_OBJECTS.length)];
+  printColor = PRINT_COLORS[Math.floor(Math.random() * PRINT_COLORS.length)];
+  currentLayer = 0;
+  buildProgress = 0;
+  problems = [];
+  particles = [];
+  sparks = [];
+  screenShake = 0;
+  successFlash = 0;
+  printRows = [];
+  for (let r = 0; r < 20; r++) printRows.push({ filled: 0, problem: null });
+  verseIdx = Math.floor(Math.random() * VERSES.length);
+  lastProblemTime = performance.now();
+  problemInterval = 2500;
+  updateHUD();
+}
+
+function startGame() {
+  score = 0;
+  lives = 3;
+  completedPrints = 0;
+  maxLayers = 15 + Math.floor(Math.random() * 10);
+  initPrint();
+  gameState = 'playing';
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('hud').classList.add('show');
+  document.getElementById('verse-bar').classList.add('show');
+  document.getElementById('verse-text').textContent = VERSES[verseIdx];
+  document.getElementById('verse-text').style.animation = 'none';
+  setTimeout(() => {
+    document.getElementById('verse-text').style.animation = 'scrollVerse 12s linear infinite';
+  }, 50);
+}
+
+function endGame() {
+  gameState = 'gameover';
+  document.getElementById('hud').classList.remove('show');
+  document.getElementById('verse-bar').classList.remove('show');
+  const ov = document.getElementById('overlay');
+  ov.querySelector('h1').textContent = 'PRINT FAILED';
+  ov.querySelector('.sub').textContent = `SCORE: ${score}`;
+  ov.querySelector('p').textContent = `Prints completed: ${completedPrints}. ${printObj} never made it. Keep building, layer by layer.`;
+  ov.querySelector('.btn').textContent = 'TRY AGAIN';
+  ov.classList.remove('hidden');
+}
+
+function layerComplete() {
+  successFlash = 1;
+  currentLayer++;
+  buildProgress = 0;
+  problems = [];
+  // reset rows
+  for (let r = 0; r < printRows.length; r++) {
+    printRows[r].filled = 0;
+    printRows[r].problem = null;
+  }
+  if (currentLayer >= maxLayers) {
+    // Print complete!
+    completedPrints++;
+    score += 500 + currentLayer * 50;
+    showFloatingText('PRINT COMPLETE!', W/2, H/2, '#00ff88');
+    spawnParticles(W/2, H/2, '#00ff88', 40);
+    setTimeout(() => {
+      if (gameState === 'playing') {
+        // start new print
+        maxLayers = 15 + Math.floor(Math.random() * 10);
+        initPrint();
+        verseIdx = (verseIdx + 1) % VERSES.length;
+        document.getElementById('verse-text').textContent = VERSES[verseIdx];
+        problemInterval = Math.max(1200, problemInterval - 150);
+      }
+    }, 1200);
+  }
+  updateHUD();
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      color,
+      size: 1.5 + Math.random() * 3
+    });
+  }
+}
+
+function spawnSpark(x, y, color) {
+  for (let i = 0; i < 8; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    sparks.push({
+      x, y,
+      vx: Math.cos(angle) * (1 + Math.random() * 2),
+      vy: Math.sin(angle) * (1 + Math.random() * 2),
+      life: 1,
+      decay: 0.04 + Math.random() * 0.04,
+      color,
+      size: 1 + Math.random() * 2
+    });
+  }
+}
+
+function showFloatingText(text, x, y, color) {
+  sparks.push({ text, x, y, vy: -1, life: 1, decay: 0.012, color, isText: true });
+}
+
+function spawnProblem() {
+  const chamberX = W * 0.22;
+  const chamberW = W * 0.56;
+  const chamberY = H * 0.18;
+  const chamberH = H * 0.64;
+  const px = chamberX + 20 + Math.random() * (chamberW - 40);
+  const py = chamberY + 20 + Math.random() * (chamberH - 60);
+  const type = PROBLEM_TYPES[Math.floor(Math.random() * PROBLEM_TYPES.length)];
+  problems.push({
+    x: px, y: py,
+    radius: 22,
+    type,
+    life: 1,
+    decay: 0,
+    clicked: false,
+    pulsePhase: Math.random() * Math.PI * 2,
+    row: Math.floor((py - chamberY) / (chamberH / 20))
+  });
+}
+
+function handleTap(clientX, clientY) {
+  if (gameState !== 'playing') return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const tx = (clientX - rect.left) * scaleX;
+  const ty = (clientY - rect.top) * scaleY;
+
+  let hit = false;
+  for (let i = problems.length - 1; i >= 0; i--) {
+    const p = problems[i];
+    if (p.clicked) continue;
+    const dx = tx - p.x;
+    const dy = ty - p.y;
+    if (dx*dx + dy*dy < (p.radius + 14) * (p.radius + 14)) {
+      p.clicked = true;
+      score += 100;
+      spawnSpark(p.x, p.y, p.type.color);
+      showFloatingText('FIXED!', p.x, p.y - 20, '#00ff88');
+      problems.splice(i, 1);
+      hit = true;
+      break;
+    }
+  }
+  if (!hit) {
+    // Spawn small sparks at tap point
+    spawnSpark(tx, ty, '#ffffff22');
+  }
+  updateHUD();
+}
+
+function updateHUD() {
+  document.getElementById('score-box').textContent = `SCORE: ${score}`;
+  document.getElementById('layer-box').textContent = `LAYER ${currentLayer + 1}/${maxLayers}`;
+  document.getElementById('lives-box').textContent = 'LIVES: ' + '❤'.repeat(lives);
+}
+
+// ─── Input ───
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) handleTap(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  handleTap(e.clientX, e.clientY);
+});
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+window.addEventListener('resize', resize);
+
+// ─── Update ───
+function update(dt) {
+  if (gameState !== 'playing') return;
+
+  buildProgress += layerSpeed * (dt / 16);
+
+  if (buildProgress >= 1) {
+    // Check for unfixed problems in current layer row range
+    const chamberY = H * 0.18;
+    const chamberH = H * 0.64;
+    const rows = printRows;
+    let unfixed = 0;
+    for (const p of problems) {
+      if (!p.clicked) {
+        unfixed++;
+        lives--;
+        screenShake = 1;
+        spawnParticles(p.x, p.y, '#ff4444', 20);
+        showFloatingText('FAILED!', p.x, p.y - 20, '#ff4444');
+      }
+    }
+    problems = [];
+    if (lives <= 0) {
+      endGame();
+      return;
+    }
+    layerComplete();
+    return;
+  }
+
+  // Spawn problems
+  const now = performance.now();
+  if (now - lastProblemTime > problemInterval && problems.length < 3) {
+    spawnProblem();
+    lastProblemTime = now;
+  }
+
+  // Update problems pulse
+  for (const p of problems) {
+    p.pulsePhase += 0.08;
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.04;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Update sparks
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    if (!s.isText) {
+      s.x += s.vx;
+      s.y += s.vy;
+      s.vy += 0.05;
+    } else {
+      s.y += s.vy;
+    }
+    s.life -= s.decay;
+    if (s.life <= 0) sparks.splice(i, 1);
+  }
+
+  // Screen shake decay
+  if (screenShake > 0) screenShake *= 0.85;
+  if (successFlash > 0) successFlash *= 0.9;
+}
+
+// ─── Draw ───
+function draw(t) {
+  ctx.clearRect(0, 0, W, H);
+
+  const sx = screenShake > 0.01 ? (Math.random() - 0.5) * screenShake * 8 : 0;
+  const sy = screenShake > 0.01 ? (Math.random() - 0.5) * screenShake * 8 : 0;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Background grid
+  ctx.strokeStyle = '#0a1520';
+  ctx.lineWidth = 0.5;
+  const gridStep = 24;
+  for (let x = 0; x < W; x += gridStep) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridStep) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Print chamber frame
+  const cx = W * 0.22;
+  const cw = W * 0.56;
+  const cy = H * 0.18;
+  const ch = H * 0.64;
+
+  // Chamber glow
+  const grd = ctx.createLinearGradient(cx, cy, cx, cy + ch);
+  grd.addColorStop(0, '#00f0ff08');
+  grd.addColorStop(1, '#00f0ff02');
+  ctx.fillStyle = grd;
+  ctx.fillRect(cx, cy, cw, ch);
+
+  // Border
+  ctx.strokeStyle = '#00f0ff44';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx, cy, cw, ch);
+
+  // Corner accents
+  const cornerSize = 14;
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 2;
+  // TL
+  ctx.beginPath(); ctx.moveTo(cx, cy + cornerSize); ctx.lineTo(cx, cy); ctx.lineTo(cx + cornerSize, cy); ctx.stroke();
+  // TR
+  ctx.beginPath(); ctx.moveTo(cx + cw - cornerSize, cy); ctx.lineTo(cx + cw, cy); ctx.lineTo(cx + cw, cy + cornerSize); ctx.stroke();
+  // BL
+  ctx.beginPath(); ctx.moveTo(cx, cy + ch - cornerSize); ctx.lineTo(cx, cy + ch); ctx.lineTo(cx + cornerSize, cy + ch); ctx.stroke();
+  // BR
+  ctx.beginPath(); ctx.moveTo(cx + cw - cornerSize, cy + ch); ctx.lineTo(cx + cw, cy + ch); ctx.lineTo(cx + cw, cy + ch - cornerSize); ctx.stroke();
+
+  // Print bed lines (build plate grid)
+  ctx.strokeStyle = '#00f0ff18';
+  ctx.lineWidth = 0.5;
+  for (let i = 1; i < 10; i++) {
+    const bedX = cx + (cw / 10) * i;
+    ctx.beginPath(); ctx.moveTo(bedX, cy + ch - 20); ctx.lineTo(bedX, cy + ch); ctx.stroke();
+  }
+  for (let i = 1; i < 4; i++) {
+    const bedY = cy + ch - 20 + (20 / 4) * i;
+    ctx.beginPath(); ctx.moveTo(cx, bedY); ctx.lineTo(cx + cw, bedY); ctx.stroke();
+  }
+  // Bed label
+  ctx.fillStyle = '#00f0ff44';
+  ctx.font = `${Math.floor(W * 0.022)}px 'Share Tech Mono', monospace`;
+  ctx.fillText('HEATED BED', cx + 4, cy + ch - 4);
+
+  // Draw printed layers (the growing object silhouette)
+  if (gameState === 'playing') {
+    const rows = Math.floor(buildProgress * 20);
+    const objW = cw * 0.55;
+    const objH = ch * 0.85;
+    const objX = cx + (cw - objW) / 2;
+    const objY = cy + ch - 20 - objH;
+
+    // Draw each completed layer row
+    for (let r = 0; r < rows; r++) {
+      const rowFrac = r / 20;
+      // Slight wobble for layer shift effect
+      const shiftX = Math.sin(r * 1.7 + currentLayer) * 1.5;
+      const rowH = objH / 20;
+      const py = objY + objH - (r + 1) * rowH;
+      const px = objX + shiftX;
+      const rowW = objW * (0.6 + 0.4 * Math.sin(rowFrac * Math.PI));
+      const rx = px + (objW - rowW) / 2;
+      const alpha = 0.3 + rowFrac * 0.5;
+      ctx.fillStyle = printColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.fillRect(rx, py, rowW, rowH - 0.5);
+      // Layer line
+      ctx.fillStyle = printColor + '66';
+      ctx.fillRect(rx, py, rowW, 0.5);
+    }
+
+    // Draw current layer being printed (animated)
+    if (rows < 20) {
+      const rowH = objH / 20;
+      const py = objY + objH - (rows + 1) * rowH;
+      const progress = (buildProgress * 20) % 1;
+      const rowW = objW * (0.6 + 0.4 * Math.sin((rows / 20) * Math.PI));
+      const rx = objX + (objW - rowW) / 2;
+      const alpha = 0.3 + (rows / 20) * 0.5;
+      ctx.fillStyle = printColor + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.fillRect(rx, py, rowW * progress, rowH - 0.5);
+      // Print head indicator
+      const headX = rx + rowW * progress;
+      const headY = py + rowH / 2;
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(headX, headY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw nozzle/print head
+    const headX = objX + objW / 2 + Math.sin(currentLayer * 0.5) * (objW * 0.3);
+    const headY = objY - 15 - Math.sin(t / 300) * 3;
+    // Nozzle cable
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(headX, headY);
+    ctx.lineTo(cx + cw / 2, cy - 5);
+    ctx.stroke();
+    // Nozzle body
+    ctx.fillStyle = '#888';
+    ctx.fillRect(headX - 6, headY - 10, 12, 14);
+    ctx.fillStyle = printColor;
+    ctx.fillRect(headX - 3, headY + 4, 6, 4);
+
+    // Layer counter on left side
+    ctx.fillStyle = '#00f0ff88';
+    ctx.font = `${Math.floor(W * 0.028)}px 'Share Tech Mono', monospace`;
+    ctx.fillText(`L:${currentLayer + 1}`, cx - 30, cy + ch * (1 - buildProgress) + 20);
+  }
+
+  // Draw problems
+  for (const p of problems) {
+    const pulse = 1 + Math.sin(p.pulsePhase) * 0.3;
+    const r = p.radius * pulse;
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r + 8, 0, Math.PI * 2);
+    ctx.fillStyle = p.type.color + '22';
+    ctx.fill();
+    // Ring
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = p.type.color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = p.type.color;
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Inner
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = p.type.color + 'aa';
+    ctx.fill();
+    // Icon
+    ctx.fillStyle = '#fff';
+    ctx.font = `${Math.floor(r * 0.9)}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.type.emoji, p.x, p.y);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // Draw particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw sparks + floating text
+  for (const s of sparks) {
+    ctx.globalAlpha = s.life;
+    if (s.isText) {
+      ctx.fillStyle = s.color;
+      ctx.font = `bold ${Math.floor(W * 0.04)}px 'Share Tech Mono', monospace`;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 12;
+      ctx.fillText(s.text, s.x, s.y);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'left';
+    } else {
+      ctx.fillStyle = s.color;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Success flash overlay
+  if (successFlash > 0.01) {
+    ctx.globalAlpha = successFlash * 0.2;
+    ctx.fillStyle = '#00ff88';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Status bar
+  ctx.fillStyle = '#0d1822';
+  ctx.fillRect(0, H - 18, W, 18);
+  ctx.fillStyle = '#00f0ff44';
+  ctx.font = `${Math.floor(W * 0.025)}px 'Share Tech Mono', monospace`;
+  const statusText = `${printObj}  |  Layer ${currentLayer + 1}/${maxLayers}  |  ${Math.floor(buildProgress * 100)}%`;
+  ctx.fillText(statusText, 8, H - 5);
+
+  // Progress bar at bottom
+  const barW = W * 0.5;
+  const barX = (W - barW) / 2;
+  const barY = H - 16;
+  ctx.fillStyle = '#00f0ff22';
+  ctx.fillRect(barX, barY, barW, 4);
+  ctx.fillStyle = '#00f0ff';
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 6;
+  ctx.fillRect(barX, barY, barW * buildProgress, 4);
+  ctx.shadowBlur = 0;
+
+  // Title watermark
+  ctx.fillStyle = '#ffffff08';
+  ctx.font = `bold ${Math.floor(W * 0.06)}px 'Share Tech Mono', monospace`;
+  ctx.fillText('LAYER OF FAITH', W / 2, H * 0.15);
+  ctx.font = `${Math.floor(W * 0.025)}px 'Share Tech Mono', monospace`;
+  ctx.fillText('3D PRINTING SIM', W / 2, H * 0.15 + 20);
+
+  ctx.restore();
+
+  // Film grain
+  if (grainCanvas) {
+    ctx.globalAlpha = 0.06;
+    ctx.drawImage(grainCanvas, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  // Vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, W*0.3, W/2, H/2, W*0.8);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Loop ───
+function loop(timestamp) {
+  const dt = timestamp - lastTime;
+  lastTime = timestamp;
+  update(dt);
+  draw(timestamp);
+  requestAnimationFrame(loop);
+}
+
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
