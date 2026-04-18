@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Thermal Runaway</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 5, 10, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  #overlay h1 {
+    color: #ff4488;
+    font-size: 2.8em;
+    text-shadow: 0 0 30px #ff448888;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  #overlay .subtitle {
+    color: #888;
+    font-size: 0.9em;
+    margin-bottom: 30px;
+    text-align: center;
+    padding: 0 20px;
+  }
+  #startBtn {
+    background: #ff4488;
+    color: #fff;
+    border: none;
+    padding: 16px 48px;
+    font-size: 1.2em;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    border-radius: 4px;
+    text-shadow: 0 0 10px #ff448888;
+    box-shadow: 0 0 20px #ff448844;
+    transition: transform 0.1s;
+  }
+  #startBtn:active { transform: scale(0.96); }
+  #overlay .instructions {
+    color: #555;
+    font-size: 0.75em;
+    margin-top: 24px;
+    text-align: center;
+    line-height: 1.8;
+    padding: 0 20px;
+  }
+  #gameCanvas {
+    display: block;
+    touch-action: none;
+  }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>THERMAL<br>RUNAWAY</h1>
+  <p class="subtitle">Defend the hotend from jams, clogs & heat creep</p>
+  <button id="startBtn">START PRINT</button>
+  <p class="instructions">
+    Tap a tower slot to place defenses<br>
+    💨 Fan = slows enemies<br>
+    ❄️ Heat Break = blocks heat creep<br>
+    ⚙️ Gear = slows ALL enemies in range<br>
+    Survive 10 layers to complete the print!
+  </p>
+</div>
+<canvas id="gameCanvas"></canvas>
+<script>
+// === GAME CONSTANTS ===
+const TILE = 48;
+const COLS = 12;
+const ROWS = 10;
+const SLOT_TYPES = [
+  { type: 'fan',   emoji: '💨', name: 'Cooling Fan',    cost: 15,  range: 90,  color: '#00ccff', slow: 0.4, duration: 0 },
+  { type: 'break', emoji: '❄️',  name: 'Heat Break',     cost: 25,  range: 75,  color: '#88ddff', slow: 0.0, duration: 5000 },
+  { type: 'gear',  emoji: '⚙️',  name: 'Planetary Gear', cost: 40,  range: 110, color: '#ffaa00', slow: 0.25, duration: 0 },
+];
+const ENEMY_TYPES = [
+  { name: 'Filament Jam',    emoji: '🟠', hp: 30,  speed: 0.7,  reward: 5,  color: '#ff8800', size: 10 },
+  { name: 'Heat Creep',      emoji: '🔥', hp: 60,  speed: 0.5,  reward: 8,  color: '#ff2200', size: 12 },
+  { name: 'Clog',            emoji: '⚫', hp: 100, speed: 0.35, reward: 12, color: '#444',    size: 14 },
+  { name: 'Thermal Runaway', emoji: '💥', hp: 180, speed: 0.5,  reward: 20, color: '#ff0055', size: 16 },
+];
+
+// === PATH (G-code style serpentine) ===
+const PATH_TILES = [];
+(function buildPath() {
+  for (let row = 0; row < ROWS; row++) {
+    if (row % 2 === 0) {
+      for (let col = 0; col < COLS; col++) PATH_TILES.push({ x: col, y: row });
+    } else {
+      for (let col = COLS - 1; col >= 0; col--) PATH_TILES.push({ x: col, y: row });
+    }
+  }
+})();
+const PATH_LEN = PATH_TILES.length;
+
+// Tower slot positions (adjacent to path)
+const SLOT_POSITIONS = [
+  {x:0,y:1},{x:2,y:0},{x:4,y:1},{x:6,y:0},{x:8,y:1},{x:10,y:0},{x:1,y:2},{x:3,y:3},{x:5,y:2},{x:7,y:3},{x:9,y:2},{x:11,y:3},
+  {x:0,y:4},{x:2,y:5},{x:4,y:4},{x:6,y:5},{x:8,y:4},{x:10,y:5},{x:1,y:6},{x:3,y:7},{x:5,y:6},{x:7,y:7},{x:9,y:6},{x:11,y:7},
+  {x:0,y:8},{x:2,y:9},{x:4,y:8},{x:6,y:9},{x:8,y:8},{x:10,y:9},
+];
+
+// === GAME STATE ===
+let canvas, ctx, W, H;
+let state = 'idle';
+let money = 50;
+let lives = 10;
+let layer = 1;
+let score = 0;
+let enemies = [];
+let towers = [];
+let projectiles = [];
+let pathIndex = 0;
+let spawnTimer = 0;
+let spawnInterval = 2800;
+let enemiesInLayer = 0;
+let enemiesSpawned = 0;
+let selectedSlot = -1;
+let selectedTowerType = 0;
+let lastTime = 0;
+let grainCanvas, grainCtx;
+let notifiedLayerComplete = false;
+let layerCompleteTimer = 0;
+
+// Enemy spawn weighting per layer
+function getEnemyPool() {
+  const p = Math.min(layer / 10, 1);
+  return [
+    { ...ENEMY_TYPES[0], hp: 30  + layer*4,  speed: 0.7  + p*0.1 },
+    { ...ENEMY_TYPES[1], hp: 60  + layer*8,  speed: 0.5  + p*0.05 },
+    { ...ENEMY_TYPES[2], hp: 100 + layer*12, speed: 0.35 + p*0.05 },
+    ...(layer >= 4 ? [{ ...ENEMY_TYPES[3], hp: 180 + layer*15, speed: 0.5 + p*0.08 }] : []),
+  ];
+}
+
+function enemiesPerLayer() {
+  return 6 + Math.floor(layer * 1.8);
+}
+
+// === GRAIN OVERLAY ===
+function initGrain() {
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = 256;
+  grainCanvas.height = 256;
+  grainCtx = grainCanvas.getContext('2d');
+}
+function drawGrain(alpha) {
+  if (!grainCtx) return;
+  const id = grainCtx.createImageData(256, 256);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 255 | 0;
+    d[i] = v; d[i+1] = v; d[i+2] = v; d[i+3] = (alpha * 255) | 0;
+  }
+  grainCtx.putImageData(id, 0, 0);
+  ctx.drawImage(grainCanvas, 0, 0, W, H);
+}
+
+// === SETUP ===
+function resize() {
+  canvas = document.getElementById('gameCanvas');
+  ctx = canvas.getContext('2d');
+  W = COLS * TILE;
+  H = ROWS * TILE;
+  canvas.width = W;
+  canvas.height = H;
+  // Scale to fit screen
+  const scale = Math.min(window.innerWidth / W, window.innerHeight / H, 2);
+  canvas.style.width = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+  initGrain();
+}
+
+// === PATH RENDERING ===
+function drawPath() {
+  // Draw G-code path
+  ctx.save();
+  for (let i = 0; i < PATH_TILES.length - 1; i++) {
+    const a = PATH_TILES[i], b = PATH_TILES[i+1];
+    const ax = a.x * TILE + TILE/2, ay = a.y * TILE + TILE/2;
+    const bx = b.x * TILE + TILE/2, by = b.y * TILE + TILE/2;
+    const grad = ctx.createLinearGradient(ax, ay, bx, by);
+    grad.addColorStop(0, '#1a3a2a');
+    grad.addColorStop(1, '#1a2a3a');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  // Draw path index markers (every 10%)
+  for (let i = 0; i <= 10; i++) {
+    const idx = Math.floor(i * PATH_LEN / 10);
+    const t = PATH_TILES[idx];
+    const cx = t.x * TILE + TILE/2, cy = t.y * TILE + TILE/2;
+    ctx.fillStyle = '#00ff8844';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Draw print head
+  if (pathIndex >= 0 && pathIndex < PATH_LEN) {
+    const head = PATH_TILES[Math.floor(pathIndex)];
+    const hx = head.x * TILE + TILE/2, hy = head.y * TILE + TILE/2;
+    // Glow
+    const grd = ctx.createRadialGradient(hx, hy, 0, hx, hy, 20);
+    grd.addColorStop(0, '#ff448888');
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.fillRect(hx-20, hy-20, 40, 40);
+    // Nozzle icon
+    ctx.fillStyle = '#ff4488';
+    ctx.beginPath();
+    ctx.arc(hx, hy, 10, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', hx, hy);
+  }
+  ctx.restore();
+}
+
+// === SLOT RENDERING ===
+function drawSlots() {
+  SLOT_POSITIONS.forEach((pos, i) => {
+    const sx = pos.x * TILE, sy = pos.y * TILE;
+    const tower = towers.find(t => t.slot === i);
+    ctx.strokeStyle = tower ? tower.type.color + '88' : '#333366';
+    ctx.lineWidth = tower ? 2 : 1;
+    ctx.strokeRect(sx+2, sy+2, TILE-4, TILE-4);
+
+    if (tower) {
+      const cx = sx + TILE/2, cy = sy + TILE/2;
+      // Range indicator
+      ctx.strokeStyle = tower.type.color + '22';
+      ctx.beginPath();
+      ctx.arc(cx, cy, tower.type.range, 0, Math.PI*2);
+      ctx.stroke();
+
+      // Tower body
+      ctx.fillStyle = tower.type.color + '44';
+      ctx.fillRect(sx+4, sy+4, TILE-8, TILE-8);
+      ctx.fillStyle = tower.type.color;
+      ctx.font = '18px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tower.type.emoji, cx, cy);
+    } else if (state === 'placing' && i === selectedSlot) {
+      const ttype = SLOT_TYPES[selectedTowerType];
+      ctx.fillStyle = ttype.color + '33';
+      ctx.fillRect(sx+2, sy+2, TILE-4, TILE-4);
+      ctx.strokeStyle = ttype.color + 'cc';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx+2, sy+2, TILE-4, TILE-4);
+    }
+  });
+}
+
+// === ENEMY RENDERING ===
+function drawEnemies() {
+  enemies.forEach(e => {
+    const tile = PATH_TILES[Math.min(Math.floor(e.pathPct * PATH_LEN), PATH_LEN-1)];
+    const ex = tile.x * TILE + TILE/2;
+    const ey = tile.y * TILE + TILE/2;
+
+    // Slow effect
+    if (e.slowed) {
+      ctx.fillStyle = '#00ccff22';
+      ctx.beginPath();
+      ctx.arc(ex, ey, e.type.size + 8, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Enemy body
+    ctx.fillStyle = e.type.color;
+    ctx.beginPath();
+    ctx.arc(ex, ey, e.type.size, 0, Math.PI*2);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#fff2';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Emoji
+    ctx.font = `${e.type.size * 1.6}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(e.type.emoji, ex, ey);
+
+    // HP bar
+    const bw = e.type.size * 2.5, bh = 4;
+    const bx = ex - bw/2, by = ey - e.type.size - 10;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = e.hp > e.type.hp * 0.3 ? '#00ff88' : '#ff4444';
+    ctx.fillRect(bx, by, bw * (e.hp / e.type.hp), bh);
+  });
+}
+
+// === TOWER SHOOTING ===
+function updateTowers(dt) {
+  towers.forEach(tower => {
+    tower.cooldown -= dt;
+    if (tower.cooldown > 0) return;
+
+    // Find target in range
+    let target = null;
+    let maxPct = -1;
+    const sx = SLOT_POSITIONS[tower.slot].x * TILE + TILE/2;
+    const sy = SLOT_POSITIONS[tower.slot].y * TILE + TILE/2;
+    enemies.forEach(e => {
+      const tile = PATH_TILES[Math.min(Math.floor(e.pathPct * PATH_LEN), PATH_LEN-1)];
+      const ex = tile.x * TILE + TILE/2;
+      const ey = tile.y * TILE + TILE/2;
+      const dist = Math.hypot(ex - sx, ey - sy);
+      if (dist <= tower.type.range && e.pathPct > maxPct) {
+        target = e;
+        maxPct = e.pathPct;
+      }
+    });
+
+    if (target) {
+      const tile = PATH_TILES[Math.min(Math.floor(target.pathPct * PATH_LEN), PATH_LEN-1)];
+      const tex = tile.x * TILE + TILE/2;
+      const tey = tile.y * TILE + TILE/2;
+      projectiles.push({
+        x: sx, y: sy, tx: tex, ty: tey,
+        target,
+        type: tower.type,
+        speed: 280,
+        alive: true,
+      });
+      tower.cooldown = tower.type.type === 'fan' ? 1200 : 800;
+    }
+  });
+}
+
+// === PROJECTILE UPDATE ===
+function updateProjectiles(dt) {
+  projectiles.forEach(p => {
+    if (!p.alive) return;
+    const dx = p.tx - p.x, dy = p.ty - p.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 10) {
+      p.alive = false;
+      if (p.target && enemies.includes(p.target)) {
+        const slowAmt = p.type.slow;
+        if (slowAmt > 0) {
+          p.target.slowed = true;
+          p.target.slowTimer = p.type.type === 'break' ? p.type.duration : 2000;
+          p.target.speed *= (1 - slowAmt);
+        }
+        p.target.hp -= p.type.type === 'gear' ? 8 : 12;
+        if (p.target.hp <= 0) {
+          money += p.target.type.reward;
+          score += p.target.type.reward * 10;
+          enemies.splice(enemies.indexOf(p.target), 1);
+        }
+      }
+    } else {
+      const spd = p.speed * dt / 1000;
+      p.x += (dx / dist) * spd;
+      p.y += (dy / dist) * spd;
+    }
+  });
+  projectiles = projectiles.filter(p => p.alive);
+}
+
+function drawProjectiles() {
+  projectiles.forEach(p => {
+    ctx.fillStyle = p.type.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff4';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+}
+
+// === ENEMY SPAWNING ===
+function spawnEnemy() {
+  const pool = getEnemyPool();
+  const weights = pool.map((_, i) => Math.max(0.1, 1 - i * 0.2));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  let chosen = pool[0];
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) { chosen = pool[i]; break; }
+  }
+  enemies.push({
+    type: chosen,
+    hp: chosen.hp,
+    pathPct: 0,
+    speed: chosen.speed,
+    slowed: false,
+    slowTimer: 0,
+  });
+  enemiesSpawned++;
+}
+
+// === ENEMY UPDATE ===
+function updateEnemies(dt) {
+  enemies.forEach(e => {
+    if (e.slowTimer > 0) {
+      e.slowTimer -= dt;
+      if (e.slowTimer <= 0) {
+        e.slowed = false;
+        e.speed = e.type.speed * (1 + (Math.min(layer/10, 1)) * 0.15);
+      }
+    }
+    e.pathPct += (e.speed * dt / 1000) / PATH_LEN;
+  });
+
+  // Remove enemies that finished the path
+  const finished = enemies.filter(e => e.pathPct >= 1);
+  finished.forEach(() => { lives--; });
+  enemies = enemies.filter(e => e.pathPct < 1);
+}
+
+// === HUD ===
+function drawHUD() {
+  ctx.fillStyle = '#0a0a0fbb';
+  ctx.fillRect(0, 0, W, 36);
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`LAYER ${layer}/10`, 8, 18);
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillText(`$${money}`, W/2 - 40, 18);
+  ctx.fillStyle = lives > 3 ? '#00ff88' : '#ff4444';
+  ctx.fillText(`❤️ ${lives}`, W - 70, 18);
+  ctx.fillStyle = '#aaa';
+  ctx.font = '11px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(`SCORE: ${score}`, W - 8, 18);
+}
+
+// === SHOP BAR (mobile friendly) ===
+function drawShop() {
+  const shopH = 72;
+  ctx.fillStyle = '#0a0a0fdd';
+  ctx.fillRect(0, H, W, shopH);
+
+  // Layer complete banner
+  if (state === 'layerComplete') {
+    ctx.fillStyle = '#00ff8877';
+    ctx.fillRect(0, H - 40, W, 40);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`LAYER ${layer - 1} COMPLETE! +$${layer * 10} bonus`, W/2, H - 20);
+    return;
+  }
+
+  ctx.fillStyle = '#888';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('PLACE TOWER:', 8, H + 6);
+
+  SLOT_TYPES.forEach((t, i) => {
+    const bx = 8 + i * (TILE + 10);
+    const by = H + 22;
+    const selected = (state === 'placing' && selectedTowerType === i);
+    ctx.strokeStyle = selected ? t.color : '#333';
+    ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeRect(bx, by, TILE, TILE - 4);
+    if (selected) {
+      ctx.fillStyle = t.color + '22';
+      ctx.fillRect(bx, by, TILE, TILE - 4);
+    }
+    ctx.font = '16px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(t.emoji, bx + TILE/2, by + (TILE-4)/2 - 4);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '9px Courier New';
+    ctx.fillText(`$${t.cost}`, bx + TILE/2, by + TILE - 12);
+  });
+
+  ctx.fillStyle = '#555';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText('TAP SLOT + TOWER to place', W - 8, H + 8);
+}
+
+// === GAME OVER ===
+function drawGameOver() {
+  ctx.fillStyle = '#0a0a0fee';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ff4488';
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PRINT FAILED!', W/2, H/2 - 30);
+  ctx.fillStyle = '#888';
+  ctx.font = '14px Courier New';
+  ctx.fillText(`Score: ${score}  |  Layer: ${layer}`, W/2, H/2 + 10);
+  ctx.fillText('Reload to try again', W/2, H/2 + 36);
+}
+
+// === VICTORY ===
+function drawVictory() {
+  ctx.fillStyle = '#0a0a0fee';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('PRINT COMPLETE!', W/2, H/2 - 30);
+  ctx.fillStyle = '#ffaa00';
+  ctx.font = '16px Courier New';
+  ctx.fillText(`Final Score: ${score}`, W/2, H/2 + 10);
+  ctx.fillStyle = '#888';
+  ctx.font = '12px Courier New';
+  ctx.fillText('Reload to play again', W/2, H/2 + 36);
+}
+
+// === MAIN LOOP ===
+function gameLoop(ts) {
+  const dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  // Background
+  ctx.fillStyle = '#080810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = '#111122';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, H); ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(W, y * TILE); ctx.stroke();
+  }
+
+  drawPath();
+  drawSlots();
+
+  if (state === 'playing') {
+    // Move print head along path
+    pathIndex += (dt / 1000) * 1.2;
+
+    // Spawn enemies
+    spawnTimer -= dt;
+    if (spawnTimer <= 0 && enemiesSpawned < enemiesPerLayer()) {
+      spawnEnemy();
+      spawnTimer = spawnInterval - Math.min(layer * 80, 1500);
+    }
+
+    // Check layer complete
+    if (enemiesSpawned >= enemiesPerLayer() && enemies.length === 0) {
+      if (layer >= 10) {
+        state = 'victory';
+      } else {
+        state = 'layerComplete';
+        layerCompleteTimer = 2000;
+        money += layer * 10;
+      }
+    }
+
+    updateEnemies(dt);
+    updateTowers(dt);
+    updateProjectiles(dt);
+    drawEnemies();
+    drawProjectiles();
+    drawHUD();
+  } else if (state === 'layerComplete') {
+    drawEnemies();
+    drawProjectiles();
+    drawHUD();
+    layerCompleteTimer -= dt;
+    if (layerCompleteTimer <= 0) {
+      layer++;
+      enemiesSpawned = 0;
+      pathIndex = 0;
+      state = 'playing';
+    }
+  } else if (state === 'gameover') {
+    drawGameOver();
+  } else if (state === 'victory') {
+    drawVictory();
+  }
+
+  drawShop();
+  drawGrain(0.04);
+
+  requestAnimationFrame(gameLoop);
+}
+
+// === INPUT HANDLING ===
+function getCanvasPos(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = (H + 72) / rect.height;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY,
+  };
+}
+
+function handleTap(clientX, clientY) {
+  const pos = getCanvasPos(clientX, clientY);
+
+  if (state === 'placing') {
+    // Try to place tower
+    if (selectedSlot >= 0 && money >= SLOT_TYPES[selectedTowerType].cost) {
+      if (!towers.find(t => t.slot === selectedSlot)) {
+        towers.push({
+          slot: selectedSlot,
+          type: SLOT_TYPES[selectedTowerType],
+          cooldown: 0,
+        });
+        money -= SLOT_TYPES[selectedTowerType].cost;
+      }
+    }
+    state = 'playing';
+    selectedSlot = -1;
+    return;
+  }
+
+  // Check shop tap
+  if (pos.y > H) {
+    const shopH = 72;
+    const relY = pos.y - H;
+    if (relY >= 22 && relY <= shopH - 4) {
+      SLOT_TYPES.forEach((t, i) => {
+        const bx = 8 + i * (TILE + 10);
+        if (pos.x >= bx && pos.x <= bx + TILE) {
+          if (money >= t.cost) {
+            selectedTowerType = i;
+            state = 'placing';
+            selectedSlot = -1;
+          }
+        }
+      });
+    }
+    return;
+  }
+
+  // Check slot tap
+  SLOT_POSITIONS.forEach((slotPos, i) => {
+    const sx = slotPos.x * TILE, sy = slotPos.y * TILE;
+    if (pos.x >= sx && pos.x <= sx + TILE && pos.y >= sy && pos.y <= sy + TILE) {
+      if (state === 'placing' && selectedSlot === i) {
+        state = 'playing';
+        selectedSlot = -1;
+      } else {
+        selectedSlot = i;
+        state = 'placing';
+      }
+    }
+  });
+}
+
+canvas = document.getElementById('gameCanvas');
+canvas.addEventListener('click', e => {
+  e.preventDefault();
+  handleTap(e.clientX, e.clientY);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  handleTap(t.clientX, t.clientY);
+}, { passive: false });
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('overlay').style.display = 'none';
+  resize();
+  state = 'playing';
+  requestAnimationFrame(ts => { lastTime = ts; gameLoop(ts); });
+});
+
+window.addEventListener('resize', () => {
+  if (state !== 'idle') resize();
+});
+
+resize();
+</script>
+</body>
+</html>
