@@ -1,198 +1,723 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snail vs Salt</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #2d5a2lag; font-family: 'Arial', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { background: #4a7c44; box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 5px solid #3e6639; }
-        #ui { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; text-shadow: 2px 2px 4px #000; }
-        #overlay { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.7); display: none; flex-direction: column;
-            justify-content: center; align-items: center; color: white; font-size: 2rem;
-        }
-        button { padding: 10px 20px; font-size: 1.5rem; cursor: pointer; margin-top: 20px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail vs Salt — THE RESURRECTION</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #gameCanvas {
+    display: block;
+    margin: 0 auto;
+  }
+  #ui {
+    position: absolute; top: 12px; left: 12px;
+    color: #a8dadc; font-size: 14px;
+    text-shadow: 0 0 8px #a8dadc88;
+    pointer-events: none; z-index: 10;
+  }
+  #ui h1 { font-size: 22px; letter-spacing: 3px; margin-bottom: 4px; }
+  #ui p { opacity: 0.7; font-size: 11px; }
+  #overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 {
+    color: #e63946; font-size: 36px; letter-spacing: 6px;
+    text-shadow: 0 0 20px #e6394688, 0 0 40px #e6394644;
+    margin-bottom: 8px;
+  }
+  #overlay .sub { color: #a8dadc; font-size: 14px; margin-bottom: 24px; }
+  #overlay button {
+    background: transparent; border: 2px solid #a8dadc;
+    color: #a8dadc; padding: 14px 36px; font-size: 18px;
+    font-family: 'Courier New', monospace; letter-spacing: 4px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  #overlay button:hover {
+    background: #a8dadc; color: #0a0a0a;
+    box-shadow: 0 0 20px #a8dadc88;
+  }
+  #mobile-controls {
+    display: none; position: absolute; bottom: 20px; left: 0;
+    width: 100%; z-index: 50;
+  }
+  .d-pad {
+    position: absolute; bottom: 20px; left: 20px;
+    width: 150px; height: 150px;
+  }
+  .d-btn {
+    position: absolute; width: 50px; height: 50px;
+    background: rgba(168,218,220,0.15); border: 1px solid rgba(168,218,220,0.3);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    color: #a8dadc; font-size: 20px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .d-btn:active { background: rgba(168,218,220,0.4); }
+  .d-up    { top: 0; left: 50px; }
+  .d-down  { bottom: 0; left: 50px; }
+  .d-left  { top: 50px; left: 0; }
+  .d-right { top: 50px; right: 0; }
+  #powerup-bar {
+    position: absolute; bottom: 12px; right: 12px;
+    color: #ffd166; font-size: 11px; text-align: right;
+    pointer-events: none; z-index: 10;
+  }
+</style>
 </head>
 <body>
-    <div id="ui">
-        <h1>Snail vs Salt</h1>
-        <p>Use Arrow Keys to move. Reach the Lettuce!</p>
-    </div>
-    <div id="overlay">
-        <div id="msg">GAME OVER</div>
-        <button onclick="resetGame()">Try Again</button>
-    </div>
-    <canvas id="gameCanvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const overlay = document.getElementById('overlay');
-        const msg = document.getElementById('margin-msg'); // placeholder
-        const msgText = document.querySelector('#overlay div:first-child');
+<div id="ui">
+  <h1>🐌 SNAIL VS SALT</h1>
+  <p>Reach the lettuce. Dodge pellets. Survive the crust.</p>
+  <p id="score-display">Score: 0 | Level: 1</p>
+</div>
 
-        canvas.width = 800;
-        canvas.height = 600;
+<div id="powerup-bar">
+  <div id="powerup-text"></div>
+</div>
 
-        let gameRunning = true;
-        let snail, lettuce, saltLineX, saltSpeed, obstacles, pellets, keys;
+<canvas id="gameCanvas"></canvas>
 
-        function resetGame() {
-            snail = { x: 50, y: 300, radius: 15, speed: 3, color: '#a8dadc' };
-            lettuce = { x: 750, y: 300, radius: 25, color: '#2ecc71' };
-            saltLineX = -50;
-            saltSpeed = 0.3;
-            obstacles = [];
-            pellets = [];
-            keys = {};
-            gameRunning = true;
-            overlay.style.display = 'none';
-            
-            // Seed initial obstacles
-            for(let i=0; i<6; i++) spawnObstacle();
-            
-            requestAnimationFrame(gameLoop);
-        }
+<div id="mobile-controls">
+  <div class="d-pad">
+    <div class="d-btn d-up" data-dir="up">▲</div>
+    <div class="d-btn d-down" data-dir="down">▼</div>
+    <div class="d-btn d-left" data-dir="left">◀</div>
+    <div class="d-btn d-right" data-dir="right">▶</div>
+  </div>
+</div>
 
-        window.addEventListener('keydown', e => keys[e.code] = true);
-        window.addEventListener('keyup', e => keys[e.code] = false);
+<div id="overlay">
+  <h2 id="end-title">SALTED</h2>
+  <div class="sub" id="end-sub">The crust claims another.</div>
+  <button onclick="resetGame()">REINCARNATE</button>
+</div>
 
-        function spawnObstacle() {
-            obstacles.push({
-                x: Math.random() * (canvas.width - 200) + 150,
-                y: Math.random() * (canvas.height - 100) + 50,
-                radius: 12,
-                color: '#333'
-            });
-        }
+<script>
+// ─── CONFIG ──────────────────────────────────────────────
+const CONFIG = {
+  canvasW: 800, canvasH: 600,
+  snailSpeed: 3.2,
+  initialSaltSpeed: 0.4,
+  saltAccel: 0.00015,
+  maxSaltSpeed: 3.5,
+  pelletSpawnRate: 0.04,
+  maxPellets: 40,
+  lettuceSpawnInterval: 18000,
+  powerupSpawnInterval: 12000,
+  difficultyInterval: 25000,
+};
 
-        function drawSnail(s) {
-            ctx.beginPath();
-            ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-            ctx.fillStyle = s.color;
-            ctx.fill();
-            // Shell
-            ctx.beginPath();
-            ctx.arc(s.x - 5, s.y - 5, s.radius * 0.8, 0, Math.PI * 2);
-            ctx.fillStyle = '#8d6e63';
-            ctx.fill();
-            ctx.closePath();
-        }
+// ─── CANVAS SETUP ────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const endTitle = document.getElementById('end-title');
+const endSub = document.getElementById('end-sub');
+const scoreDisplay = document.getElementById('score-display');
+const powerupText = document.getElementById('powerup-text');
+const mobileControls = document.getElementById('mobile-controls');
 
-        function drawLettuce(l) {
-            ctx.beginPath();
-            ctx.arc(l.x, l.y, l.radius, 0, Math.PI * 2);
-            ctx.fillStyle = l.color;
-            ctx.fill();
-            ctx.strokeStyle = '#1b5e20';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-            ctx.closePath();
-        }
+let W, H, scale;
 
-        function update() {
-            if (!gameRunning) return;
+function resize() {
+  const maxH = window.innerHeight;
+  const maxW = window.innerWidth;
+  scale = Math.min(maxW / CONFIG.canvasW, maxH / CONFIG.canvasH, 1);
+  canvas.width = CONFIG.canvasW * scale;
+  canvas.height = CONFIG.canvasH * scale;
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if ('ontouchstart' in window) mobileControls.style.display = 'block';
+}
+window.addEventListener('resize', resize);
+resize();
 
-            // Movement
-            if (keys['ArrowUp'] && snail.y > snail.radius) snail.y -= snail.speed;
-            if (keys['ArrowDown'] && snail.y < canvas.height - snail.radius) snail.y += snail.speed;
-            if (keys['ArrowLeft'] && snail.x > snail.radius) snail.x -= snail.speed;
-            if (keys['ArrayRight'] || keys['ArrowRight']) snail.x += snail.speed;
+// ─── AUDIO (Web Audio API) ──────────────────────────────
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, dur, vol=0.08, type='square') {
+  if (!audioCtx) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+function sfxMove() { playTone(220, 0.05, 0.02, 'sine'); }
+function sfxLettuce() {
+  playTone(523, 0.15, 0.1, 'sine');
+  setTimeout(() => playTone(659, 0.15, 0.1, 'sine'), 80);
+  setTimeout(() => playTone(784, 0.2, 0.1, 'sine'), 160);
+}
+function sfxDie() {
+  playTone(150, 0.5, 0.15, 'sawtooth');
+  playTone(80, 0.8, 0.1, 'square');
+}
+function sfxPowerup() {
+  playTone(880, 0.1, 0.08, 'sine');
+  setTimeout(() => playTone(1100, 0.1, 0.08, 'sine'), 60);
+  setTimeout(() => playTone(1320, 0.15, 0.08, 'sine'), 120);
+}
+function sfxLevelUp() {
+  [523,659,784,1047].forEach((f,i) => setTimeout(() => playTone(f, 0.2, 0.1, 'sine'), i*100));
+}
 
-            // Salt movement (the pressure)
-            saltLineX += saltSpeed;
-            saltSpeed += 0.0001; // Accelerating pressure
+// ─── GAME STATE ──────────────────────────────────────────
+let snail, lettuce, saltLineX, saltSpeed, obstacles, pellets;
+let particles, powerups, activePowerup, powerupTimer;
+let score, level, gameRunning, gameTime, lastLettuceSpawn, lastPowerupSpawn;
+let difficultyTimer, trail, screenShake;
 
-            // Salt particles (visuals)
-            if (Math.random() < 0.5) {
-                pellets.push({
-                    x: saltLineX,
-                    y: Math.random() * canvas.height,
-                    size: Math.random() * 3 + 1,
-                    life: 100
-                });
-            }
+function resetGame() {
+  initAudio();
+  overlay.classList.remove('show');
+  snail = { x: 80, y: CONFIG.canvasH/2, r: 14, speed: CONFIG.snailSpeed, angle: 0, shellHue: 30 };
+  lettuce = spawnLettuce();
+  saltLineX = -50;
+  saltSpeed = CONFIG.initialSaltSpeed;
+  obstacles = [];
+  pellets = [];
+  particles = [];
+  powerups = [];
+  activePowerup = null;
+  powerupTimer = 0;
+  score = 0; level = 1;
+  gameRunning = true;
+  gameTime = 0;
+  lastLettuceSpawn = 0;
+  lastPowerupSpawn = 0;
+  difficultyTimer = 0;
+  trail = [];
+  screenShake = { x: 0, y: 0, intensity: 0 };
+  overlay.style.display = 'none';
+  scoreDisplay.textContent = 'Score: 0 | Level: 1';
+  powerupText.textContent = '';
+  requestAnimationFrame(loop);
+}
 
-            // Check Salt Collision (Death)
-            if (snail.x < saltLineX) {
-                endGame("SALTED!");
-            }
+// ─── SPAWNING ────────────────────────────────────────────
+function spawnLettuce() {
+  return {
+    x: CONFIG.canvasW - 60 - Math.random() * 80,
+    y: 60 + Math.random() * (CONFIG.canvasH - 120),
+    r: 22, pulse: 0
+  };
+}
 
-            // Check Lettuce Collision (Win)
-            const distToLettuce = Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y);
-            if (distToLettuce < snail.radius + lettuce.radius) {
-                endGame("YOU REACHED THE LETTUCE!");
-            }
+function spawnPellet() {
+  const side = Math.random() < 0.3 ? 'top' : Math.random() < 0.5 ? 'left' : 'random';
+  let x, y, vx, vy;
+  if (side === 'top') {
+    x = saltLineX + 20 + Math.random() * 100;
+    y = -10;
+    vx = (Math.random() - 0.5) * 2;
+    vy = 1 + Math.random() * 2;
+  } else if (side === 'left') {
+    x = saltLineX + 10 + Math.random() * 80;
+    y = Math.random() * CONFIG.canvasH;
+    vx = 1 + Math.random() * 1.5;
+    vy = (Math.random() - 0.5) * 2;
+  } else {
+    x = saltLineX + Math.random() * 120;
+    y = Math.random() * CONFIG.canvasH;
+    vx = (Math.random() - 0.5) * 3;
+    vy = (Math.random() - 0.5) * 3;
+  }
+  return { x, y, r: 5 + Math.random() * 5, vx, vy, hue: 0, life: 999 };
+}
 
-            // Check Obstacle Collision (Death)
-            obstacles.forEach(obs => {
-                const dist = Math.hypot(snail.x - obs.x, snail.y - obs.y);
-                if (dist < snail.radius + obs.radius) {
-                    endGame("HIT A PELLET!");
-                }
-            });
+function spawnPowerup() {
+  const types = ['shield', 'slowmo', 'magnet', 'ghost'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  return {
+    x: saltLineX + 100 + Math.random() * (CONFIG.canvasW - saltLineX - 200),
+    y: 40 + Math.random() * (CONFIG.canvasH - 80),
+    r: 10, type, pulse: 0, glow: 0
+  };
+}
 
-            // Update pellets
-            for (let i = pellets.length - 1; i >= 0; i--) {
-                pellets[i].life--;
-                if (pellets[i].life <= 0) pellets.splice(i, 1);
-            }
-        }
+// ─── PARTICLES ───────────────────────────────────────────
+function emitParticles(x, y, count, color, speed=3) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * speed;
+    particles.push({
+      x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+      life: 40 + Math.random()*30, maxLife: 70,
+      r: 1 + Math.random()*3, color
+    });
+  }
+}
 
-        function endGame(text) {
-            gameRunning = false;
-            msgText.innerText = text;
-            overlay.style.display = 'flex';
-        }
+// ─── INPUT ───────────────────────────────────────────────
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true; if(gameRunning) initAudio(); });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+// Mobile D-pad
+document.querySelectorAll('.d-btn').forEach(btn => {
+  const dir = btn.dataset.dir;
+  const keyMap = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+  let interval;
+  const start = () => { keys[keyMap[dir]] = true; initAudio(); };
+  const stop = () => { keys[keyMap[dir]] = false; };
+  btn.addEventListener('touchstart', e => { e.preventDefault(); start(); interval = setInterval(start, 50); });
+  btn.addEventListener('touchend', e => { e.preventDefault(); stop(); clearInterval(interval); });
+  btn.addEventListener('mousedown', start);
+  btn.addEventListener('mouseup', stop);
+  btn.addEventListener('mouseleave', stop);
+});
 
-            // Draw Salt Area
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.fillRect(0, 0, saltLineX, canvas.height);
+// ─── UPDATE ──────────────────────────────────────────────
+function update(dt) {
+  if (!gameRunning) return;
+  gameTime += dt;
 
-            // Draw Salt line boundary
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 5;
-            ctx.beginPath();
-            ctx.moveTo(saltLineX, 0);
-            ctx.lineTo(saltLineX, canvas.height);
-            ctx.stroke();
+  // Snail movement
+  let dx = 0, dy = 0;
+  if (keys['ArrowUp'] || keys['KeyW']) dy = -1;
+  if (keys['ArrowDown'] || keys['KeyS']) dy = 1;
+  if (keys['ArrowLeft'] || keys['KeyA']) dx = -1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx = 1;
+  if (dx || dy) {
+    const len = Math.sqrt(dx*dx + dy*dy);
+    snail.x += (dx/len) * snail.speed;
+    snail.y += (dy/len) * snail.speed;
+    snail.angle = Math.atan2(dy, dx);
+    sfxMove();
+  }
 
-            // Draw Pellets
-            ctx.fillStyle = 'white';
-            pellets.forEach(p => {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            });
+  // Trail
+  if (dx || dy) {
+    trail.push({ x: snail.x, y: snail.y, life: 20 });
+  }
+  for (let i = trail.length - 1; i >= 0; i--) {
+    trail[i].life--;
+    if (trail[i].life <= 0) trail.splice(i, 1);
+  }
 
-            // Draw Obstacles
-            obstacles.forEach(obs => {
-                ctx.beginPath();
-                ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
-                ctx.fillStyle = obs.color;
-                ctx.fill();
-                ctx.strokeStyle = '#000';
-                ctx.lineWidth = 1;
-                ctx.stroke();
-            });
+  // Boundaries
+  snail.x = Math.max(snail.r, Math.min(CONFIG.canvasW - snail.r, snail.x));
+  snail.y = Math.max(snail.r, Math.min(CONFIG.canvasH - snail.r, snail.y));
 
-            drawLettuce(lettuce);
-            drawSnail(snail);
-        }
+  // Salt
+  saltLineX += saltSpeed;
+  saltSpeed = Math.min(CONFIG.maxSaltSpeed, saltSpeed + CONFIG.saltAccel);
 
-        function gameLoop() {
-            update();
-            draw();
-            if (gameRunning) requestAnimationFrame(gameLoop);
-        }
+  // Salt particles
+  if (Math.random() < 0.6) {
+    pellets.push({
+      x: saltLineX - Math.random()*5,
+      y: Math.random() * CONFIG.canvasH,
+      r: 1 + Math.random()*2,
+      vx: 0, vy: (Math.random()-0.5)*0.5,
+      hue: 0, life: 60 + Math.random()*40
+    });
+  }
 
-        resetGame();
-    </script>
+  // Obstacle pellets
+  if (pellets.length < CONFIG.maxPellets && Math.random() < CONFIG.pelletSpawnRate + level*0.005) {
+    const p = spawnPellet();
+    pellets.push(p);
+  }
+
+  // Lettuce respawn
+  if (gameTime - lastLettuceSpawn > CONFIG.lettuceSpawnInterval) {
+    lettuce = spawnLettuce();
+    lastLettuceSpawn = gameTime;
+  }
+
+  // Powerups
+  if (gameTime - lastPowerupSpawn > CONFIG.powerupSpawnInterval) {
+    powerups.push(spawnPowerup());
+    lastPowerupSpawn = gameTime;
+  }
+
+  // Difficulty ramp
+  difficultyTimer += dt;
+  if (difficultyTimer > CONFIG.difficultyInterval) {
+    difficultyTimer = 0;
+    level++;
+    scoreDisplay.textContent = `Score: ${score} | Level: ${level}`;
+    sfxLevelUp();
+    emitParticles(CONFIG.canvasW/2, CONFIG.canvasH/2, 30, '#ffd166', 5);
+  }
+
+  // ─── COLLISIONS ───
+  // Salt death
+  if (snail.x < saltLineX + 5) {
+    die('SALTED');
+    return;
+  }
+
+  // Lettuce pickup
+  const dL = Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y);
+  if (dL < snail.r + lettuce.r) {
+    score += level * 100;
+    scoreDisplay.textContent = `Score: ${score} | Level: ${level}`;
+    emitParticles(lettuce.x, lettuce.y, 25, '#2ecc71', 4);
+    sfxLettuce();
+    lettuce = spawnLettuce();
+    lastLettuceSpawn = gameTime;
+    // Push salt back slightly on lettuce pickup
+    saltLineX = Math.max(0, saltLineX - 30);
+  }
+
+  // Obstacle collision
+  const alive = !activePowerup || activePowerup.type !== 'ghost';
+  if (alive) {
+    for (const obs of obstacles) {
+      const d = Math.hypot(snail.x - obs.x, snail.y - obs.y);
+      if (d < snail.r + obs.r) {
+        die('HIT A PELLET');
+        return;
+      }
+    }
+  }
+
+  // Magnet: attract pellets toward snail
+  if (activePowerup && activePowerup.type === 'magnet') {
+    for (const p of pellets) {
+      const d = Math.hypot(snail.x - p.x, snail.y - p.y);
+      if (d < 200) {
+        p.x += (snail.x - p.x) * 0.02;
+        p.y += (snail.y - p.y) * 0.02;
+      }
+    }
+  }
+
+  // Update pellets
+  for (let i = pellets.length - 1; i >= 0; i--) {
+    const p = pellets[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0 || p.x > CONFIG.canvasW + 20 || p.y > CONFIG.canvasH + 20 || p.y < -20) {
+      pellets.splice(i, 1);
+    }
+  }
+
+  // Update powerups
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const pu = powerups[i];
+    pu.pulse += 0.05;
+    pu.glow = 0.5 + Math.sin(pu.pulse) * 0.5;
+    const d = Math.hypot(snail.x - pu.x, snail.y - pu.y);
+    if (d < snail.r + pu.r) {
+      activatePowerup(pu.type);
+      emitParticles(pu.x, pu.y, 15, '#ffd166', 3);
+      sfxPowerup();
+      powerups.splice(i, 1);
+    }
+  }
+
+  // Powerup timer
+  if (activePowerup) {
+    powerupTimer -= dt;
+    if (powerupTimer <= 0) {
+      activePowerup = null;
+      powerupText.textContent = '';
+    } else {
+      const labels = { shield: '🛡 SHIELD', slowmo: '⏳ SLOW-MO', magnet: '🧲 MAGNET', ghost: '👻 GHOST' };
+      powerupText.textContent = `${labels[activePowerup.type]}: ${(powerupTimer/1000).toFixed(1)}s`;
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.96;
+    p.vy *= 0.96;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Screen shake decay
+  if (screenShake.intensity > 0) {
+    screenShake.x = (Math.random()-0.5) * screenShake.intensity;
+    screenShake.y = (Math.random()-0.5) * screenShake.intensity;
+    screenShake.intensity *= 0.9;
+    if (screenShake.intensity < 0.1) screenShake.intensity = 0;
+  }
+
+  lettuce.pulse += 0.03;
+}
+
+function activatePowerup(type) {
+  activePowerup = { type, endTime: Date.now() + 8000 };
+  powerupTimer = 8000;
+  if (type === 'shield') {
+    emitParticles(snail.x, snail.y, 20, '#48cae4', 2);
+  }
+}
+
+function die(reason) {
+  gameRunning = false;
+  sfxDie();
+  emitParticles(snail.x, snail.y, 40, '#e63946', 5);
+  emitParticles(snail.x, snail.y, 20, '#ffd166', 3);
+  screenShake.intensity = 15;
+  endTitle.textContent = reason;
+  endSub.textContent = reason === 'SALTED'
+    ? 'The crust claims another.'
+    : 'A pellet got you. The salt never stops.';
+  overlay.classList.add('show');
+}
+
+// ─── DRAW ────────────────────────────────────────────────
+function draw() {
+  ctx.save();
+  ctx.translate(screenShake.x, screenShake.y);
+
+  // Background gradient (garden to wasteland)
+  const grad = ctx.createLinearGradient(0, 0, CONFIG.canvasW, 0);
+  const saltRatio = Math.max(0, Math.min(1, saltLineX / CONFIG.canvasW));
+  grad.addColorStop(0, '#2d5a2d');
+  grad.addColorStop(Math.max(0.05, saltRatio - 0.1), '#3a6b35');
+  grad.addColorStop(saltRatio, '#8b7355');
+  grad.addColorStop(1, '#c4b59a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CONFIG.canvasW, CONFIG.canvasH);
+
+  // Garden texture (left side)
+  ctx.globalAlpha = 0.3;
+  for (let i = 0; i < 30; i++) {
+    const gx = (i * 137.5) % (saltLineX - 10);
+    const gy = (i * 97.3) % CONFIG.canvasH;
+    if (gx > 10) {
+      ctx.fillStyle = i % 3 === 0 ? '#4a8c3f' : '#5a7c4f';
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, 3, 8, Math.random()*0.5, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Salt zone
+  const saltGrad = ctx.createLinearGradient(saltLineX - 30, 0, saltLineX + 30, 0);
+  saltGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  saltGrad.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+  saltGrad.addColorStop(1, 'rgba(255,255,255,0.05)');
+  ctx.fillStyle = saltGrad;
+  ctx.fillRect(saltLineX - 30, 0, 60, CONFIG.canvasH);
+
+  // Salt line boundary (glowing)
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(saltLineX, 0);
+  ctx.lineTo(saltLineX, CONFIG.canvasH);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Trail (slime)
+  for (const t of trail) {
+    ctx.globalAlpha = t.life / 20 * 0.3;
+    ctx.fillStyle = '#a8dadc';
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Pellets (obstacles)
+  for (const p of pellets) {
+    ctx.fillStyle = `hsl(${p.hue}, 10%, 85%)`;
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+
+  // Powerups
+  for (const pu of powerups) {
+    const colors = { shield: '#48cae4', slowmo: '#ffd166', magnet: '#e63946', ghost: '#c9b1ff' };
+    const c = colors[pu.type];
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 8 + pu.glow * 8;
+    ctx.fillStyle = c;
+    ctx.globalAlpha = 0.6 + pu.glow * 0.4;
+    ctx.beginPath();
+    // Diamond shape
+    ctx.moveTo(pu.x, pu.y - pu.r);
+    ctx.lineTo(pu.x + pu.r, pu.y);
+    ctx.lineTo(pu.x, pu.y + pu.r);
+    ctx.lineTo(pu.x - pu.r, pu.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  // Lettuce (pulsing)
+  const lp = 1 + Math.sin(lettuce.pulse) * 0.1;
+  ctx.shadowColor = '#2ecc71';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#2ecc71';
+  ctx.beginPath();
+  ctx.arc(lettuce.x, lettuce.y, lettuce.r * lp, 0, Math.PI*2);
+  ctx.fill();
+  // Leaf detail
+  ctx.fillStyle = '#27ae60';
+  ctx.beginPath();
+  ctx.ellipse(lettuce.x - 8, lettuce.y - 5, 6, 12, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(lettuce.x + 8, lettuce.y - 3, 5, 10, 0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Snail
+  ctx.save();
+  ctx.translate(snail.x, snail.y);
+
+  // Shield effect
+  if (activePowerup && activePowerup.type === 'shield') {
+    ctx.strokeStyle = '#48cae4';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#48cae4';
+    ctx.shadowBlur = 10;
+    ctx.globalAlpha = 0.4 + Math.sin(Date.now()/200)*0.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, snail.r + 8, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  // Ghost effect
+  if (activePowerup && activePowerup.type === 'ghost') {
+    ctx.globalAlpha = 0.4;
+  }
+
+  // Shell
+  const shellGrad = ctx.createRadialGradient(-3, -3, 0, 0, 0, snail.r);
+  shellGrad.addColorStop(0, '#a0785a');
+  shellGrad.addColorStop(1, '#6b4226');
+  ctx.fillStyle = shellGrad;
+  ctx.beginPath();
+  ctx.arc(-3, -3, snail.r * 0.85, 0, Math.PI*2);
+  ctx.fill();
+  // Shell spiral
+  ctx.strokeStyle = '#4a2c17';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI*4; a += 0.1) {
+    const sr = a * 1.2;
+    ctx.lineTo(Math.cos(a)*sr - 3, Math.sin(a)*sr - 3);
+  }
+  ctx.stroke();
+
+  // Body
+  ctx.fillStyle = '#a8dadc';
+  ctx.beginPath();
+  ctx.ellipse(0, 3, snail.r * 1.1, snail.r * 0.6, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eyes
+  const eyeX = Math.cos(snail.angle) * 5;
+  const eyeY = Math.sin(snail.angle) * 5;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(eyeX + 4, eyeY - 6, 4, 0, Math.PI*2);
+  ctx.arc(eyeX - 2, eyeY - 7, 3.5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#1a1a2e';
+  ctx.beginPath();
+  ctx.arc(eyeX + 5, eyeY - 6, 2, 0, Math.PI*2);
+  ctx.arc(eyeX - 1, eyeY - 7, 1.8, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * (p.life/p.maxLife), 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  // Level indicator on salt line
+  ctx.fillStyle = '#a8dadc';
+  ctx.globalAlpha = 0.5;
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(`SALT LINE → ${saltSpeed.toFixed(2)}/s`, saltLineX, 18);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ─── LOOP ────────────────────────────────────────────────
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min(50, time - lastTime);
+  lastTime = time;
+
+  update(dt);
+  draw();
+
+  if (gameRunning || particles.length > 0) {
+    requestAnimationFrame(loop);
+  }
+}
+
+// Start screen
+function showStart() {
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, CONFIG.canvasW, CONFIG.canvasH);
+  ctx.fillStyle = '#a8dadc';
+  ctx.textAlign = 'center';
+  ctx.font = '28px Courier New';
+  ctx.fillText('🐌 SNAIL VS SALT', CONFIG.canvasW/2, CONFIG.canvasH/2 - 40);
+  ctx.font = '14px Courier New';
+  ctx.globalAlpha = 0.7;
+  ctx.fillText('Arrow Keys / WASD to move', CONFIG.canvasW/2, CONFIG.canvasH/2 + 10);
+  ctx.fillText('Reach the lettuce. Dodge the pellets.', CONFIG.canvasW/2, CONFIG.canvasH/2 + 30);
+  ctx.fillText('The salt line never stops coming.', CONFIG.canvasW/2, CONFIG.canvasH/2 + 50);
+  ctx.globalAlpha = 1;
+  ctx.font = '16px Courier New';
+  ctx.fillStyle = '#2ecc71';
+  ctx.fillText('[ PRESS ANY KEY TO START ]', CONFIG.canvasW/2, CONFIG.canvasH/2 + 90);
+
+  const startHandler = () => {
+    window.removeEventListener('keydown', startHandler);
+    resetGame();
+  };
+  window.addEventListener('keydown', startHandler);
+}
+
+showStart();
+</script>
 </body>
 </html>
