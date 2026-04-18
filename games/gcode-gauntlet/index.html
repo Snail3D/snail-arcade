@@ -296,20 +296,23 @@ function drawBackground() {
 
 // Path
 function drawPath() {
-  if (pathPoints.length < 2) return;
+  if (!pathPoints || pathPoints.length < 2) return;
   const start = Math.max(0, Math.floor(pathIndex) - 5);
+  if (!pathPoints[start]) return;
   ctx.strokeStyle = 'rgba(0,245,212,0.3)';
   ctx.lineWidth = 3;
   ctx.setLineDash([6, 4]);
   ctx.beginPath();
   ctx.moveTo(pathPoints[start].x, pathPoints[start].y);
   for (let i = start + 1; i < Math.min(Math.floor(pathIndex) + 3, pathPoints.length); i++) {
+    if (!pathPoints[i]) continue;
     ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
   }
+
   ctx.stroke();
   ctx.setLineDash([]);
 
-  if (Math.floor(pathIndex) < pathPoints.length) {
+  if (Math.floor(pathIndex) < pathPoints.length && pathPoints[Math.floor(pathIndex)]) {
     const p = pathPoints[Math.floor(pathIndex)];
     const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 30);
     g.addColorStop(0, 'rgba(0,245,212,0.15)');
