@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Slicer Sweep</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Orbitron', monospace;
+    touch-action: none;
+  }
+  #wrap {
+    position: relative;
+    width: 100vmin;
+    height: 100vmin;
+    max-width: 600px;
+    max-height: 600px;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  #ui {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10,10,15,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(20px, 5vw, 32px);
+    color: #00ffff;
+    text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff;
+    letter-spacing: 3px;
+    text-align: center;
+  }
+  #overlay p {
+    color: #888;
+    font-size: clamp(9px, 2.5vw, 13px);
+    text-align: center;
+    max-width: 300px;
+    line-height: 1.6;
+  }
+  #overlay .subtitle {
+    color: #ff00ff;
+    font-size: clamp(10px, 2.5vw, 13px);
+    letter-spacing: 2px;
+  }
+  .btn {
+    pointer-events: all;
+    background: transparent;
+    border: 2px solid #00ffff;
+    color: #00ffff;
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(11px, 3vw, 15px);
+    padding: 10px 30px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+  .btn:hover, .btn:active {
+    background: #00ffff;
+    color: #0a0a0f;
+    box-shadow: 0 0 20px #00ffff;
+  }
+  #choices {
+    position: absolute;
+    bottom: 8px;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    padding: 0 8px;
+  }
+  #choices.show { opacity: 1; pointer-events: all; }
+  .choice-btn {
+    pointer-events: all;
+    background: rgba(0,255,255,0.08);
+    border: 1px solid #00ffff;
+    color: #00ffff;
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(7px, 2vw, 10px);
+    padding: 6px 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 70px;
+  }
+  .choice-btn:hover, .choice-btn:active {
+    background: rgba(0,255,255,0.25);
+    box-shadow: 0 0 10px #00ffff;
+  }
+  .choice-btn .cname { font-size: clamp(8px, 2.2vw, 11px); font-weight: 700; }
+  .choice-btn .cstats { font-size: clamp(6px, 1.8vw, 9px); color: #aaa; }
+  .choice-btn .cstr { color: #ff00ff; font-size: clamp(8px, 2vw, 11px); font-weight: 700; }
+  .choice-btn.good { border-color: #00ff88; color: #00ff88; }
+  .choice-btn.good .cstr { color: #00ff88; }
+  .choice-btn.bad { border-color: #ff4444; color: #ff4444; }
+  .choice-btn.bad .cstr { color: #ff4444; }
+  #status-bar {
+    position: absolute;
+    top: 8px; left: 8px; right: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    font-size: clamp(9px, 2.5vw, 12px);
+    color: #00ffff;
+    gap: 8px;
+  }
+  #status-bar .left { text-align: left; }
+  #status-bar .right { text-align: right; }
+  #status-bar .label { color: #555; font-size: 0.8em; }
+  #status-bar .val { text-shadow: 0 0 8px #00ffff; }
+  #lives { color: #ff00ff; text-shadow: 0 0 8px #ff00ff; letter-spacing: 4px; }
+  #level-req {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    font-size: clamp(10px, 3vw, 14px);
+    color: #ff00ff;
+    text-shadow: 0 0 10px #ff00ff;
+    text-align: center;
+    line-height: 1.8;
+    opacity: 0;
+    transition: opacity 0.4s;
+    letter-spacing: 1px;
+    background: rgba(10,10,15,0.7);
+    padding: 10px 16px;
+    border: 1px solid #ff00ff44;
+  }
+  #level-req.show { opacity: 1; }
+  #message {
+    position: absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    font-size: clamp(14px, 4vw, 22px);
+    font-weight: 900;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  #message.show { opacity: 1; }
+  #message.success { color: #00ff88; text-shadow: 0 0 20px #00ff88; }
+  #message.fail { color: #ff4444; text-shadow: 0 0 20px #ff4444; }
+  #message.info { color: #00ffff; text-shadow: 0 0 20px #00ffff; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div id="status-bar">
+      <div class="left">
+        <div class="label">LEVEL</div>
+        <div class="val" id="level-num">1</div>
+        <div class="label" style="margin-top:4px">SCORE</div>
+        <div class="val" id="score-num">0</div>
+      </div>
+      <div class="right">
+        <div class="label">LIVES</div>
+        <div class="val" id="lives">&#10084;&#10084;&#10084;</div>
+        <div class="label" style="margin-top:4px">BEST</div>
+        <div class="val" id="best-num">0</div>
+      </div>
+    </div>
+    <div id="level-req"></div>
+    <div id="message"></div>
+    <div id="choices"></div>
+    <div id="overlay">
+      <h1>SLICER SWEEP</h1>
+      <p class="subtitle">// INFILL SELECTION PROTOCOL //</p>
+      <p>Choose the right infill pattern for each 3D printed part. Meet the strength requirement within your budget. Wrong choices cause warping!</p>
+      <button class="btn" id="start-btn">START PRINT</button>
+    </div>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const choicesEl = document.getElementById('choices');
+const levelReqEl = document.getElementById('level-req');
+const messageEl = document.getElementById('message');
+const levelNumEl = document.getElementById('level-num');
+const scoreNumEl = document.getElementById('score-num');
+const livesEl = document.getElementById('lives');
+const bestNumEl = document.getElementById('best-num');
+const startBtn = document.getElementById('start-btn');
+
+const W = 600, H = 600;
+canvas.width = W; canvas.height = H;
+
+const CX = W / 2, CY = H / 2 - 20;
+const BED_SIZE = 320;
+const BED_X = CX - BED_SIZE / 2, BED_Y = CY - BED_SIZE / 2;
+
+// Infill patterns
+const PATTERNS = [
+  { id: 'lines',   name: 'LINES',   str: 40, time: 1.0, mat: 1.0,  color: '#00ffff' },
+  { id: 'grid',    name: 'GRID',    str: 60, time: 1.3, mat: 1.2,  color: '#00ff88' },
+  { id: 'tri',     name: 'TRI',     str: 75, time: 1.6, mat: 1.4,  color: '#ffff00' },
+  { id: 'cubic',   name: 'CUBIC',   str: 85, time: 2.0, mat: 1.7,  color: '#ff8800' },
+  { id: 'gyroid',  name: 'GYROID',  str: 92, time: 2.5, mat: 2.0,  color: '#ff00ff' },
+];
+
+// Part shapes (proportional sizes on bed)
+const SHAPES = [
+  { name: 'Cube',        w: 0.35, h: 0.35, d: 0.35 },
+  { name: 'Bridge',      w: 0.55, h: 0.12, d: 0.30 },
+  { name: 'Cylinder',   w: 0.30, h: 0.45, d: 0.30 },
+  { name: 'Bracket',     w: 0.40, h: 0.40, d: 0.20 },
+  { name: 'Gear',        w: 0.38, h: 0.38, d: 0.15 },
+  { name: 'Tower',       w: 0.18, h: 0.55, d: 0.18 },
+  { name: 'Spool',       w: 0.32, h: 0.32, d: 0.45 },
+  { name: 'Frame',       w: 0.50, h: 0.50, d: 0.12 },
+];
+
+// Levels — required strength and budgets
+const LEVELS = [
+  { req: 38, time: 3.5, mat: 3.0, shape: 0 },
+  { req: 42, time: 3.8, mat: 3.2, shape: 1 },
+  { req: 55, time: 4.2, mat: 3.5, shape: 2 },
+  { req: 60, time: 4.5, mat: 3.8, shape: 3 },
+  { req: 70, time: 5.0, mat: 4.0, shape: 4 },
+  { req: 75, time: 5.5, mat: 4.5, shape: 5 },
+  { req: 80, time: 5.8, mat: 4.8, shape: 6 },
+  { req: 85, time: 6.2, mat: 5.0, shape: 7 },
+  { req: 88, time: 6.5, mat: 5.5, shape: 0 },
+  { req: 90, time: 7.0, mat: 5.8, shape: 3 },
+];
+
+let state = 'menu';
+let level = 0, score = 0, lives = 3, best = 0;
+let choiceMade = false, chosenPattern = null;
+let printProgress = 0, printDuration = 0;
+let printPhase = 'idle'; // idle, printing, done, fail
+let partStrength = 0;
+let infillDrawn = [];
+let frame = 0;
+let grainOff = 0;
+
+// Load best
+const savedBest = localStorage.getItem('slicer-sweep-best');
+if (savedBest) best = parseInt(savedBest);
+bestNumEl.textContent = best;
+
+function pickChoices() {
+  const lv = LEVELS[level % LEVELS.length];
+  // Pick 3 patterns: one that meets req & budget, one too weak, one too expensive
+  const valid = PATTERNS.filter(p => p.str >= lv.req && p.time <= lv.time && p.mat <= lv.mat);
+  const weak = PATTERNS.filter(p => p.str < lv.req);
+  const exp = PATTERNS.filter(p => p.str >= lv.req && (p.time > lv.time || p.mat > lv.mat));
+  
+  let opts = [];
+  if (valid.length > 0) opts.push(valid[Math.floor(Math.random() * valid.length)]);
+  // Add a too-weak one
+  if (weak.length > 0) opts.push(weak[Math.floor(Math.random() * weak.length)]);
+  // Add a too-expensive one
+  if (exp.length > 0) opts.push(exp[Math.floor(Math.random() * exp.length)]);
+  
+  // Fill to 3 if needed
+  while (opts.length < 3) {
+    const r = PATTERNS[Math.floor(Math.random() * PATTERNS.length)];
+    if (!opts.includes(r)) opts.push(r);
+  }
+  
+  // Shuffle
+  opts.sort(() => Math.random() - 0.5);
+  return opts;
+}
+
+let currentChoices = [];
+
+function showChoices() {
+  currentChoices = pickChoices();
+  choicesEl.innerHTML = '';
+  currentChoices.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    const lv = LEVELS[level % LEVELS.length];
+    if (p.str >= lv.req && p.time <= lv.time && p.mat <= lv.mat) btn.classList.add('good');
+    else if (p.str < lv.req) btn.classList.add('bad');
+    btn.innerHTML = `<span class="cname" style="color:${p.color}">${p.name}</span><span class="cstr">${p.str}%</span><span class="cstats">${p.time.toFixed(1)}s / ${p.mat.toFixed(1)}m</span>`;
+    btn.addEventListener('click', () => selectChoice(p));
+    choicesEl.appendChild(btn);
+  });
+  choicesEl.classList.add('show');
+}
+
+function selectChoice(p) {
+  if (choiceMade) return;
+  choiceMade = true;
+  chosenPattern = p;
+  choicesEl.classList.remove('show');
+  startPrint();
+}
+
+function startPrint() {
+  const lv = LEVELS[level % LEVELS.length];
+  const success = chosenPattern.str >= lv.req && chosenPattern.time <= lv.time && chosenPattern.mat <= lv.mat;
+  
+  if (success) {
+    printPhase = 'printing';
+    printProgress = 0;
+    const base = 2.0;
+    printDuration = base + chosenPattern.time * 0.8;
+    partStrength = chosenPattern.str;
+    infillDrawn = [];
+  } else {
+    // Fail immediately with dramatic effect
+    printPhase = 'fail';
+    printProgress = 0;
+    printDuration = 1.5;
+    partStrength = chosenPattern.str;
+    infillDrawn = [];
+  }
+}
+
+function showMessage(text, cls, duration) {
+  messageEl.textContent = text;
+  messageEl.className = 'show ' + cls;
+  setTimeout(() => { messageEl.className = ''; }, duration || 1200);
+}
+
+function showLevelReq() {
+  const lv = LEVELS[level % LEVELS.length];
+  const shape = SHAPES[lv.shape];
+  levelReqEl.innerHTML = `REQUIRED: ${lv.req}% STRENGTH<br>TIME BUDGET: ${lv.time.toFixed(1)}s &nbsp; MATERIAL: ${lv.mat.toFixed(1)}m<br>PART: ${shape.name.toUpperCase()}`;
+  levelReqEl.classList.add('show');
+  setTimeout(() => { levelReqEl.classList.remove('show'); }, 2500);
+}
+
+function updateUI() {
+  levelNumEl.textContent = level + 1;
+  scoreNumEl.textContent = score;
+  const hearts = '&#10084;'.repeat(lives) + '&#9829;'.repeat(Math.max(0, 3 - lives));
+  livesEl.innerHTML = lives > 0 ? '&#10084;'.repeat(lives) + (lives < 3 ? '<span style="opacity:0.3">&#10084;&#10084;&#10084;</span>'.slice(lives * 10) : '') : '<span style="color:#333">&#10084;&#10084;&#10084;</span>';
+  // Better hearts display:
+  livesEl.innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    const s = document.createElement('span');
+    s.innerHTML = i < lives ? '&#10084;' : '<span style="opacity:0.2">&#10084;</span>';
+    livesEl.appendChild(s);
+  }
+  bestNumEl.textContent = best;
+}
+
+function drawInfillPattern(pattern, progress, shape) {
+  const sw = shape.w * BED_SIZE, sh = shape.h * BED_SIZE;
+  const sx = CX - sw / 2, sy = CY - sh / 2;
+  const cols = 10, rows = 10;
+  const cellW = sw / cols, cellH = sh / rows;
+  const totalCells = cols * rows;
+  const drawnCells = Math.floor(totalCells * progress);
+  const alpha = 0.6 + 0.4 * Math.sin(frame * 0.1);
+  
+  ctx.save();
+  ctx.strokeStyle = pattern.color;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = alpha;
+  
+  let cellIdx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (cellIdx >= drawnCells) break;
+      const cx = sx + c * cellW + cellW / 2;
+      const cy = sy + r * cellH + cellH / 2;
+      
+      ctx.beginPath();
+      if (pattern.id === 'lines') {
+        ctx.moveTo(sx + c * cellW, cy);
+        ctx.lineTo(sx + (c + 1) * cellW, cy);
+      } else if (pattern.id === 'grid') {
+        ctx.moveTo(sx + c * cellW, cy);
+        ctx.lineTo(sx + (c + 1) * cellW, cy);
+        ctx.moveTo(cx, sy + r * cellH);
+        ctx.lineTo(cx, sy + (r + 1) * cellH);
+      } else if (pattern.id === 'tri') {
+        ctx.moveTo(cx, sy + r * cellH);
+        ctx.lineTo(sx + (c + 1) * cellW, sy + (r + 1) * cellH);
+        ctx.lineTo(sx + c * cellW, sy + (r + 1) * cellH);
+        ctx.closePath();
+      } else if (pattern.id === 'cubic') {
+        const cx2 = sx + c * cellW, cy2 = sy + r * cellH;
+        ctx.rect(cx2 + 2, cy2 + 2, cellW - 4, cellH - 4);
+      } else if (pattern.id === 'gyroid') {
+        const cx2 = sx + c * cellW, cy2 = sy + r * cellH;
+        ctx.moveTo(cx2, cy2);
+        ctx.lineTo(cx2 + cellW, cy2 + cellH);
+        ctx.moveTo(cx2 + cellW, cy2);
+        ctx.lineTo(cx2, cy2 + cellH);
+      }
+      ctx.stroke();
+      cellIdx++;
+    }
+  }
+  ctx.restore();
+}
+
+function drawPart(shape, alpha) {
+  const sw = shape.w * BED_SIZE, sh = shape.h * BED_SIZE;
+  const sx = CX - sw / 2, sy = CY - sh / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  
+  // Draw isometric-ish block
+  const depth = Math.min(sw, sh) * 0.4;
+  const topC = '#1a2a3a';
+  const leftC = '#0d1a26';
+  const rightC = '#142232';
+  
+  // Top face
+  ctx.fillStyle = topC;
+  ctx.beginPath();
+  ctx.moveTo(CX - sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.lineTo(CX - sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Left face
+  ctx.fillStyle = leftC;
+  ctx.beginPath();
+  ctx.moveTo(CX - sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX - sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.lineTo(CX - sw / 2, CY + sh / 2 + depth * 0.5);
+  ctx.lineTo(CX - sw / 2, CY - sh / 2 + depth * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Right face
+  ctx.fillStyle = rightC;
+  ctx.beginPath();
+  ctx.moveTo(CX + sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY + sh / 2 + depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY - sh / 2 + depth * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Draw glow border
+  ctx.strokeStyle = '#00ffff';
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(CX - sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY - sh / 2 - depth * 0.5);
+  ctx.lineTo(CX + sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.lineTo(CX - sw / 2, CY + sh / 2 - depth * 0.5);
+  ctx.closePath();
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
+function drawPrintBed() {
+  // Bed background
+  ctx.fillStyle = '#080c10';
+  ctx.fillRect(BED_X, BED_Y, BED_SIZE, BED_SIZE);
+  
+  // Grid lines
+  ctx.strokeStyle = '#0a1a2a';
+  ctx.lineWidth = 1;
+  const gridN = 16;
+  for (let i = 0; i <= gridN; i++) {
+    const gx = BED_X + i * BED_SIZE / gridN;
+    const gy = BED_Y + i * BED_SIZE / gridN;
+    ctx.beginPath(); ctx.moveTo(gx, BED_Y); ctx.lineTo(gx, BED_Y + BED_SIZE); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(BED_X, gy); ctx.lineTo(BED_X + BED_SIZE, gy); ctx.stroke();
+  }
+  
+  // Bed border
+  ctx.strokeStyle = '#00ffff33';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(BED_X, BED_Y, BED_SIZE, BED_SIZE);
+  
+  // Corner markers
+  const cm = 12;
+  ctx.strokeStyle = '#00ffff';
+  ctx.lineWidth = 2;
+  [[BED_X, BED_Y], [BED_X + BED_SIZE, BED_Y], [BED_X, BED_Y + BED_SIZE], [BED_X + BED_SIZE, BED_Y + BED_SIZE]].forEach(([ox, oy]) => {
+    const sx = ox === BED_X ? 1 : -1;
+    const sy = oy === BED_Y ? 1 : -1;
+    ctx.beginPath();
+    ctx.moveTo(ox + sx * cm, oy); ctx.lineTo(ox, oy); ctx.lineTo(ox, oy + sy * cm);
+    ctx.stroke();
+  });
+}
+
+function drawNozzle(x, y, active) {
+  ctx.save();
+  if (active) {
+    ctx.shadowColor = '#ff8800';
+    ctx.shadowBlur = 15;
+  }
+  ctx.fillStyle = active ? '#ff8800' : '#444';
+  ctx.beginPath();
+  ctx.arc(x, y, active ? 6 : 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawProgressBar() {
+  const bx = BED_X, by = BED_Y + BED_SIZE + 8, bw = BED_SIZE, bh = 8;
+  ctx.fillStyle = '#0a1a2a';
+  ctx.fillRect(bx, by, bw, bh);
+  
+  const fill = bw * printProgress;
+  const col = printPhase === 'fail' ? '#ff4444' : chosenPattern ? chosenPattern.color : '#00ffff';
+  ctx.fillStyle = col;
+  ctx.fillRect(bx, by, fill, bh);
+  
+  ctx.strokeStyle = '#00ffff33';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, bw, bh);
+}
+
+function drawGrain() {
+  grainOff = (grainOff + 1) % 100;
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  for (let i = 0; i < 300; i++) {
+    const gx = (Math.sin(i * 123.45 + grainOff * 0.1) * 0.5 + 0.5) * W;
+    const gy = (Math.cos(i * 67.89 + grainOff * 0.07) * 0.5 + 0.5) * H;
+    ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+    ctx.fillRect(gx, gy, 1, 1);
+  }
+  ctx.restore();
+}
+
+function drawInfo() {
+  if (printPhase !== 'printing' && printPhase !== 'fail') return;
+  const lv = LEVELS[level % LEVELS.length];
+  const pattern = chosenPattern;
+  if (!pattern) return;
+  
+  const px = BED_X + BED_SIZE + 10;
+  const py = BED_Y + 10;
+  
+  ctx.font = '10px Orbitron';
+  ctx.fillStyle = '#00ffff88';
+  ctx.fillText(`STRENGTH: ${pattern.str}%`, px, py);
+  ctx.fillText(`TIME: ${pattern.time.toFixed(1)}s / ${lv.time.toFixed(1)}s`, px, py + 16);
+  ctx.fillText(`MATERIAL: ${pattern.mat.toFixed(1)}m / ${lv.mat.toFixed(1)}m`, px, py + 32);
+  
+  if (pattern.str >= lv.req) {
+    ctx.fillStyle = '#00ff88';
+    ctx.fillText('✓ STRENGTH OK', px, py + 50);
+  } else {
+    ctx.fillStyle = '#ff4444';
+    ctx.fillText('✗ TOO WEAK', px, py + 50);
+  }
+}
+
+function gameLoop() {
+  frame++;
+  ctx.clearRect(0, 0, W, H);
+  
+  // Background
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  
+  drawPrintBed();
+  
+  if (state === 'playing') {
+    const lv = LEVELS[level % LEVELS.length];
+    const shape = SHAPES[lv.shape];
+    
+    drawPart(shape, 0.8);
+    
+    if (printPhase === 'printing' || printPhase === 'fail') {
+      drawInfillPattern(chosenPattern, printProgress, shape);
+      
+      // Nozzle position
+      const sw = shape.w * BED_SIZE, sh = shape.h * BED_SIZE;
+      const nozx = CX - sw / 2 + (sw * Math.min(printProgress * 2, 1));
+      const nozy = CY - sh / 2 + (sh * Math.min(Math.max(0, printProgress * 2 - 1), 1));
+      drawNozzle(nozx, nozy, printPhase === 'printing');
+      
+      drawProgressBar();
+      drawInfo();
+      
+      if (printPhase === 'fail' && printProgress >= 1) {
+        // Shake / warp effect
+        if (Math.random() > 0.5) {
+          ctx.save();
+          ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
+          ctx.restore();
+        }
+      }
+    }
+  }
+  
+  drawGrain();
+  
+  // Vignette
+  const grad = ctx.createRadialGradient(CX, CY, H * 0.3, CX, CY, H * 0.7);
+  grad.addColorStop(0, 'transparent');
+  grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  requestAnimationFrame(gameLoop);
+}
+
+let lastTime = 0;
+function update(ts) {
+  const dt = (ts - lastTime) / 1000;
+  lastTime = ts;
+  
+  if (state === 'playing' && (printPhase === 'printing' || printPhase === 'fail')) {
+    printProgress += dt / printDuration;
+    if (printProgress >= 1) {
+      printProgress = 1;
+      if (printPhase === 'printing') {
+        printPhase = 'done';
+        const lv = LEVELS[level % LEVELS.length];
+        const bonus = Math.round(chosenPattern.str * 10);
+        score += bonus;
+        if (score > best) {
+          best = score;
+          localStorage.setItem('slicer-sweep-best', best);
+        }
+        updateUI();
+        showMessage(`+${bonus} PRINTED!`, 'success');
+        setTimeout(() => {
+          level++;
+          choiceMade = false;
+          chosenPattern = null;
+          printPhase = 'idle';
+          updateUI();
+          showLevelReq();
+          showChoices();
+        }, 2000);
+      } else {
+        printPhase = 'done_fail';
+        lives--;
+        updateUI();
+        showMessage('WARPED!', 'fail');
+        setTimeout(() => {
+          if (lives <= 0) {
+            state = 'gameover';
+            overlay.classList.remove('hidden');
+            overlay.querySelector('h1').textContent = 'PRINT FAILED';
+            overlay.querySelector('p.subtitle').textContent = `// FINAL SCORE: ${score} //`;
+            overlay.querySelector('p:not(.subtitle)').textContent = `Level ${level + 1} reached. Your parts kept warping. Recalibrate and try again!`;
+            startBtn.textContent = 'RETRY';
+          } else {
+            choiceMade = false;
+            chosenPattern = null;
+            printPhase = 'idle';
+            showChoices();
+          }
+        }, 2000);
+      }
+    }
+  }
+}
+
+function gameLoop2(ts) {
+  update(ts);
+  setTimeout(() => requestAnimationFrame(gameLoop2), 1000 / 60);
+}
+
+function startGame() {
+  if (state === 'gameover') {
+    level = 0; score = 0; lives = 3;
+  }
+  state = 'playing';
+  choiceMade = false;
+  chosenPattern = null;
+  printPhase = 'idle';
+  overlay.classList.add('hidden');
+  updateUI();
+  showLevelReq();
+  setTimeout(() => showChoices(), 500);
+}
+
+startBtn.addEventListener('click', startGame);
+
+updateUI();
+requestAnimationFrame(gameLoop2);
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
