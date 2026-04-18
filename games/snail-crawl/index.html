@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Crawl</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a12;
+  display: flex; justify-content: center; align-items: center;
+  min-height: 100vh; overflow: hidden;
+  font-family: 'Press Start 2P', monospace;
+}
+canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+#overlay {
+  position: fixed; inset: 0;
+  background: rgba(6, 6, 18, 0.95);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  gap: 20px; z-index: 10;
+}
+#overlay h1 {
+  color: #00ffcc;
+  font-size: clamp(16px, 4vw, 32px);
+  text-shadow: 0 0 20px #00ffcc88;
+  text-align: center;
+  line-height: 1.6;
+}
+#overlay .subtitle {
+  color: #ff44aa;
+  font-size: clamp(8px, 2vw, 14px);
+  text-align: center;
+  line-height: 1.8;
+}
+#startBtn {
+  background: linear-gradient(135deg, #00ffcc, #00ccaa);
+  color: #0a0a12;
+  border: none;
+  padding: 14px 28px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(10px, 2.5vw, 16px);
+  cursor: pointer;
+  border-radius: 4px;
+  box-shadow: 0 0 20px #00ffcc66;
+  transition: transform 0.1s;
+}
+#startBtn:hover { transform: scale(1.05); }
+#startBtn:active { transform: scale(0.97); }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <h1>🐌 SNAIL CRAWL</h1>
+  <p class="subtitle">Guide your snail through the garden!<br>Avoid SALT · BEETLES · BIRDS<br>Collect LETTUCE for bonus points</p>
+  <button id="startBtn">START</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+// ─── Canvas Setup ───────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let W, H;
+function resize() {
+  const s = Math.min(window.innerWidth, window.innerHeight * 1.2);
+  W = canvas.width = Math.floor(s);
+  H = canvas.height = Math.floor(s * 0.75);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Game State ─────────────────────────────────────────────────
+let state = 'menu'; // menu | playing | gameover
+let score = 0, lives = 3, distance = 0;
+let speed = 3;
+let frame = 0;
+let scrollX = 0;
+
+// ─── Snail ──────────────────────────────────────────────────────
+const snail = {
+  x: 0, y: 0, w: 0, h: 0,
+  vy: 0, grounded: false,
+  trail: [], trailTimer: 0
+};
+
+// ─── Obstacles & Items ──────────────────────────────────────────
+let obstacles = [];
+let lettuce = [];
+let particles = [];
+let clouds = [];
+let groundTiles = [];
+
+// ─── Input ───────────────────────────────────────────────────────
+let keys = { left: false, right: false, up: false };
+let touches = [];
+
+function touchHandler(e) {
+  e.preventDefault();
+  touches = [];
+  for (let t of e.touches) touches.push({ x: t.clientX, y: t.clientY });
+  // Also trigger keyboard equivalents
+  if (e.type === 'touchstart' || e.type === 'touchmove') {
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight * 0.7;
+    if (touches.length > 0) {
+      const tx = touches[0].x;
+      if (tx < cx * 0.6) { keys.left = true; keys.right = false; }
+      else if (tx > cx * 1.4) { keys.right = true; keys.left = false; }
+      else { keys.left = false; keys.right = false; }
+    }
+    // Jump on top area tap
+    if (touches[0].y < window.innerHeight * 0.4) keys.up = true;
+  }
+}
+function touchEnd(e) { keys.left = false; keys.right = false; keys.up = false; touches = []; }
+canvas.addEventListener('touchstart', touchHandler, { passive: false });
+canvas.addEventListener('touchmove', touchHandler, { passive: false });
+canvas.addEventListener('touchend', touchEnd);
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.up = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') keys.up = false;
+});
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function rand(a, b) { return a + Math.random() * (b - a); }
+function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+function rects(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+function drawSnail(x, y, w, h, dir) {
+  // Shell
+  ctx.fillStyle = '#c4713a';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.55, y + h * 0.55, w * 0.38, h * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Shell spiral
+  ctx.strokeStyle = '#8B4513';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let a = 0; a < 4 * Math.PI; a += 0.2) {
+    const r = a * 1.8;
+    const sx = x + w * 0.55 + Math.cos(a) * r * 0.18 * w;
+    const sy = y + h * 0.55 + Math.sin(a) * r * 0.18 * h;
+    if (a === 0) ctx.moveTo(sx, sy);
+    else ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+  // Body / foot
+  ctx.fillStyle = '#f5deb3';
+  const footY = y + h * 0.72;
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.42, footY + h * 0.1, w * 0.42, h * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Head
+  const headX = dir > 0 ? x + w * 0.82 : x + w * 0.02;
+  ctx.fillStyle = '#f5deb3';
+  ctx.beginPath();
+  ctx.ellipse(headX, y + h * 0.58, w * 0.14, h * 0.12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Eye stalks
+  const stalkX = headX;
+  for (let i = -1; i <= 1; i += 2) {
+    ctx.strokeStyle = '#f5deb3';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(stalkX, y + h * 0.52);
+    ctx.quadraticCurveTo(stalkX + i * w * 0.06, y + h * 0.3, stalkX + i * w * 0.08, y + h * 0.22);
+    ctx.stroke();
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(stalkX + i * w * 0.08, y + h * 0.22, w * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Slime trail
+  if (frame % 4 === 0) {
+    snail.trail.push({ x: x + w * 0.3, y: footY + h * 0.15, r: rand(2, 5), a: 0.5 });
+  }
+  // Draw trail
+  for (let i = snail.trail.length - 1; i >= 0; i--) {
+    const t = snail.trail[i];
+    ctx.fillStyle = `rgba(150, 220, 180, ${t.a})`;
+    ctx.beginPath();
+    ctx.ellipse(t.x, t.y, t.r, t.r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    t.a -= 0.008;
+    if (t.a <= 0) snail.trail.splice(i, 1);
+  }
+}
+
+function drawCloud(x, y, s) {
+  ctx.fillStyle = `rgba(255,255,255,0.06)`;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(x + i * s * 0.4, y, s * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGround() {
+  // Sky gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a0a18');
+  g.addColorStop(0.5, '#0d1a2e');
+  g.addColorStop(1, '#1a0a2e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 0; i < 30; i++) {
+    const sx = ((i * 137 + frame * 0.05) % (W + 100)) - 50;
+    const sy = (i * 73) % (H * 0.45);
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  // Clouds
+  if (frame % 1 === 0) {
+    if (clouds.length < 6 && Math.random() < 0.01) {
+      clouds.push({ x: W + 50, y: rand(20, H * 0.35), s: rand(30, 60) });
+    }
+  }
+  clouds.forEach(c => {
+    drawCloud(c.x, c.y, c.s);
+    c.x -= 0.5;
+  });
+  clouds = clouds.filter(c => c.x > -100);
+
+  // Ground
+  const groundY = H * 0.78;
+  const g2 = ctx.createLinearGradient(0, groundY, 0, H);
+  g2.addColorStop(0, '#1a3a1a');
+  g2.addColorStop(1, '#0d1f0d');
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, groundY, W, H - groundY);
+
+  // Ground line
+  ctx.strokeStyle = '#2a5a2a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+
+  // Ground detail (tiles scrolling)
+  if (frame % 1 === 0) {
+    groundTiles.push({ x: W, w: rand(20, 50) });
+  }
+  ctx.fillStyle = '#1a3a1a';
+  groundTiles.forEach(t => {
+    ctx.fillRect(t.x, groundY + 4, t.w, 3);
+    t.x -= speed * 0.5;
+  });
+  groundTiles = groundTiles.filter(t => t.x > -60);
+}
+
+function drawHUD() {
+  ctx.fillStyle = '#00ffcc';
+  ctx.font = `${Math.floor(W * 0.035)}px 'Press Start 2P'`;
+  ctx.fillText(`SCORE ${score}`, 10, 28);
+  ctx.fillStyle = '#ff44aa';
+  ctx.fillText(`DIST ${Math.floor(distance)}m`, 10, 54);
+
+  // Lives
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < lives; i++) {
+    ctx.font = `${Math.floor(W * 0.04)}px 'Press Start 2P'`;
+    ctx.fillText('🐌', W - 40 - i * 28, 34);
+  }
+
+  // Speed indicator
+  ctx.fillStyle = '#ffaa00';
+  ctx.font = `${Math.floor(W * 0.025)}px 'Press Start 2P'`;
+  ctx.fillText(`SPD ${speed.toFixed(1)}x`, W - 100, 60);
+}
+
+// ─── Obstacle Types ───────────────────────────────────────────────
+function spawnObstacle() {
+  const groundY = H * 0.78;
+  const type = randInt(1, 3);
+  const ow = W * 0.06, oh = W * 0.06;
+  if (type === 1) {
+    // Salt crystal
+    obstacles.push({ type: 'salt', x: W + 20, y: groundY - oh * 0.9, w: ow, h: oh * 1.2, dx: -speed });
+  } else if (type === 2) {
+    // Beetle
+    obstacles.push({ type: 'beetle', x: W + 20, y: groundY - oh * 0.7, w: ow * 1.2, h: oh * 0.7, dx: -speed * 1.3, anim: 0 });
+  } else {
+    // Bird (airborne)
+    obstacles.push({ type: 'bird', x: W + 20, y: groundY - rand(oh * 3, oh * 5), w: ow * 1.4, h: oh * 0.7, dx: -speed * 1.5, anim: 0, dir: Math.random() < 0.5 ? 1 : -1 });
+  }
+}
+
+function spawnLettuce() {
+  const groundY = H * 0.78;
+  lettuce.push({ x: W + 20, y: groundY - rand(H * 0.08, H * 0.2), w: W * 0.045, h: W * 0.045, dx: -speed, anim: 0 });
+}
+
+function drawSalt(x, y, w, h) {
+  // Crystal shape
+  ctx.fillStyle = '#e8f4ff';
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.5, y);
+  ctx.lineTo(x + w, y + h * 0.6);
+  ctx.lineTo(x + w * 0.7, y + h);
+  ctx.lineTo(x + w * 0.3, y + h);
+  ctx.lineTo(x, y + h * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#aaddff';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Shimmer
+  ctx.fillStyle = 'rgba(200,240,255,0.6)';
+  ctx.fillRect(x + w * 0.3, y + h * 0.3, w * 0.15, h * 0.15);
+}
+
+function drawBeetle(x, y, w, h, anim) {
+  ctx.fillStyle = '#3a1a6a';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.6, w * 0.5, h * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1a0a3a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.5, y + h * 0.2);
+  ctx.lineTo(x + w * 0.5, y + h);
+  ctx.stroke();
+  // Legs
+  for (let i = 0; i < 3; i++) {
+    const ly = y + h * (0.35 + i * 0.2);
+    const lw = Math.sin(anim * 0.3 + i) * w * 0.1;
+    ctx.fillStyle = '#2a0a5a';
+    ctx.fillRect(x + w * 0.5 + lw, ly, w * 0.2, h * 0.08);
+    ctx.fillRect(x + w * 0.3 - lw, ly, w * 0.2, h * 0.08);
+  }
+  // Head
+  ctx.fillStyle = '#2a0a5a';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.25, w * 0.2, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBird(x, y, w, h, anim, dir) {
+  ctx.fillStyle = '#222';
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.5, w * 0.4, h * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Wing flap
+  const wingY = Math.sin(anim * 0.4) * h * 0.2;
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.3 + wingY, w * 0.3, h * 0.15, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Beak
+  ctx.fillStyle = '#ffaa00';
+  ctx.beginPath();
+  ctx.moveTo(dir > 0 ? x + w * 0.9 : x + w * 0.1, y + h * 0.45);
+  ctx.lineTo(dir > 0 ? x + w * 1.1 : x - w * 0.1, y + h * 0.5);
+  ctx.lineTo(dir > 0 ? x + w * 0.9 : x + w * 0.1, y + h * 0.55);
+  ctx.closePath();
+  ctx.fill();
+  // Eye
+  ctx.fillStyle = '#ff4444';
+  ctx.beginPath();
+  ctx.arc(x + w * (dir > 0 ? 0.65 : 0.35), y + h * 0.4, w * 0.06, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawLettuce(x, y, w, h, anim) {
+  ctx.fillStyle = '#44cc66';
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2 + anim * 0.02;
+    const lx = x + w * 0.5 + Math.cos(angle) * w * 0.3;
+    const ly = y + h * 0.5 + Math.sin(angle) * h * 0.3;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, w * 0.35, h * 0.25, angle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#88ffaa';
+  ctx.beginPath();
+  ctx.ellipse(x + w * 0.5, y + h * 0.5, w * 0.25, h * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ─── Particles ────────────────────────────────────────────────────
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: rand(-3, 3), vy: rand(-5, -1),
+      r: rand(2, 5),
+      color,
+      life: 1
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= 0.03;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ─── Film Grain ───────────────────────────────────────────────────
+let grainCanvas, grainCtx;
+function initGrain() {
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = W; grainCanvas.height = H;
+  grainCtx = grainCanvas.getContext('2d');
+}
+initGrain();
+function drawGrain() {
+  const id = grainCtx.createImageData(W, H);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 20;
+    d[i] = d[i+1] = d[i+2] = v;
+    d[i+3] = 15;
+  }
+  grainCtx.putImageData(id, 0, 0);
+  ctx.drawImage(grainCanvas, 0, 0);
+}
+
+// ─── Game Init ────────────────────────────────────────────────────
+function initGame() {
+  score = 0; lives = 3; distance = 0; speed = 3;
+  obstacles = []; lettuce = []; particles = []; clouds = []; groundTiles = [];
+  snail.trail = [];
+  snail.w = W * 0.12;
+  snail.h = W * 0.1;
+  snail.x = W * 0.15;
+  snail.y = H * 0.78 - snail.h;
+  snail.vy = 0;
+  snail.grounded = true;
+  frame = 0; scrollX = 0;
+}
+
+function startGame() {
+  initGame();
+  state = 'playing';
+  overlay.classList.add('hidden');
+}
+
+// ─── Game Over ────────────────────────────────────────────────────
+function gameOver() {
+  state = 'gameover';
+  overlay.innerHTML = '';
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1>GAME OVER</h1>
+    <p class="subtitle">Score: ${score} · Distance: ${Math.floor(distance)}m</p>
+    <button id="startBtn">RETRY</button>
+  `;
+  document.getElementById('startBtn').addEventListener('click', startGame);
+}
+
+// ─── Update ───────────────────────────────────────────────────────
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+  distance += speed * 0.01;
+  score += Math.floor(speed);
+
+  // Speed ramp
+  if (frame % 600 === 0) speed = Math.min(speed + 0.3, 9);
+
+  const groundY = H * 0.78;
+  const GRAVITY = 0.6;
+  const JUMP = -H * 0.045;
+
+  // Snail horizontal movement
+  if (keys.left) snail.x -= speed * 0.7;
+  if (keys.right) snail.x += speed * 0.7;
+  snail.x = Math.max(0, Math.min(W - snail.w, snail.x));
+
+  // Jump
+  if (keys.up && snail.grounded) {
+    snail.vy = JUMP;
+    snail.grounded = false;
+  }
+  snail.vy += GRAVITY;
+  snail.y += snail.vy;
+  if (snail.y >= groundY - snail.h) {
+    snail.y = groundY - snail.h;
+    snail.vy = 0;
+    snail.grounded = true;
+  }
+
+  // Spawn obstacles
+  if (frame % Math.floor(90 / speed) === 0) spawnObstacle();
+  if (frame % Math.floor(120 / speed) === 0) spawnLettuce();
+
+  // Update obstacles
+  const snailRect = { x: snail.x + snail.w * 0.1, y: snail.y + snail.h * 0.1, w: snail.w * 0.8, h: snail.h * 0.8 };
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x += o.dx;
+    o.anim = (o.anim || 0) + 1;
+    if (o.x + o.w < 0) { obstacles.splice(i, 1); continue; }
+    const oRect = { x: o.x + o.w * 0.15, y: o.y + o.h * 0.15, w: o.w * 0.7, h: o.h * 0.7 };
+    if (rects(snailRect, oRect)) {
+      obstacles.splice(i, 1);
+      lives--;
+      spawnParticles(snail.x + snail.w * 0.5, snail.y + snail.h * 0.5, '#ff44aa', 12);
+      if (lives <= 0) { gameOver(); return; }
+    }
+  }
+
+  // Update lettuce
+  for (let i = lettuce.length - 1; i >= 0; i--) {
+    const l = lettuce[i];
+    l.x += l.dx;
+    l.anim = (l.anim || 0) + 1;
+    if (l.x + l.w < 0) { lettuce.splice(i, 1); continue; }
+    const lRect = { x: l.x, y: l.y, w: l.w, h: l.h };
+    if (rects(snailRect, lRect)) {
+      lettuce.splice(i, 1);
+      score += 500;
+      spawnParticles(l.x + l.w * 0.5, l.y + l.h * 0.5, '#44cc66', 8);
+    }
+  }
+
+  updateParticles();
+}
+
+// ─── Render ───────────────────────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  drawGround();
+
+  // Draw lettuce
+  lettuce.forEach(l => drawLettuce(l.x, l.y, l.w, l.h, l.anim));
+
+  // Draw obstacles
+  obstacles.forEach(o => {
+    if (o.type === 'salt') drawSalt(o.x, o.y, o.w, o.h);
+    else if (o.type === 'beetle') drawBeetle(o.x, o.y, o.w, o.h, o.anim);
+    else if (o.type === 'bird') drawBird(o.x, o.y, o.w, o.h, o.anim, o.dir);
+  });
+
+  // Draw snail (facing movement direction)
+  const dir = keys.right ? 1 : keys.left ? -1 : 1;
+  drawSnail(snail.x, snail.y, snail.w, snail.h, dir);
+
+  drawParticles();
+  drawHUD();
+  drawGrain();
+}
+
+// ─── Game Loop ────────────────────────────────────────────────────
+function loop() {
+  update();
+  if (state === 'playing') render();
+  requestAnimationFrame(loop);
+}
+
+// ─── Start Button ─────────────────────────────────────────────────
+startBtn.addEventListener('click', startGame);
+
+// ─── Boot ─────────────────────────────────────────────────────────
+loop();
+</script>
+</body>
+</html>
