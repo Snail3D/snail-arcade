@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Context Collapse — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    color: #f0eff4;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas { border: 2px solid #a855f7; box-shadow: 0 0 30px rgba(168,85,247,0.2); border-radius: 4px; }
+  #hud {
+    display: flex; gap: 30px; margin-bottom: 10px;
+    font-size: 13px; color: #a855f7; letter-spacing: 0.08em;
+  }
+  #hud b { color: #fff; }
+  #overlay {
+    position: absolute; inset: 0;
+    background: rgba(10,10,20,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;
+  }
+  #overlay h1 { font-size: 2.5em; color: #a855f7; text-shadow: 0 0 20px rgba(168,85,247,0.5); margin-bottom: 12px; }
+  #overlay p { color: #888; margin-bottom: 8px; max-width: 440px; text-align: center; line-height: 1.6; }
+  #overlay .icon { font-size: 4em; margin-bottom: 16px; }
+  .btn {
+    margin-top: 20px; background: #a855f7; color: #fff;
+    border: none; padding: 12px 36px; font-family: inherit;
+    font-size: 16px; font-weight: bold; cursor: pointer;
+    border-radius: 4px; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .btn:hover { background: #9333ea; }
+  .progress { width: 300px; height: 8px; background: #222; border-radius: 4px; margin-top: 12px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #a855f7; border-radius: 4px; transition: width 0.3s; }
+  #ctx-bar { width: 300px; height: 16px; background: #1a1a2e; border: 1px solid #a855f7; border-radius: 8px; margin-top: 10px; overflow: hidden; }
+  #ctx-fill { height: 100%; background: linear-gradient(90deg, #00f0ff, #a855f7); border-radius: 8px; transition: width 0.1s; }
+  #ctx-label { color: #888; font-size: 11px; margin-top: 4px; letter-spacing: 0.08em; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>TURNS: <b id="turns">0</b></span>
+  <span>DEPTH: <b id="depth">0</b></span>
+  <span>CONTEXT: <b id="ctx">100</b>%</span>
+</div>
+<canvas id="c" width="800" height="460"></canvas>
+<div id="ctx-bar"><div id="ctx-fill" style="width:100%"></div></div>
+<div id="ctx-label">CONTEXT WINDOW — stay under the limit!</div>
+
+<div id="overlay">
+  <div class="icon">🤖💀</div>
+  <h1>CONTEXT COLLAPSE</h1>
+  <p>Navigate the neural net maze as a local LLM. Avoid <span style="color:#ff4444">THINK blocks</span> — they'll explode your context window and crash your reasoning!</p>
+  <p>Collect <span style="color:#00f0ff">reason tokens</span> to boost your depth. The deeper you go, the harder it gets.</p>
+  <p style="color:#555;font-size:12px;margin-top:8px;">↑↓←→ or WASD to move</p>
+  <button class="btn" onclick="startGame()">THINK</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const TILE = 40;
+const COLS = Math.floor(W / TILE);
+const ROWS = Math.floor(H / TILE);
+
+let turns = 0, depth = 0, context = 100;
+let player = { x: 1, y: 1 };
+let thinkBlocks = [], reasonTokens = [], walls = [], crumbs = [];
+let path = [], pathIndex = 0;
+let gameRunning = false, gameOver = false;
+let frame = 0;
+let grid = [];
+
+const overlay = document.getElementById('overlay');
+
+function initGrid() {
+  grid = [];
+  for (let y = 0; y < ROWS; y++) {
+    grid[y] = [];
+    for (let x = 0; x < COLS; x++) {
+      grid[y][x] = { wall: false, visited: false };
+    }
+  }
+}
+
+function generateMaze() {
+  initGrid();
+  walls = []; thinkBlocks = []; reasonTokens = []; crumbs = [];
+
+  // Border walls
+  for (let x = 0; x < COLS; x++) {
+    walls.push({ x, y: 0 });
+    walls.push({ x, y: ROWS - 1 });
+    grid[0][x].wall = true;
+    grid[ROWS-1][x].wall = true;
+  }
+  for (let y = 1; y < ROWS - 1; y++) {
+    walls.push({ x: 0, y });
+    walls.push({ x: COLS - 1, y });
+    grid[y][0].wall = true;
+    grid[y][COLS-1].wall = true;
+  }
+
+  // Random walls
+  for (let i = 0; i < (COLS * ROWS) * 0.25; i++) {
+    const x = 1 + Math.floor(Math.random() * (COLS - 2));
+    const y = 1 + Math.floor(Math.random() * (ROWS - 2));
+    if (x <= 3 && y <= 3) continue;
+    walls.push({ x, y });
+    grid[y][x].wall = true;
+  }
+
+  // THINK blocks
+  for (let i = 0; i < 4 + depth; i++) {
+    let x, y, attempts = 0;
+    do {
+      x = 2 + Math.floor(Math.random() * (COLS - 4));
+      y = 2 + Math.floor(Math.random() * (ROWS - 4));
+      attempts++;
+    } while ((walls.some(w => w.x === x && w.y === y) || (Math.abs(x - player.x) < 3 && Math.abs(y - player.y) < 3)) && attempts < 50);
+    if (attempts < 50) thinkBlocks.push({ x, y });
+  }
+
+  // Reason tokens
+  for (let i = 0; i < 3 + Math.floor(depth / 2); i++) {
+    let x, y, attempts = 0;
+    do {
+      x = 2 + Math.floor(Math.random() * (COLS - 4));
+      y = 2 + Math.floor(Math.random() * (ROWS - 4));
+      attempts++;
+    } while ((walls.some(w => w.x === x && w.y === y)) && attempts < 50);
+    if (attempts < 50) reasonTokens.push({ x, y });
+  }
+
+  // Trail crumbs
+  crumbs = [];
+}
+
+function startGame() {
+  overlay.style.display = 'none';
+  gameOver = false;
+  turns = 0; depth = 0; context = 100;
+  player = { x: 1, y: 1 };
+  path = []; pathIndex = 0; frame = 0;
+  generateMaze();
+  gameRunning = true;
+  loop();
+}
+
+function isWall(x, y) {
+  return walls.some(w => w.x === x && w.y === y);
+}
+
+function move(dx, dy) {
+  if (gameOver || !gameRunning) return;
+  const nx = player.x + dx, ny = player.y + dy;
+  if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+  if (isWall(nx, ny)) return;
+
+  // Eat reason token
+  reasonTokens = reasonTokens.filter(t => !(t.x === nx && t.y === ny));
+  // Hit THINK block
+  if (thinkBlocks.some(t => t.x === nx && t.y === ny)) {
+    context -= 25 + depth * 3;
+    if (context <= 0) { context = 0; gameOver = true; }
+  }
+
+  player.x = nx; player.y = ny;
+  turns++;
+  context -= 0.5;
+  crumbs.push({ x: nx, y: ny, life: 60 });
+
+  if (context <= 0) { context = 0; gameOver = true; }
+  if (reasonTokens.length === 0) {
+    depth++;
+    if (depth % 3 === 0) context = Math.min(100, context + 20);
+    generateMaze();
+    player = { x: 1, y: 1 };
+  }
+  if (gameOver) showGameOver();
+}
+
+function showGameOver() {
+  gameRunning = false;
+  overlay.style.display = 'flex';
+  document.querySelector('#overlay h1').textContent = '💀 CONTEXT OVERFLOW';
+  document.querySelector('#overlay p').textContent = 'Your context window collapsed at depth ' + depth + ' after ' + turns + ' turns.';
+}
+
+function drawBg() {
+  ctx.fillStyle = '#0a0a14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Neural net grid lines
+  ctx.strokeStyle = 'rgba(168,85,247,0.05)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += TILE) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += TILE) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+}
+
+function draw() {
+  drawBg();
+
+  // Walls
+  walls.forEach(w => {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(w.x * TILE, w.y * TILE, TILE - 1, TILE - 1);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(w.x * TILE, w.y * TILE, TILE - 1, TILE - 1);
+  });
+
+  // Trail crumbs
+  crumbs.forEach(c => {
+    ctx.globalAlpha = c.life / 60;
+    ctx.fillStyle = '#a855f7';
+    ctx.beginPath();
+    ctx.arc(c.x * TILE + TILE / 2, c.y * TILE + TILE / 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    c.life--;
+  });
+
+  // THINK blocks
+  thinkBlocks.forEach(t => {
+    const cx = t.x * TILE + TILE / 2, cy = t.y * TILE + TILE / 2;
+    ctx.fillStyle = 'rgba(255,68,68,0.2)';
+    ctx.fillRect(t.x * TILE + 2, t.y * TILE + 2, TILE - 4, TILE - 4);
+    ctx.strokeStyle = '#ff4444';
+    ctx.shadowColor = '#ff4444';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(t.x * TILE + 4, t.y * TILE + 4, TILE - 8, TILE - 8);
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 9px Courier New';
+    ctx.fillStyle = '#ff4444';
+    ctx.textAlign = 'center';
+    ctx.fillText('THINK', cx, cy + 3);
+    ctx.textAlign = 'left';
+  });
+
+  // Reason tokens
+  reasonTokens.forEach(t => {
+    const cx = t.x * TILE + TILE / 2, cy = t.y * TILE + TILE / 2;
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 9px Courier New';
+    ctx.fillStyle = '#0a0a14';
+    ctx.textAlign = 'center';
+    ctx.fillText('R', cx, cy + 4);
+    ctx.textAlign = 'left';
+  });
+
+  // Player (LLM snail)
+  const px = player.x * TILE, py = player.y * TILE;
+  ctx.fillStyle = '#c26b3c';
+  ctx.beginPath();
+  ctx.ellipse(px + TILE * 0.35, py + TILE * 0.7, TILE * 0.3, TILE * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#a855f7';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(px + TILE * 0.2, py + TILE * 0.65, TILE * 0.2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#c26b3c';
+  ctx.beginPath();
+  ctx.ellipse(px + TILE * 0.75, py + TILE * 0.55, TILE * 0.12, TILE * 0.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#a855f7';
+  ctx.font = 'bold 10px Courier New';
+  ctx.fillText('🤖', px + TILE * 0.65, py + TILE * 0.7);
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(px + TILE * 0.8, py + TILE * 0.45, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(px + TILE * 0.82, py + TILE * 0.45, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Context bar
+  document.getElementById('ctx-fill').style.width = context + '%';
+  document.getElementById('ctx').textContent = Math.floor(context);
+  document.getElementById('turns').textContent = turns;
+  document.getElementById('depth').textContent = depth;
+}
+
+function update() {
+  frame++;
+  crumbs = crumbs.filter(c => c.life > 0);
+}
+
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') move(0, -1);
+  if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') move(0, 1);
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') move(-1, 0);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') move(1, 0);
+});
+
+// Touch controls
+let touchStart = null;
+canvas.addEventListener('touchstart', e => { touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }; e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchend', e => {
+  if (!touchStart) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (Math.abs(dx) > Math.abs(dy)) { move(dx > 0 ? 1 : -1, 0); }
+  else { move(0, dy > 0 ? 1 : -1); }
+  touchStart = null;
+  e.preventDefault();
+}, { passive: false });
+</script>
+</body>
+</html>

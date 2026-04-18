@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subscriber Surge — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    color: #f0eff4;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas { border: 2px solid #ff0000; box-shadow: 0 0 30px rgba(255,0,0,0.2); border-radius: 4px; }
+  #hud {
+    display: flex; gap: 30px; margin-bottom: 10px;
+    font-size: 13px; color: #ff0000; letter-spacing: 0.08em;
+  }
+  #hud b { color: #fff; }
+  #overlay {
+    position: absolute; inset: 0;
+    background: rgba(10,10,20,0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10;
+  }
+  #overlay h1 { font-size: 2.5em; color: #ff0000; text-shadow: 0 0 20px rgba(255,0,0,0.5); margin-bottom: 12px; }
+  #overlay p { color: #888; margin-bottom: 8px; max-width: 420px; text-align: center; line-height: 1.6; }
+  #overlay .icon { font-size: 4em; margin-bottom: 16px; }
+  .btn {
+    margin-top: 20px; background: #ff0000; color: #fff;
+    border: none; padding: 12px 36px; font-family: inherit;
+    font-size: 16px; font-weight: bold; cursor: pointer;
+    border-radius: 4px; letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .btn:hover { background: #cc0000; }
+  .progress-bar {
+    width: 400px; height: 12px; background: #222; border-radius: 6px;
+    overflow: hidden; margin-top: 16px; border: 1px solid #333;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, #ff0000, #ff6666);
+    border-radius: 6px; transition: width 0.3s;
+  }
+  #milestone { color: #ff0; font-size: 12px; margin-top: 8px; letter-spacing: 0.08em; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <span>👥 <b id="subs">0</b> subs</span>
+  <span>▶️ <b id="views">0</b> views</span>
+  <span>💰 <b id="coins">0</b> coins</span>
+  <span>⚡ <b id="cps">0</b>/sec</span>
+</div>
+<canvas id="c" width="800" height="460"></canvas>
+<div class="progress-bar"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+<div id="milestone">🎯 NEXT: 1,000 subs</div>
+
+<div id="overlay">
+  <div class="icon">📺</div>
+  <h1>SUBSCRIBER SURGE</h1>
+  <p>Build your YouTube empire! Click to get views, buy upgrades, and hit subscriber milestones. But watch out — demonetization strikes fast!</p>
+  <p style="color:#555;font-size:12px;margin-top:8px;">Click the canvas to get views. Buy upgrades with coins!</p>
+  <button class="btn" onclick="startGame()">GO LIVE</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let subs = 0, views = 0, coins = 0, cps = 1;
+let clickPower = 1;
+let notifs = [];
+let demoted = false, demoteTimer = 0;
+let frames = 0;
+let upgrades = [
+  { name: 'Better Thumbnail', cost: 50, cps: 1, click: 0, owned: 0, icon: '🖼️' },
+  { name: 'SEO Boost', cost: 150, cps: 3, click: 1, owned: 0, icon: '🔍' },
+  { name: 'Editor', cost: 400, cps: 8, click: 2, owned: 0, icon: '✂️' },
+  { name: 'Ring Light', cost: 1000, cps: 20, click: 5, owned: 0, icon: '💡' },
+  { name: 'Co-Creator', cost: 3000, cps: 50, click: 10, owned: 0, icon: '🤝' },
+  { name: 'Studio Upgrade', cost: 8000, cps: 120, click: 20, owned: 0, icon: '🎬' },
+  { name: 'Viral Algorithm', cost: 25000, cps: 350, click: 50, owned: 0, icon: '🚀' },
+];
+let milestones = [1000, 5000, 10000, 50000, 100000, 500000, 1000000];
+let currentMilestone = 0;
+let gameRunning = false;
+
+const overlay = document.getElementById('overlay');
+
+function startGame() {
+  overlay.style.display = 'none';
+  subs = 0; views = 0; coins = 0; cps = 1; clickPower = 1;
+  notifs = []; demoted = false; demoteTimer = 0; frames = 0;
+  upgrades.forEach(u => u.owned = 0);
+  currentMilestone = 0;
+  gameRunning = true;
+  loop();
+}
+
+function addSub(n) {
+  subs += n;
+  if (subs >= milestones[currentMilestone]) {
+    const bonus = milestones[currentMilestone] * 0.1;
+    coins += Math.floor(bonus);
+    notifs.push({ text: '🎉 MILESTONE: ' + milestones[currentMilestone].toLocaleString() + ' subs! +' + Math.floor(bonus).toLocaleString() + ' coins', y: H / 2, life: 120 });
+    currentMilestone++;
+    document.getElementById('milestone').textContent = '🎯 NEXT: ' + (milestones[currentMilestone] || 'MAX!').toLocaleString() + ' subs';
+  }
+  document.getElementById('subs').textContent = subs.toLocaleString();
+  const prog = Math.min(100, (subs / (milestones[currentMilestone] || subs)) * 100);
+  document.getElementById('prog').style.width = prog + '%';
+}
+
+function addView(n) {
+  views += n;
+  const earned = Math.floor(n * 0.01 * (demoted ? 0.1 : 1));
+  coins += earned;
+  document.getElementById('views').textContent = views.toLocaleString();
+  document.getElementById('coins').textContent = Math.floor(coins).toLocaleString();
+}
+
+function buyUpgrade(i) {
+  const u = upgrades[i];
+  if (coins >= u.cost) {
+    coins -= u.cost;
+    u.owned++;
+    u.cost = Math.floor(u.cost * 1.4);
+    cps += u.cps;
+    clickPower += u.click;
+    document.getElementById('cps').textContent = cps;
+    document.getElementById('coins').textContent = Math.floor(coins).toLocaleString();
+    notifs.push({ text: u.icon + ' ' + u.name + ' (owned: ' + u.owned + ')', y: H - 180 - i * 50, life: 60, color: '#0f0' });
+  }
+}
+
+function drawBg() {
+  ctx.fillStyle = '#0a0a14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255,0,0,0.03)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+}
+
+function drawPlayer(cx, cy) {
+  // Snail in YouTube colors
+  ctx.fillStyle = '#c26b3c';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 30, 50, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Shell (YouTube play button red)
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(cx - 10, cy + 25, 25, 0, Math.PI * 2);
+  ctx.stroke();
+  // Shell fill
+  ctx.fillStyle = 'rgba(255,0,0,0.15)';
+  ctx.beginPath();
+  ctx.arc(cx - 10, cy + 25, 25, 0, Math.PI * 2);
+  ctx.fill();
+  // Head
+  ctx.fillStyle = '#c26b3c';
+  ctx.beginPath();
+  ctx.ellipse(cx + 40, cy + 20, 18, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Crown
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.moveTo(cx + 25, cy - 5);
+  ctx.lineTo(cx + 30, cy - 25);
+  ctx.lineTo(cx + 40, cy - 15);
+  ctx.lineTo(cx + 45, cy - 30);
+  ctx.lineTo(cx + 55, cy - 12);
+  ctx.lineTo(cx + 55, cy - 5);
+  ctx.closePath();
+  ctx.fill();
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx + 48, cy + 12, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(cx + 50, cy + 12, 3, 0, Math.PI * 2);
+  ctx.fill();
+  // Camera on tripod
+  ctx.fillStyle = '#333';
+  ctx.fillRect(cx - 80, cy + 10, 30, 20);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(cx - 78, cy + 30, 4, 20);
+  ctx.fillRect(cx - 58, cy + 30, 4, 20);
+  // REC light
+  ctx.fillStyle = demoted ? '#666' : '#ff0000';
+  ctx.shadowColor = demoted ? 'transparent' : '#ff0000';
+  ctx.shadowBlur = demoted ? 0 : 10;
+  ctx.beginPath();
+  ctx.arc(cx - 55, cy + 12, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawUpgrades() {
+  const startY = H - 200;
+  upgrades.forEach((u, i) => {
+    const y = startY + i * 55;
+    const canBuy = coins >= u.cost;
+    ctx.fillStyle = canBuy ? '#1a1a1a' : '#111';
+    ctx.strokeStyle = canBuy ? '#ff0000' : '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(10, y, 380, 50, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '14px Courier New';
+    ctx.fillStyle = canBuy ? '#fff' : '#555';
+    ctx.fillText(u.icon + ' ' + u.name, 20, y + 20);
+    ctx.font = '11px Courier New';
+    ctx.fillStyle = canBuy ? '#0f0' : '#444';
+    ctx.fillText('+' + u.cps + ' subs/s  +' + u.click + ' click  (owned: ' + u.owned + ')', 20, y + 38);
+    ctx.fillStyle = canBuy ? '#FFD700' : '#555';
+    ctx.fillText('💰 ' + u.cost.toLocaleString(), 310, y + 30);
+    // Buy button area
+    canvas.style.cursor = canBuy ? 'pointer' : 'default';
+  });
+}
+
+function draw() {
+  drawBg();
+  drawPlayer(W / 2, H / 2 - 30);
+
+  // Stats display
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('📺 Subscriber Surge', W / 2 - 100, 30);
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#888';
+  ctx.fillText('Click anywhere to get views!', W / 2 - 90, 50);
+
+  // Demotion warning
+  if (demoted) {
+    ctx.fillStyle = 'rgba(255,0,0,0.15)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = 'bold 14px Courier New';
+    ctx.fillStyle = '#ff0';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠️ DEMONETIZED! Views earn 90% less!', W / 2, 80);
+    ctx.textAlign = 'left';
+  }
+
+  // Notifications
+  notifs.forEach(n => {
+    ctx.globalAlpha = n.life / 60;
+    ctx.font = 'bold 16px Courier New';
+    ctx.fillStyle = n.color || '#ff0';
+    ctx.textAlign = 'center';
+    ctx.fillText(n.text, W / 2, n.y);
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  });
+
+  drawUpgrades();
+}
+
+function update() {
+  frames++;
+  views += cps * 0.0167;
+  coins += cps * 0.0167 * 0.01 * (demoted ? 0.1 : 1);
+
+  // Sub conversion
+  if (views > 0 && frames % 10 === 0) {
+    addSub(Math.floor(cps * 0.5));
+  }
+
+  document.getElementById('views').textContent = Math.floor(views).toLocaleString();
+  document.getElementById('coins').textContent = Math.floor(coins).toLocaleString();
+  document.getElementById('cps').textContent = cps;
+
+  // Demotion
+  if (!demoted && Math.random() < 0.001) {
+    demoted = true;
+    demoteTimer = 300;
+    notifs.push({ text: '⚠️ DEMONETIZED! Avoid controversial content!', y: 100, life: 120, color: '#ff4444' });
+  }
+  if (demoted) {
+    demoteTimer--;
+    if (demoteTimer <= 0) demoted = false;
+  }
+
+  // Notifs
+  notifs = notifs.filter(n => { n.y -= 0.5; n.life--; return n.life > 0; });
+}
+
+function loop() {
+  if (!gameRunning) return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+canvas.addEventListener('click', e => {
+  if (!gameRunning) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (W / rect.width);
+  const y = (e.clientY - rect.top) * (H / rect.height);
+
+  // Check upgrade clicks
+  const startY = H - 200;
+  upgrades.forEach((u, i) => {
+    const yy = startY + i * 55;
+    if (x >= 10 && x <= 390 && y >= yy && y <= yy + 50) buyUpgrade(i);
+  });
+
+  // Add view
+  addView(clickPower * 10);
+  notifs.push({ text: '+' + (clickPower * 10) + ' views!', y: H / 2 - 50 + Math.random() * 30, life: 40, color: '#ff6666' });
+});
+</script>
+</body>
+</html>
