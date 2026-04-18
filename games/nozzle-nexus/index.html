@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Nozzle Nexus</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Orbitron', monospace;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(5,5,8,0.92);
+    z-index: 10;
+    transition: opacity 0.4s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  h1 {
+    font-size: clamp(1.4rem, 6vw, 2.8rem);
+    color: #00f5ff;
+    text-shadow: 0 0 20px #00f5ff, 0 0 60px #00f5ff44;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.3em;
+  }
+  .subtitle {
+    font-size: clamp(0.6rem, 2.5vw, 0.85rem);
+    color: #ff00aa;
+    text-shadow: 0 0 10px #ff00aa;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 2.5em;
+  }
+  .tagline {
+    font-size: clamp(0.55rem, 2vw, 0.75rem);
+    color: #888;
+    letter-spacing: 0.15em;
+    margin-bottom: 2em;
+    text-align: center;
+    padding: 0 1rem;
+    line-height: 1.6;
+  }
+  #startBtn {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(0.8rem, 3vw, 1.1rem);
+    font-weight: 700;
+    color: #050508;
+    background: #00f5ff;
+    border: none;
+    padding: 0.8em 2.4em;
+    cursor: pointer;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+    transition: background 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 30px #00f5ff88;
+  }
+  #startBtn:active {
+    background: #ff00aa;
+    box-shadow: 0 0 40px #ff00aa88;
+  }
+  .scanlines {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    z-index: 20;
+  }
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+<div id="overlay">
+  <h1>NOZZLE NEXUS</h1>
+  <div class="subtitle">// 3D Print Arena //</div>
+  <div class="tagline">Dodge filament tangles &amp; molten gunk.<br>Shoot your way through the print queue.</div>
+  <button id="startBtn">START PRINT</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+// === NOZZLE NEXUS ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+
+let W, H;
+function resize() {
+  const s = Math.min(window.innerWidth, window.innerHeight * 0.75, 500);
+  W = canvas.width = s;
+  H = canvas.height = s;
+  canvas.style.width = s + 'px';
+  canvas.style.height = s + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let state = 'menu'; // menu, playing, gameover
+let score = 0, level = 1, lives = 3;
+let frame = 0;
+let gameSpeed = 1;
+
+// Player nozzle
+const nozzle = {
+  x: 0, y: 0, w: 0, h: 0,
+  speed: 5,
+  cooldown: 0,
+  bullets: []
+};
+
+// Entities
+let enemies = [];
+let particles = [];
+let powerups = [];
+let screenShake = 0;
+
+// Touch controls
+let touchX = null;
+
+function init() {
+  score = 0; level = 1; lives = 3; frame = 0; gameSpeed = 1;
+  enemies = []; particles = []; powerups = []; screenShake = 0;
+  nozzle.bullets = [];
+  nozzle.w = W * 0.1;
+  nozzle.h = W * 0.14;
+  nozzle.x = W / 2 - nozzle.w / 2;
+  nozzle.y = H - nozzle.h - H * 0.04;
+  nozzle.cooldown = 0;
+  touchX = null;
+}
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (state !== 'playing') return;
+  touchX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (state !== 'playing') return;
+  touchX = e.touches[0].clientX - canvas.getBoundingClientRect().left;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touchX = null;
+}, { passive: false });
+
+canvas.addEventListener('click', () => {
+  if (state === 'playing') shoot();
+});
+
+startBtn.addEventListener('click', () => {
+  state = 'playing';
+  overlay.classList.add('hidden');
+  init();
+  loop();
+});
+
+function shoot() {
+  if (nozzle.cooldown > 0) return;
+  nozzle.cooldown = 10;
+  nozzle.bullets.push({
+    x: nozzle.x + nozzle.w / 2,
+    y: nozzle.y,
+    vx: 0, vy: -9,
+    w: 4, h: 14
+  });
+}
+
+// Spawn helpers
+function spawnEnemy() {
+  const types = ['tangle', 'gunk', 'blob'];
+  const t = types[Math.floor(Math.random() * types.length)];
+  const size = W * (0.08 + Math.random() * 0.08);
+  enemies.push({
+    x: Math.random() * (W - size),
+    y: -size,
+    w: size, h: size,
+    vy: (1.2 + Math.random() * 1.5) * gameSpeed,
+    vx: (Math.random() - 0.5) * 1.5,
+    type: t,
+    hp: t === 'blob' ? 2 : 1,
+    angle: 0
+  });
+}
+
+function spawnPowerup() {
+  const size = W * 0.07;
+  powerups.push({
+    x: Math.random() * (W - size),
+    y: -size,
+    w: size, h: size,
+    vy: 2 * gameSpeed,
+    type: Math.random() < 0.5 ? 'life' : 'rapid'
+  });
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      size: 2 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+function rects(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function update() {
+  frame++;
+  score++;
+
+  // Level progression
+  level = Math.floor(score / 500) + 1;
+  gameSpeed = 1 + (level - 1) * 0.15;
+
+  if (screenShake > 0) screenShake--;
+
+  // Nozzle movement (keyboard)
+  if (keys['ArrowLeft'] || keys['KeyA']) nozzle.x -= nozzle.speed;
+  if (keys['ArrowRight'] || keys['KeyD']) nozzle.x += nozzle.speed;
+  if (keys['Space'] || keys['ArrowUp'] || keys['KeyW']) shoot();
+
+  // Nozzle movement (touch)
+  if (touchX !== null) {
+    const target = touchX - nozzle.w / 2;
+    nozzle.x += (target - nozzle.x) * 0.18;
+  }
+
+  nozzle.x = Math.max(0, Math.min(W - nozzle.w, nozzle.x));
+  if (nozzle.cooldown > 0) nozzle.cooldown--;
+
+  // Bullets
+  for (let i = nozzle.bullets.length - 1; i >= 0; i--) {
+    const b = nozzle.bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    if (b.y + b.h < 0) nozzle.bullets.splice(i, 1);
+  }
+
+  // Enemies spawn
+  const spawnRate = Math.max(18, 60 - level * 4);
+  if (frame % spawnRate === 0) spawnEnemy();
+  if (frame % 300 === 0) spawnPowerup();
+
+  // Update enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    e.y += e.vy;
+    e.x += e.vx;
+    e.angle += 0.05;
+    if (e.x < 0 || e.x + e.w > W) e.vx *= -1;
+
+    // Hit player
+    if (rects(nozzle, e)) {
+      addParticles(nozzle.x + nozzle.w/2, nozzle.y + nozzle.h/2, '#ff0055', 20);
+      screenShake = 15;
+      enemies.splice(i, 1);
+      lives--;
+      if (lives <= 0) { state = 'gameover'; showEnd(); }
+      continue;
+    }
+
+    // Off screen
+    if (e.y > H + 20) {
+      enemies.splice(i, 1);
+      continue;
+    }
+
+    // Bullet hits enemy
+    for (let j = nozzle.bullets.length - 1; j >= 0; j--) {
+      const b = nozzle.bullets[j];
+      if (rects(b, e)) {
+        e.hp--;
+        nozzle.bullets.splice(j, 1);
+        if (e.hp <= 0) {
+          const color = e.type === 'tangle' ? '#00f5ff' : e.type === 'gunk' ? '#ff00aa' : '#aaff00';
+          addParticles(e.x + e.w/2, e.y + e.h/2, color, 12);
+          score += 50 * level;
+          enemies.splice(i, 1);
+        } else {
+          addParticles(b.x, b.y, '#ffff00', 4);
+        }
+        break;
+      }
+    }
+  }
+
+  // Powerups
+  for (let i = powerups.length - 1; i >= 0; i--) {
+    const p = powerups[i];
+    p.y += p.vy;
+    if (rects(nozzle, p)) {
+      if (p.type === 'life') lives = Math.min(lives + 1, 5);
+      else nozzle.cooldown = Math.max(0, nozzle.cooldown - 5);
+      addParticles(p.x + p.w/2, p.y + p.h/2, '#ffff00', 15);
+      powerups.splice(i, 1);
+      continue;
+    }
+    if (p.y > H + 20) powerups.splice(i, 1);
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.05;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawGrain() {
+  if (Math.random() < 0.06) {
+    ctx.save();
+    ctx.globalAlpha = 0.03;
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 60; i++) {
+      ctx.fillRect(
+        Math.random() * W, Math.random() * H,
+        Math.random() * 2, Math.random() * 2
+      );
+    }
+    ctx.restore();
+  }
+}
+
+function drawBg() {
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,245,255,0.07)';
+  ctx.lineWidth = 1;
+  const grid = W / 20;
+  for (let x = 0; x < W; x += grid) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += grid) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Moving grid accent lines
+  ctx.strokeStyle = 'rgba(255,0,170,0.05)';
+  const offset = (frame * 1.5) % (H * 2);
+  for (let y = -H * 2 + offset; y < H * 2; y += H / 3) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+function drawNozzle() {
+  const nx = nozzle.x, ny = nozzle.y, nw = nozzle.w, nh = nozzle.h;
+
+  ctx.save();
+  if (screenShake > 0) {
+    ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
+  }
+
+  // Body
+  ctx.fillStyle = '#1a1a2e';
+  ctx.strokeStyle = '#00f5ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(nx + nw * 0.2, ny);
+  ctx.lineTo(nx + nw * 0.8, ny);
+  ctx.lineTo(nx + nw * 0.85, ny + nh * 0.5);
+  ctx.lineTo(nx + nw * 0.65, ny + nh);
+  ctx.lineTo(nx + nw * 0.35, ny + nh);
+  ctx.lineTo(nx + nw * 0.15, ny + nh * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Nozzle tip
+  ctx.fillStyle = '#ff7700';
+  ctx.strokeStyle = '#ffaa00';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(nx + nw * 0.35, ny + nh);
+  ctx.lineTo(nx + nw * 0.65, ny + nh);
+  ctx.lineTo(nx + nw * 0.5, ny + nh + nh * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Hot end glow
+  ctx.shadowColor = '#ff7700';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#ffaa00';
+  ctx.beginPath();
+  ctx.arc(nx + nw * 0.5, ny + nh * 0.55, nw * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Cyan accent lines
+  ctx.strokeStyle = '#00f5ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(nx + nw * 0.3, ny + nh * 0.3);
+  ctx.lineTo(nx + nw * 0.7, ny + nh * 0.3);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawBullets() {
+  ctx.save();
+  for (const b of nozzle.bullets) {
+    ctx.shadowColor = '#00f5ff';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = '#00f5ff';
+    ctx.fillRect(b.x - b.w/2, b.y, b.w, b.h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(b.x - b.w/4, b.y, b.w/2, b.h * 0.6);
+  }
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawEnemies() {
+  for (const e of enemies) {
+    ctx.save();
+    ctx.translate(e.x + e.w/2, e.y + e.h/2);
+    ctx.rotate(e.angle);
+
+    if (e.type === 'tangle') {
+      // Filament tangle - cyan blob
+      ctx.shadowColor = '#00f5ff';
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = '#00f5ff';
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r = e.w * 0.4 * (0.7 + 0.3 * Math.sin(i * 3 + e.angle * 5));
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Filament strand lines
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + e.angle;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * e.w * 0.35, Math.sin(a) * e.w * 0.35);
+        ctx.stroke();
+      }
+    } else if (e.type === 'gunk') {
+      // Magenta gunk blob
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = '#ff00aa';
+      ctx.beginPath();
+      ctx.arc(0, 0, e.w * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#cc0088';
+      ctx.beginPath();
+      ctx.arc(-e.w * 0.1, -e.w * 0.1, e.w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Blob - green, tougher
+      ctx.shadowColor = '#aaff00';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#aaff00';
+      ctx.beginPath();
+      ctx.arc(0, 0, e.w * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (e.hp > 1) {
+        ctx.fillStyle = '#558800';
+        ctx.beginPath();
+        ctx.arc(0, 0, e.w * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+function drawPowerups() {
+  for (const p of powerups) {
+    ctx.save();
+    ctx.translate(p.x + p.w/2, p.y + p.h/2);
+    ctx.shadowColor = p.type === 'life' ? '#ff0055' : '#ffaa00';
+    ctx.shadowBlur = 15;
+
+    // Pulsing background
+    const pulse = 0.8 + 0.2 * Math.sin(frame * 0.2);
+    ctx.fillStyle = p.type === 'life' ? '#ff0055' : '#ffaa00';
+    ctx.beginPath();
+    ctx.arc(0, 0, p.w * 0.4 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#050508';
+    ctx.font = `bold ${p.w * 0.35}px Orbitron, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(p.type === 'life' ? '♥' : '⚡', 0, 1);
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  // Score
+  ctx.save();
+  ctx.font = `bold ${W * 0.045}px Orbitron, monospace`;
+  ctx.fillStyle = '#00f5ff';
+  ctx.shadowColor = '#00f5ff';
+  ctx.shadowBlur = 8;
+  ctx.textAlign = 'left';
+  ctx.fillText(`SCORE ${score}`, W * 0.04, H * 0.06);
+
+  // Level
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ff00aa';
+  ctx.shadowColor = '#ff00aa';
+  ctx.fillText(`LVL ${level}`, W * 0.96, H * 0.06);
+
+  // Lives
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff0055';
+  ctx.shadowColor = '#ff0055';
+  ctx.font = `${W * 0.05}px Orbitron, monospace`;
+  ctx.fillText('♥'.repeat(lives), W / 2, H * 0.06);
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawBg();
+  drawPowerups();
+  drawEnemies();
+  drawBullets();
+  drawNozzle();
+  drawParticles();
+  drawHUD();
+  drawGrain();
+}
+
+function loop() {
+  if (state !== 'playing') return;
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function showEnd() {
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1>GAME OVER</h1>
+    <div class="subtitle">// PRINT FAILED //</div>
+    <div class="tagline">Score: ${score} &nbsp; Level: ${level}</div>
+    <button id="startBtn">RETRY</button>
+  `;
+  document.getElementById('startBtn').addEventListener('click', () => {
+    state = 'playing';
+    overlay.classList.add('hidden');
+    init();
+    loop();
+  });
+}
+</script>
+</body>
+</html>
