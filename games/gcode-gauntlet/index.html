@@ -454,20 +454,7 @@ function drawPath() {
   }
 }
 
-// ─── GRAIN OVERLAY ───────────────────────────────────────────────────────────
-let grainCanvas, grainCtx;
-function initGrain() {
-  grainCanvas = document.createElement('canvas');
-  grainCanvas.width = W;
-  grainCanvas.height = H;
-  grainCtx = grainCanvas.getContext('2d');
-}
-initGrain();
-window.addEventListener('resize', () => { grainCanvas.width = W; grainCanvas.height = H; });
-
-function drawGrain() {
-  // Disabled: full-screen ImageData every frame was crashing mobile/low-memory browsers
-}
+// Grain disabled — was causing crashes from full-screen ImageData every frame
 
 // ─── INPUT ───────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
