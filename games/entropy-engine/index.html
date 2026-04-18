@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Entropy Engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #menu {
+    text-align: center;
+    padding: 20px;
+  }
+  #menu h1 {
+    font-size: 2.5em;
+    color: #00ffcc;
+    text-shadow: 0 0 20px #00ffcc88;
+    margin-bottom: 8px;
+  }
+  #menu p {
+    color: #888;
+    font-size: 0.9em;
+    margin-bottom: 24px;
+    line-height: 1.5;
+  }
+  #menu .hint {
+    color: #555;
+    font-size: 0.75em;
+    margin-top: 16px;
+  }
+  .btn {
+    background: #00ffcc;
+    color: #0a0a12;
+    border: none;
+    padding: 14px 36px;
+    font-size: 1.1em;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.2s;
+  }
+  .btn:active { background: #00cc99; }
+  #game {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 500px;
+    padding: 8px;
+  }
+  #hud {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+  }
+  #hud .score { color: #00ffcc; font-size: 1.2em; }
+  #hud .level { color: #ff6bff; }
+  #print-bed {
+    width: 100%;
+    aspect-ratio: 1;
+    max-height: 50vh;
+    background: #0d0d1a;
+    border: 1px solid #1a1a3a;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  #layer-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  #overlay-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  #meters {
+    width: 100%;
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .meter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .meter-label {
+    width: 60px;
+    font-size: 0.7em;
+    color: #888;
+    text-transform: uppercase;
+  }
+  .meter-bar-bg {
+    flex: 1;
+    height: 16px;
+    background: #1a1a2a;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .meter-bar {
+    height: 100%;
+    transition: width 0.1s;
+    border-radius: 3px;
+  }
+  .meter-bar.heat { background: linear-gradient(90deg, #ff4400, #ff9900); }
+  .meter-bar.flow { background: linear-gradient(90deg, #00aaff, #00ffcc); }
+  .meter-bar.retract { background: linear-gradient(90deg, #aa00ff, #ff00ff); }
+  .meter-val {
+    width: 36px;
+    font-size: 0.65em;
+    color: #aaa;
+    text-align: right;
+  }
+  .meter-target {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 3px;
+    background: rgba(255,255,255,0.5);
+    border-radius: 2px;
+  }
+  #controls {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: center;
+  }
+  .ctrl-btn {
+    flex: 1;
+    max-width: 90px;
+    height: 50px;
+    background: #141428;
+    border: 1px solid #2a2a4a;
+    color: #00ffcc;
+    font-size: 1.4em;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ctrl-btn:active { background: #1e1e3a; border-color: #00ffcc; }
+  #eventLog {
+    width: 100%;
+    height: 24px;
+    overflow: hidden;
+    font-size: 0.65em;
+    color: #ff6bff;
+    text-align: center;
+    margin-top: 4px;
+    white-space: nowrap;
+  }
+  #gameover {
+    display: none;
+    text-align: center;
+    padding: 20px;
+  }
+  #gameover h2 {
+    font-size: 2em;
+    color: #ff4466;
+    margin-bottom: 12px;
+  }
+  #gameover p { color: #888; margin-bottom: 8px; }
+  #gameover .final-score { color: #00ffcc; font-size: 1.3em; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>ENTROPY ENGINE</h1>
+  <p>Keep the print alive. Balance heat, flow,<br>and retraction as chaos mounts layer by layer.</p>
+  <button class="btn" onclick="startGame()">START PRINT</button>
+  <p class="hint">Drag left/right to move the nozzle<br>Tap buttons to tune each parameter</p>
+</div>
+
+<div id="game">
+  <div id="hud">
+    <span class="level" id="levelDisp">LAYER 1</span>
+    <span class="score" id="scoreDisp">SCORE: 0</span>
+  </div>
+  <div id="print-bed">
+    <canvas id="layer-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+  </div>
+  <div id="eventLog"></div>
+  <div id="meters">
+    <div class="meter-row">
+      <span class="meter-label">🔥 Heat</span>
+      <div class="meter-bar-bg" id="heatBarBg"><div class="meter-bar heat" id="heatBar" style="width:50%"></div><div class="meter-target" id="heatTarget"></div></div>
+      <span class="meter-val" id="heatVal">50</span>
+    </div>
+    <div class="meter-row">
+      <span class="meter-label">💧 Flow</span>
+      <div class="meter-bar-bg" id="flowBarBg"><div class="meter-bar flow" id="flowBar" style="width:50%"></div><div class="meter-target" id="flowTarget"></div></div>
+      <span class="meter-val" id="flowVal">50</span>
+    </div>
+    <div class="meter-row">
+      <span class="meter-label">↩ Retract</span>
+      <div class="meter-bar-bg" id="retractBarBg"><div class="meter-bar retract" id="retractBar" style="width:50%"></div><div class="meter-target" id="retractTarget"></div></div>
+      <span class="meter-val" id="retractVal">50</span>
+    </div>
+  </div>
+  <div id="controls">
+    <button class="ctrl-btn" id="btnH-" ontouchstart="adjustMeter('heat',-1)" onmousedown="adjustMeter('heat',-1)">H−</button>
+    <button class="ctrl-btn" id="btnH+" ontouchstart="adjustMeter('heat',1)" onmousedown="adjustMeter('heat',1)">H+</button>
+    <button class="ctrl-btn" id="btnF-" ontouchstart="adjustMeter('flow',-1)" onmousedown="adjustMeter('flow',-1)">F−</button>
+    <button class="ctrl-btn" id="btnF+" ontouchstart="adjustMeter('flow',1)" onmousedown="adjustMeter('flow',1)">F+</button>
+    <button class="ctrl-btn" id="btnR-" ontouchstart="adjustMeter('retract',-1)" onmousedown="adjustMeter('retract',-1)">R−</button>
+    <button class="ctrl-btn" id="btnR+" ontouchstart="adjustMeter('retract',1)" onmousedown="adjustMeter('retract',1)">R+</button>
+  </div>
+</div>
+
+<div id="gameover">
+  <h2>PRINT FAILED</h2>
+  <p id="gameoverReason"></p>
+  <div class="final-score" id="finalScore"></div>
+  <button class="btn" onclick="startGame()">RETRY</button>
+</div>
+
+<script>
+const layerCanvas = document.getElementById('layer-canvas');
+const overlayCanvas = document.getElementById('overlay-canvas');
+const lc = layerCanvas.getContext('2d');
+const oc = overlayCanvas.getContext('2d');
+
+let W, H;
+let gameState = 'menu';
+let score = 0;
+let layer = 0;
+let heat = 50, flow = 50, retract = 50;
+let targetHeat = 50, targetFlow = 50, targetRetract = 50;
+let nozzleX = 0.5;
+let eventMsg = '';
+let eventTimer = 0;
+let particles = [];
+let printedDots = [];
+let entropy = 0;
+let entropyMax = 100;
+let driftSpeed = 0;
+let tick = 0;
+let touchStartX = null;
+let gameLoopId = null;
+
+// Print head position visual
+let nozzleY = 0;
+let printHeadTargetX = 0.5;
+
+function resize() {
+  const bed = document.getElementById('print-bed');
+  W = bed.clientWidth;
+  H = bed.clientHeight;
+  layerCanvas.width = W;
+  layerCanvas.height = H;
+  overlayCanvas.width = W;
+  overlayCanvas.height = H;
+  drawLayer();
+}
+
+function drawLayer() {
+  lc.clearRect(0, 0, W, H);
+  // Grid
+  lc.strokeStyle = '#0f0f22';
+  lc.lineWidth = 1;
+  for (let i = 0; i <= 10; i++) {
+    lc.beginPath();
+    lc.moveTo(i * W / 10, 0);
+    lc.lineTo(i * W / 10, H);
+    lc.stroke();
+    lc.beginPath();
+    lc.moveTo(0, i * H / 10);
+    lc.lineTo(W, i * H / 10);
+    lc.stroke();
+  }
+  // Printed material
+  printedDots.forEach(d => {
+    const intensity = Math.min(1, d.age / 20);
+    lc.fillStyle = `rgba(0, ${Math.floor(180 + intensity * 75)}, ${Math.floor(200 + intensity * 55)}, ${0.4 + intensity * 0.5})`;
+    lc.beginPath();
+    lc.arc(d.x * W, d.y * H, 3, 0, Math.PI * 2);
+    lc.fill();
+  });
+}
+
+function drawOverlay() {
+  oc.clearRect(0, 0, W, H);
+  // Nozzle glow
+  const nx = nozzleX * W;
+  const ny = nozzleY * H;
+  const glowR = 12 + (heat / 100) * 10;
+  const grd = oc.createRadialGradient(nx, ny, 0, nx, ny, glowR);
+  grd.addColorStop(0, `rgba(255, ${Math.floor(100 + heat)}, 50, 0.9)`);
+  grd.addColorStop(1, 'rgba(255, 100, 0, 0)');
+  oc.fillStyle = grd;
+  oc.beginPath();
+  oc.arc(nx, ny, glowR, 0, Math.PI * 2);
+  oc.fill();
+  // Nozzle tip
+  oc.fillStyle = '#cccccc';
+  oc.beginPath();
+  oc.arc(nx, ny, 4, 0, Math.PI * 2);
+  oc.fill();
+  // Filament stream
+  if (flow > 30) {
+    oc.strokeStyle = `rgba(0, 200, 255, ${flow / 200})`;
+    oc.lineWidth = 1.5;
+    oc.beginPath();
+    oc.moveTo(nx, ny);
+    oc.lineTo(nx, H);
+    oc.stroke();
+  }
+  // Entropy indicator at top
+  const eWidth = W * 0.8;
+  const eX = W * 0.1;
+  oc.fillStyle = '#1a1a2a';
+  oc.fillRect(eX, 4, eWidth, 6);
+  const eFill = (entropy / entropyMax) * eWidth;
+  const eColor = entropy < 50 ? '#00ffcc' : entropy < 80 ? '#ff9900' : '#ff4466';
+  oc.fillStyle = eColor;
+  oc.fillRect(eX, 4, eFill, 6);
+  // Event particles
+  particles.forEach(p => {
+    oc.fillStyle = `rgba(${p.r},${p.g},${p.b},${p.a})`;
+    oc.beginPath();
+    oc.arc(p.x, p.y, p.r2, 0, Math.PI * 2);
+    oc.fill();
+  });
+}
+
+function spawnEvent(type) {
+  const cx = Math.random() * W;
+  const cy = Math.random() * H * 0.6;
+  if (type === 'blob') {
+    for (let i = 0; i < 8; i++) {
+      particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3, r: 0, g: 80, b: 255, a: 0.8, r2: 5 + Math.random() * 8, life: 40 });
+    }
+    eventMsg = 'BLOB DETECTED!';
+  } else if (type === 'tangle') {
+    for (let i = 0; i < 6; i++) {
+      particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, r: 180, g: 0, b: 255, a: 0.8, r2: 4 + Math.random() * 6, life: 35 });
+    }
+    eventMsg = 'FILAMENT TANGLE!';
+  } else if (type === 'thermal') {
+    for (let i = 0; i < 10; i++) {
+      particles.push({ x: cx, y: cy, vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 4, r: 255, g: 80, b: 0, a: 0.9, r2: 3 + Math.random() * 5, life: 30 });
+    }
+    eventMsg = 'THERMAL RUNAWAY!';
+  }
+  eventTimer = 60;
+}
+
+function updateMeters() {
+  // Random drift on targets
+  if (tick % 60 === 0) {
+    targetHeat = Math.max(20, Math.min(80, targetHeat + (Math.random() - 0.5) * 15));
+    targetFlow = Math.max(20, Math.min(80, targetFlow + (Math.random() - 0.5) * 15));
+    targetRetract = Math.max(20, Math.min(80, targetRetract + (Math.random() - 0.5) * 15));
+    // Escalate
+    const escalation = Math.floor(layer / 5);
+    entropyMax = 100 + escalation * 20;
+  }
+
+  // Smooth meter values toward targets
+  heat += (targetHeat - heat) * 0.03;
+  flow += (targetFlow - flow) * 0.03;
+  retract += (targetRetract - retract) * 0.03;
+
+  // Entropy buildup based on mismatch
+  const hErr = Math.abs(heat - targetHeat);
+  const fErr = Math.abs(flow - targetFlow);
+  const rErr = Math.abs(retract - targetRetract);
+  const totalErr = (hErr + fErr + rErr) / 3;
+  entropy += totalErr * 0.04;
+  entropy = Math.max(0, entropy - 0.1);
+
+  if (entropy >= entropyMax) {
+    endGame('Entropy overwhelmed the print!');
+    return;
+  }
+
+  // Events based on entropy
+  if (tick % 90 === 0 && entropy > 40) {
+    const r = Math.random();
+    if (r < 0.33) spawnEvent('blob');
+    else if (r < 0.66) spawnEvent('tangle');
+    else spawnEvent('thermal');
+  }
+
+  // Score
+  if (tick % 10 === 0) {
+    score += Math.max(0, Math.floor((100 - entropy) / 10));
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.life--;
+    p.a = p.life / 40;
+    return p.life > 0;
+  });
+}
+
+function updatePrint() {
+  // Move nozzle along X axis
+  nozzleY = Math.min(0.95, nozzleY + 0.003 + layer * 0.0005);
+  if (nozzleY >= 0.95) {
+    // New layer
+    layer++;
+    nozzleY = 0.05;
+    printedDots = printedDots.filter(d => d.age < 200);
+    // Bonus for surviving layer
+    score += layer * 50;
+    entropy = Math.max(0, entropy - 15);
+    eventMsg = `LAYER ${layer} COMPLETE!`;
+    eventTimer = 60;
+  }
+
+  // Print a dot if flow is reasonable
+  if (flow > 25 && heat > 30) {
+    printedDots.push({ x: nozzleX, y: nozzleY, age: 0 });
+  }
+  printedDots.forEach(d => d.age++);
+
+  // Drift from entropy
+  if (entropy > 50) {
+    nozzleX += (Math.random() - 0.5) * 0.01 * (entropy / 50);
+  }
+  nozzleX = Math.max(0.02, Math.min(0.98, nozzleX));
+}
+
+function adjustMeter(type, dir) {
+  if (type === 'heat') heat = Math.max(0, Math.min(100, heat + dir * 5));
+  if (type === 'flow') flow = Math.max(0, Math.min(100, flow + dir * 5));
+  if (type === 'retract') retract = Math.max(0, Math.min(100, retract + dir * 5));
+}
+
+function updateHUD() {
+  document.getElementById('scoreDisp').textContent = `SCORE: ${score}`;
+  document.getElementById('levelDisp').textContent = `LAYER ${layer}`;
+
+  document.getElementById('heatBar').style.width = heat + '%';
+  document.getElementById('heatVal').textContent = Math.round(heat);
+  document.getElementById('heatTarget').style.left = targetHeat + '%';
+
+  document.getElementById('flowBar').style.width = flow + '%';
+  document.getElementById('flowVal').textContent = Math.round(flow);
+  document.getElementById('flowTarget').style.left = targetFlow + '%';
+
+  document.getElementById('retractBar').style.width = retract + '%';
+  document.getElementById('retractVal').textContent = Math.round(retract);
+  document.getElementById('retractTarget').style.left = targetRetract + '%';
+
+  if (eventTimer > 0) {
+    document.getElementById('eventLog').textContent = eventMsg;
+    eventTimer--;
+  } else {
+    document.getElementById('eventLog').textContent = '';
+  }
+}
+
+function loop() {
+  if (gameState !== 'playing') return;
+  tick++;
+  updateMeters();
+  updatePrint();
+  updateParticles();
+  drawLayer();
+  drawOverlay();
+  updateHUD();
+  gameLoopId = requestAnimationFrame(loop);
+}
+
+function startGame() {
+  score = 0;
+  layer = 1;
+  heat = 50; flow = 50; retract = 50;
+  targetHeat = 50; targetFlow = 50; targetRetract = 50;
+  nozzleX = 0.5;
+  nozzleY = 0.1;
+  entropy = 0;
+  entropyMax = 100;
+  tick = 0;
+  particles = [];
+  printedDots = [];
+  eventMsg = '';
+  eventTimer = 0;
+
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('gameover').style.display = 'none';
+  document.getElementById('game').style.display = 'flex';
+  gameState = 'playing';
+  resize();
+  loop();
+}
+
+function endGame(reason) {
+  gameState = 'gameover';
+  cancelAnimationFrame(gameLoopId);
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('gameover').style.display = 'block';
+  document.getElementById('gameoverReason').textContent = reason;
+  document.getElementById('finalScore').textContent = `SCORE: ${score} | LAYER: ${layer}`;
+}
+
+// Touch / mouse controls
+const bed = document.getElementById('print-bed');
+
+function getBX(clientX) {
+  const rect = bed.getBoundingClientRect();
+  return (clientX - rect.left) / rect.width;
+}
+
+bed.addEventListener('touchstart', e => {
+  touchStartX = getBX(e.touches[0].clientX);
+  e.preventDefault();
+});
+bed.addEventListener('touchmove', e => {
+  if (touchStartX !== null) {
+    const nx = getBX(e.touches[0].clientX);
+    nozzleX = Math.max(0.02, Math.min(0.98, nx));
+  }
+  e.preventDefault();
+});
+bed.addEventListener('touchend', () => { touchStartX = null; });
+
+bed.addEventListener('mousedown', e => {
+  nozzleX = getBX(e.clientX);
+});
+bed.addEventListener('mousemove', e => {
+  if (e.buttons) nozzleX = getBX(e.clientX);
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (gameState !== 'playing') return;
+  if (e.key === 'ArrowLeft' || e.key === 'a') nozzleX = Math.max(0.02, nozzleX - 0.02);
+  if (e.key === 'ArrowRight' || e.key === 'd') nozzleX = Math.min(0.98, nozzleX + 0.02);
+  if (e.key === 'q') adjustMeter('heat', -1);
+  if (e.key === 'w') adjustMeter('heat', 1);
+  if (e.key === 'a' && e.key !== 'ArrowLeft') adjustMeter('flow', -1);
+  if (e.key === 's') adjustMeter('flow', 1);
+  if (e.key === 'z') adjustMeter('retract', -1);
+  if (e.key === 'x') adjustMeter('retract', 1);
+});
+
+window.addEventListener('resize', () => { if (gameState === 'playing') resize(); });
+</script>
+</body>
+</html>
