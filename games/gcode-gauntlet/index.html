@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GCode Gauntlet</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    overflow: hidden;
+    font-family: 'Share Tech Mono', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .stat { color: #00f5d4; font-size: 13px; line-height: 1.6; text-shadow: 0 0 8px #00f5d4aa; }
+  .stat span { color: #f72585; }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10,10,18,0.92);
+    z-index: 20;
+    transition: opacity .3s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    font-size: clamp(28px, 8vw, 52px);
+    color: #00f5d4;
+    text-shadow: 0 0 20px #00f5d4, 0 0 60px #00f5d4aa;
+    letter-spacing: .15em;
+    margin-bottom: 8px;
+  }
+  #overlay .sub {
+    color: #f72585;
+    font-size: clamp(11px, 3vw, 15px);
+    letter-spacing: .2em;
+    margin-bottom: 40px;
+    text-shadow: 0 0 10px #f72585;
+  }
+  #overlay .tagline {
+    color: #888;
+    font-size: clamp(10px, 2.5vw, 13px);
+    max-width: 320px;
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 36px;
+  }
+  #startBtn {
+    background: transparent;
+    border: 2px solid #00f5d4;
+    color: #00f5d4;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(14px, 4vw, 18px);
+    padding: 14px 44px;
+    cursor: pointer;
+    letter-spacing: .2em;
+    text-shadow: 0 0 10px #00f5d4;
+    box-shadow: 0 0 20px #00f5d444, inset 0 0 20px #00f5d411;
+    transition: all .2s;
+  }
+  #startBtn:hover, #startBtn:active {
+    background: #00f5d422;
+    box-shadow: 0 0 30px #00f5d4aa, inset 0 0 30px #00f5d422;
+  }
+  #gameOver {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+  }
+  #gameOver h2 {
+    font-size: clamp(22px, 7vw, 42px);
+    color: #f72585;
+    text-shadow: 0 0 20px #f72585;
+    letter-spacing: .15em;
+    margin-bottom: 12px;
+  }
+  #finalScore { color: #00f5d4; font-size: clamp(13px, 3.5vw, 18px); margin-bottom: 30px; text-shadow: 0 0 8px #00f5d4; }
+  #scanline {
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px);
+    pointer-events: none;
+    z-index: 50;
+  }
+</style>
+</head>
+<body>
+<div id="scanline"></div>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="stat">SCORE <span id="scoreDisplay">0</span></div>
+  <div class="stat">LAYER <span id="layerDisplay">1</span></div>
+  <div class="stat">HIGH <span id="highDisplay">0</span></div>
+</div>
+<div id="overlay">
+  <div id="menu">
+    <h1>GCOD3</h1>
+    <div class="sub">GAUNTLET</div>
+    <div class="tagline">Trace the path. Dodge debris. Survive the print.</div>
+    <button id="startBtn" onclick="startGame()">LAYER UP</button>
+    <div class="sub" style="margin-top:24px;font-size:11px;letter-spacing:.15em;color:#555">
+      TOUCH / ARROW KEYS TO MOVE
+    </div>
+  </div>
+  <div id="gameOver">
+    <h2>PRINT FAILED</h2>
+    <div id="finalScore">SCORE: 0</div>
+    <button id="startBtn" onclick="startGame()">RETRY</button>
+  </div>
+</div>
+
+<script>
+// ─── CANVAS SETUP ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = 'menu'; // menu | playing | dead
+let score = 0, highScore = parseInt(localStorage.getItem('gcodeHigh') || '0');
+let layer = 1;
+let frame = 0;
+let gameSpeed = 2.5;
+
+// ─── PLAYER ───────────────────────────────────────────────────────────────────
+const player = { x: 0, y: 0, targetX: 0, size: 18, heat: 50 };
+const keys = { left: false, right: false, up: false, down: false };
+let touchDX = 0, touchDY = 0;
+let touchActive = false;
+
+// ─── G-CODE PATH ─────────────────────────────────────────────────────────────
+let pathPoints = []; // {x, y} current drawn path
+let pathIndex = 0;
+const PATH_STEP = 6;
+const PATH_WIDTH = 60;
+let generatingPath = false;
+let lastGen = { x: 0, y: 0 };
+
+function resetPath() {
+  pathPoints = [];
+  pathIndex = 0;
+  generatingPath = false;
+  lastGen = { x: W / 2, y: H * 0.8 };
+  for (let i = 0; i < 20; i++) generatePathStep();
+}
+
+function generatePathStep() {
+  const cx = W / 2;
+  const cy = H * 0.8;
+  const dirs = ['left', 'right', 'up', 'diag_up_left', 'diag_up_right'];
+  const dir = dirs[Math.floor(Math.random() * dirs.length)];
+  const step = 40 + Math.random() * 40;
+  let nx = lastGen.x, ny = lastGen.y;
+  if (dir === 'left') nx -= step;
+  else if (dir === 'right') nx += step;
+  else if (dir === 'up') ny -= step;
+  else if (dir === 'diag_up_left') { nx -= step * 0.8; ny -= step * 0.6; }
+  else if (dir === 'diag_up_right') { nx += step * 0.8; ny -= step * 0.6; }
+  nx = Math.max(80, Math.min(W - 80, nx));
+  ny = Math.max(100, Math.min(H - 80, ny));
+  const dist = Math.hypot(nx - lastGen.x, ny - lastGen.y);
+  const steps = Math.max(1, Math.floor(dist / PATH_STEP));
+  for (let i = 1; i <= steps; i++) {
+    pathPoints.push({
+      x: lastGen.x + (nx - lastGen.x) * (i / steps),
+      y: lastGen.y + (ny - lastGen.y) * (i / steps)
+    });
+  }
+  lastGen = { x: nx, y: ny };
+}
+
+// ─── OBSTACLES ───────────────────────────────────────────────────────────────
+let obstacles = [];
+const OBSTACLE_TYPES = ['blob', 'dust', 'tangle', 'thermal'];
+
+function spawnObstacle() {
+  const type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+  const margin = 60;
+  let x, y;
+  const py = pathPoints[pathIndex];
+  if (py) {
+    const perp = (Math.random() - 0.5) * 280;
+    const dx = py.x - (pathPoints[Math.max(0, pathIndex - 1)]?.x || py.x);
+    const dy = py.y - (pathPoints[Math.max(0, pathIndex - 1)]?.y || py.y);
+    const len = Math.hypot(dx, dy) || 1;
+    x = py.x + (-dy / len) * perp;
+    y = py.y;
+  } else {
+    x = margin + Math.random() * (W - margin * 2);
+    y = -30;
+  }
+  x = Math.max(30, Math.min(W - 30, x));
+  obstacles.push({
+    type, x, y,
+    size: 14 + Math.random() * 16,
+    speed: 1.5 + Math.random() * 2 + layer * 0.15,
+    angle: Math.random() * Math.PI * 2,
+    spin: (Math.random() - 0.5) * 0.1,
+    pulse: Math.random() * Math.PI * 2,
+    alive: true
+  });
+}
+
+// ─── PARTICLES ───────────────────────────────────────────────────────────────
+let particles = [];
+
+function spawnParticles(x, y, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      size: 2 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+// ─── HEAT / NOZZLE ───────────────────────────────────────────────────────────
+let heatGlow = 0;
+let nozzleFlame = 0;
+
+function drawPlayer() {
+  const { x, y, size } = player;
+  const h = Math.min(100, player.heat);
+  const r = Math.floor(0 + (h / 100) * 255);
+  const g = Math.floor(245 - (h / 100) * 200);
+  const b = Math.floor(212 - (h / 100) * 150);
+  const color = `rgb(${r},${g},${b})`;
+
+  // Nozzle flame
+  if (nozzleFlame > 0) {
+    const fg = ctx.createRadialGradient(x, y + size * 0.8, 0, x, y + size * 0.8, size * 1.2 * nozzleFlame);
+    fg.addColorStop(0, 'rgba(255,100,0,0.8)');
+    fg.addColorStop(0.5, 'rgba(255,30,0,0.3)');
+    fg.addColorStop(1, 'rgba(255,0,0,0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.ellipse(x, y + size * 0.8, size * 0.5 * nozzleFlame, size * 0.9 * nozzleFlame, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Heat glow
+  if (heatGlow > 0) {
+    const gg = ctx.createRadialGradient(x, y, 0, x, y, size * 2.5 * heatGlow);
+    gg.addColorStop(0, `rgba(${r},${g},${b},${0.3 * heatGlow})`);
+    gg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 2.5 * heatGlow, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Body
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Shell (hot end block)
+  ctx.fillStyle = '#1a1a2e';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.roundRect(-size * 0.5, -size * 0.4, size, size * 0.7, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  // Nozzle tip
+  ctx.fillStyle = color;
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.2, size * 0.3);
+  ctx.lineTo(size * 0.2, size * 0.3);
+  ctx.lineTo(0, size * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
+  // Heat break
+  ctx.fillStyle = '#888';
+  ctx.shadowBlur = 0;
+  ctx.fillRect(-size * 0.12, -size * 0.6, size * 0.24, size * 0.22);
+
+  // Cooling fan dots
+  ctx.fillStyle = '#00f5d4';
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.arc(-size * 0.3, -size * 0.5, 2, 0, Math.PI * 2);
+  ctx.arc(size * 0.3, -size * 0.5, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawObstacle(obs) {
+  const { x, y, size, type, angle, pulse } = obs;
+  const p = 0.7 + 0.3 * Math.sin(pulse + frame * 0.05);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  if (type === 'blob') {
+    // PLA blob — goopy circle
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size * p);
+    g.addColorStop(0, 'rgba(100,255,150,0.9)');
+    g.addColorStop(0.6, 'rgba(50,200,100,0.6)');
+    g.addColorStop(1, 'rgba(30,150,80,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * p, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(100,255,150,0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  } else if (type === 'dust') {
+    // Dust particle cluster
+    ctx.fillStyle = 'rgba(180,160,120,0.8)';
+    for (let i = 0; i < 5; i++) {
+      const dx = (Math.random() - 0.5) * size;
+      const dy = (Math.random() - 0.5) * size;
+      ctx.beginPath();
+      ctx.arc(dx, dy, size * 0.2 * p, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (type === 'tangle') {
+    // Filament tangle — knot shape
+    ctx.strokeStyle = `rgba(247,37,133,${0.6 + 0.4 * p})`;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#f72585';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const r = size * 0.6 * p;
+      i === 0 ? ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      const a2 = ((i + 2) / 6) * Math.PI * 2;
+      ctx.lineTo(Math.cos(a2) * r * 0.5, Math.sin(a2) * r * 0.5);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  } else if (type === 'thermal') {
+    // Thermal runaway event — red flash
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 1.5 * p);
+    g.addColorStop(0, 'rgba(255,50,50,0.9)');
+    g.addColorStop(0.5, 'rgba(255,0,0,0.4)');
+    g.addColorStop(1, 'rgba(200,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 1.5 * p, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ─── BACKGROUND / GRID ───────────────────────────────────────────────────────
+let gridOffset = 0;
+
+function drawBackground() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Build plate grid
+  ctx.strokeStyle = 'rgba(0,245,212,0.06)';
+  ctx.lineWidth = 1;
+  const gs = 40;
+  gridOffset = (gridOffset + gameSpeed * 0.5) % gs;
+  for (let x = 0; x < W; x += gs) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = gridOffset; y < H; y += gs) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Build plate border
+  ctx.strokeStyle = 'rgba(0,245,212,0.2)';
+  ctx.lineWidth = 2;
+  const mx = 20, my = 20, mw = W - 40, mh = H - 40;
+  ctx.strokeRect(mx, my, mw, mh);
+  ctx.fillStyle = 'rgba(0,245,212,0.02)';
+  ctx.fillRect(mx, my, mw, mh);
+
+  // Bed labels
+  ctx.fillStyle = 'rgba(0,245,212,0.15)';
+  ctx.font = '10px Share Tech Mono';
+  ctx.fillText('Y:0', 24, 35);
+  ctx.fillText(`X:0`, 24, 50);
+}
+
+function drawPath() {
+  if (pathPoints.length < 2) return;
+  const start = Math.max(0, pathIndex - 5);
+  ctx.strokeStyle = 'rgba(0,245,212,0.3)';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(pathPoints[start].x, pathPoints[start].y);
+  for (let i = start + 1; i < Math.min(pathIndex + 3, pathPoints.length); i++) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Active segment glow
+  if (pathIndex < pathPoints.length) {
+    const p = pathPoints[pathIndex];
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 30);
+    g.addColorStop(0, 'rgba(0,245,212,0.15)');
+    g.addColorStop(1, 'rgba(0,245,212,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 30, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ─── GRAIN OVERLAY ───────────────────────────────────────────────────────────
+let grainCanvas, grainCtx;
+function initGrain() {
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = W;
+  grainCanvas.height = H;
+  grainCtx = grainCanvas.getContext('2d');
+}
+initGrain();
+window.addEventListener('resize', () => { grainCanvas.width = W; grainCanvas.height = H; });
+
+function drawGrain() {
+  const id = grainCtx.createImageData(W, H);
+  const d = id.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = Math.random() * 20;
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 12;
+  }
+  grainCtx.putImageData(id, 0, 0);
+  ctx.drawImage(grainCanvas, 0, 0);
+}
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+  if (e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
+  if (e.key === 'ArrowDown' || e.key === 's') keys.down = true;
+  if (e.key === ' ' || e.key === 'Enter') { if (state !== 'playing') startGame(); }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+  if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+  if (e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
+  if (e.key === 'ArrowDown' || e.key === 's') keys.down = false;
+});
+
+// Touch
+canvas.addEventListener('touchstart', e => { touchActive = true; e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (!touchActive) return;
+  const t = e.touches[0];
+  touchDX = (t.clientX - W / 2) * 0.04;
+  touchDY = (t.clientY - H / 2) * 0.04;
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchActive = false; touchDX = 0; touchDY = 0; });
+
+// ─── GAME LOGIC ───────────────────────────────────────────────────────────────
+function startGame() {
+  state = 'playing';
+  score = 0;
+  layer = 1;
+  gameSpeed = 2.5;
+  player.x = W / 2;
+  player.y = H * 0.8;
+  player.targetX = player.x;
+  player.heat = 50;
+  obstacles = [];
+  particles = [];
+  pathIndex = 0;
+  resetPath();
+  document.getElementById('overlay').classList.add('hidden');
+  document.getElementById('menu').style.display = 'flex';
+  document.getElementById('menu').style.flexDirection = 'column';
+  document.getElementById('menu').style.alignItems = 'center';
+  document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('overlay').classList.add('hidden'), 50);
+  frame = 0;
+}
+
+function update() {
+  if (state !== 'playing') return;
+  frame++;
+
+  // Move player
+  const spd = 4;
+  if (keys.left) player.x -= spd;
+  if (keys.right) player.x += spd;
+  if (keys.up) player.y -= spd;
+  if (keys.down) player.y += spd;
+  if (touchActive) {
+    player.x += touchDX;
+    player.y += touchDY;
+  }
+  player.x = Math.max(30, Math.min(W - 30, player.x));
+  player.y = Math.max(30, Math.min(H - 30, player.y));
+
+  // Advance path
+  const speedMult = gameSpeed * (1 + (layer - 1) * 0.1);
+  pathIndex = Math.min(pathPoints.length - 1, pathIndex + speedMult);
+
+  // Generate more path
+  if (pathPoints.length - pathIndex < 60) generatePathStep();
+
+  // Slowly scroll obstacles up (as if bed is moving down)
+  obstacles.forEach(obs => {
+    obs.y += speedMult;
+    obs.pulse += 0.05;
+    obs.angle += obs.spin;
+  });
+
+  // Remove off-screen obstacles
+  obstacles = obstacles.filter(o => o.y < H + 60);
+
+  // Spawn obstacles
+  if (frame % Math.max(20, 50 - layer * 3) === 0) {
+    spawnObstacle();
+  }
+
+  // Particle update
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.05;
+    p.life -= p.decay;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  // Heat mechanic
+  const onPath = isOnPath(player.x, player.y);
+  if (onPath) {
+    player.heat = Math.max(0, player.heat - 0.3);
+    nozzleFlame = Math.max(0, nozzleFlame - 0.05);
+  } else {
+    player.heat = Math.min(100, player.heat + 0.5 + layer * 0.05);
+    nozzleFlame = Math.min(1, nozzleFlame + 0.08);
+  }
+  heatGlow = player.heat / 100;
+
+  // Collision check
+  for (const obs of obstacles) {
+    const dist = Math.hypot(player.x - obs.x, player.y - obs.y);
+    const collR = player.size * 0.6 + obs.size * 0.7;
+    if (dist < collR) {
+      spawnParticles(player.x, player.y, '#f72585', 20);
+      if (player.heat >= 90) {
+        die();
+        return;
+      } else {
+        // Bounce off
+        const nx = player.x + (player.x - obs.x) / dist * 8;
+        const ny = player.y + (player.y - obs.y) / dist * 8;
+        player.x = Math.max(30, Math.min(W - 30, nx));
+        player.y = Math.max(30, Math.min(H - 30, ny));
+        obstacles = obstacles.filter(o => o !== obs);
+        score += 5;
+        spawnParticles(obs.x, obs.y, '#f72585', 8);
+      }
+    }
+  }
+
+  // Score & level
+  score += 1;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('gcodeHigh', highScore);
+  }
+  const newLayer = 1 + Math.floor(score / 500);
+  if (newLayer > layer) {
+    layer = newLayer;
+    gameSpeed = Math.min(7, 2.5 + layer * 0.4);
+    spawnParticles(player.x, player.y, '#00f5d4', 30);
+  }
+
+  // Update displays
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('layerDisplay').textContent = layer;
+  document.getElementById('highDisplay').textContent = highScore;
+}
+
+function isOnPath(x, y) {
+  const lookAhead = Math.min(pathIndex + 20, pathPoints.length);
+  for (let i = Math.max(0, pathIndex - 5); i < lookAhead; i++) {
+    const p = pathPoints[i];
+    if (!p) continue;
+    if (Math.hypot(x - p.x, y - p.y) < PATH_WIDTH) return true;
+  }
+  return false;
+}
+
+function die() {
+  state = 'dead';
+  document.getElementById('finalScore').textContent = `SCORE: ${score}  |  LAYER ${layer}`;
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('gameOver').style.display = 'flex';
+  document.getElementById('gameOver').style.flexDirection = 'column';
+  document.getElementById('gameOver').style.alignItems = 'center';
+  const ov = document.getElementById('overlay');
+  ov.style.display = 'flex';
+  ov.classList.remove('hidden');
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+function render() {
+  drawBackground();
+  drawPath();
+  obstacles.forEach(drawObstacle);
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+  if (state === 'playing') drawPlayer();
+  drawGrain();
+}
+
+// ─── LOOP ─────────────────────────────────────────────────────────────────────
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.getElementById('highDisplay').textContent = highScore;
+document.getElementById('layerDisplay').textContent = '1';
+document.getElementById('scoreDisplay').textContent = '0';
+
+loop();
+</script>
+</body>
+</html>
