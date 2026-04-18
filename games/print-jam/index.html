@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Print Jam</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#e0e0ff;font-family:'Courier New',Courier,monospace;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:100vh;user-select:none;-webkit-user-select:none;touch-action:none}
+#overlay{position:fixed;inset:0;background:rgba(5,5,15,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;transition:opacity .4s}
+#overlay h1{font-size:clamp(2rem,8vw,4rem);color:#00e5ff;text-shadow:0 0 20px #00e5ff,0 0 60px #00e5ff80;letter-spacing:.2em;margin-bottom:.2em}
+#overlay p{color:#ff00aa;text-shadow:0 0 10px #ff00aa80;font-size:clamp(.8rem,3vw,1.1rem);margin:.4em 0;letter-spacing:.1em}
+#overlay .hint{color:#8888aa;font-size:clamp(.65rem,2.5vw,.9rem);margin-top:1.5em;line-height:1.8;text-align:center;max-width:340px}
+#startBtn{background:transparent;border:2px solid #00e5ff;color:#00e5ff;font-family:inherit;font-size:clamp(.9rem,3.5vw,1.2rem);padding:.6em 2.4em;cursor:pointer;letter-spacing:.15em;margin-top:1.8em;transition:all .2s;text-transform:uppercase}
+#startBtn:hover,#startBtn:active{background:#00e5ff20;box-shadow:0 0 20px #00e5ff60}
+#gameCanvas{display:block;image-rendering:pixelated}
+#grain{position:fixed;inset:0;pointer-events:none;z-index:50;opacity:.06;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");background-size:256px 256px}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:.6em 1em;z-index:100;pointer-events:none;background:linear-gradient(to bottom,#0a0a0f 0%,transparent 100%)}
+.hud-item{font-size:clamp(.7rem,2.5vw,.95rem);color:#00e5ff;text-shadow:0 0 8px #00e5ff;letter-spacing:.1em}
+.hud-item span{color:#ff00aa;text-shadow:0 0 8px #ff00aa}
+#gameOver{position:fixed;inset:0;background:rgba(5,5,15,0.95);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:200}
+#gameOver h2{font-size:clamp(1.5rem,6vw,3rem);color:#ff00aa;text-shadow:0 0 20px #ff00aa;letter-spacing:.2em;margin-bottom:.5em}
+#gameOver .final{color:#e0e0ff;font-size:clamp(1rem,4vw,1.6rem);margin:.3em 0;letter-spacing:.1em}
+#gameOver .final span{color:#00e5ff;text-shadow:0 0 10px #00e5ff}
+#restartBtn{background:transparent;border:2px solid #ff00aa;color:#ff00aa;font-family:inherit;font-size:clamp(.9rem,3vw,1.1rem);padding:.5em 2em;cursor:pointer;letter-spacing:.15em;margin-top:1.5em;transition:all .2s;text-transform:uppercase}
+#restartBtn:hover,#restartBtn:active{background:#ff00aa20;box-shadow:0 0 20px #ff00aa60}
+</style>
+</head>
+<body>
+<div id="grain"></div>
+<div id="overlay">
+  <h1>PRINT JAM</h1>
+  <p>// FIT THE PIECES. CLEAR THE PLATE. //</p>
+  <div class="hint">
+    ARROW KEYS / SWIPE to move<br>
+    UP / TAP-HOLD to rotate<br>
+    DOWN / SWIPE DOWN to drop<br>
+    SPACE / DOUBLE-TAP to flip mirror
+  </div>
+  <button id="startBtn">Start Print</button>
+</div>
+<canvas id="gameCanvas"></canvas>
+<div id="hud">
+  <div class="hud-item">SCORE <span id="scoreVal">0</span></div>
+  <div class="hud-item">LEVEL <span id="levelVal">1</span></div>
+  <div class="hud-item">LINES <span id="linesVal">0</span></div>
+</div>
+<div id="gameOver">
+  <h2>PRINT JAMMED</h2>
+  <div class="final">SCORE <span id="goScore">0</span></div>
+  <div class="final">LINES <span id="goLines">0</span></div>
+  <button id="restartBtn">Retry</button>
+</div>
+<script>
+(function() {
+'use strict';
+
+// ─── CONSTANTS ──────────────────────────────────────────────────────────────
+var COLS = 10, ROWS = 20;
+var COLORS = ['#00e5ff','#ff00aa','#aaff00','#ffaa00','#aa00ff','#00ffaa','#ff4444'];
+
+var SHAPES = [
+  [[1,1,1,1]],
+  [[1,1],[1,1]],
+  [[0,1,0],[1,1,1]],
+  [[1,0,0],[1,1,1]],
+  [[0,0,1],[1,1,1]],
+  [[0,1,1],[1,1,0]],
+  [[1,1,0],[0,1,1]],
+  [[1,1,1],[1,0,0],[1,0,0]],
+  [[1,1,1],[0,0,1],[0,0,1]],
+  [[1,1],[1,0],[1,0]],
+  [[1,1,1,1],[0,0,1,0]],
+  [[1,1,1],[0,1,0]],
+];
+
+// ─── DOM REFS ───────────────────────────────────────────────────────────────
+var canvas = document.getElementById('gameCanvas');
+var ctx = canvas.getContext('2d');
+var overlay = document.getElementById('overlay');
+var gameOverEl = document.getElementById('gameOver');
+var scoreEl = document.getElementById('scoreVal');
+var levelEl = document.getElementById('levelVal');
+var linesEl = document.getElementById('linesVal');
+var goScoreEl = document.getElementById('goScore');
+var goLinesEl = document.getElementById('goLines');
+
+// ─── CANVAS SIZING ──────────────────────────────────────────────────────────
+var BLOCK = 32;
+var W, H, OX, OY;
+
+function resize() {
+  var maxH = window.innerHeight * 0.85;
+  var maxW = window.innerWidth;
+  var cell = Math.floor(Math.min(maxW / (COLS + 6), maxH / (ROWS + 2)));
+  BLOCK = cell;
+  W = COLS * BLOCK;
+  H = ROWS * BLOCK;
+  canvas.width = W;
+  canvas.height = H;
+  OX = 0; OY = 0;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+}
+resize();
+window.addEventListener('resize', function() { resize(); });
+
+// ─── GAME STATE ───────────────────────────────────────────────────────────────
+var state = 'menu';
+var board, current, nextPiece, x, y, rot, mirror;
+var score, lines, level, dropTimer, dropInterval;
+var animId, lastTime;
+
+// ─── BOARD HELPERS ───────────────────────────────────────────────────────────
+function emptyBoard() {
+  var b = [];
+  for (var r = 0; r < ROWS; r++) b.push(new Array(COLS).fill(0));
+  return b;
+}
+
+function valid(shape, px, py) {
+  for (var r = 0; r < shape.length; r++) {
+    for (var c = 0; c < shape[r].length; c++) {
+      if (!shape[r][c]) continue;
+      var nx = px + c, ny = py + r;
+      if (nx < 0 || nx >= COLS || ny >= ROWS) return false;
+      if (ny >= 0 && board[ny][nx]) return false;
+    }
+  }
+  return true;
+}
+
+function place(shape, color, px, py) {
+  for (var r = 0; r < shape.length; r++) {
+    for (var c = 0; c < shape[r].length; c++) {
+      if (!shape[r][c]) continue;
+      var ny = py + r, nx = px + c;
+      if (ny >= 0 && ny < ROWS && nx >= 0 && nx < COLS) board[ny][nx] = color;
+    }
+  }
+}
+
+function rotateCW(shape) {
+  var rows = shape.length, cols = shape[0].length;
+  var out = [];
+  for (var c = 0; c < cols; c++) {
+    out[c] = [];
+    for (var r = 0; r < rows; r++) out[c][rows - 1 - r] = shape[r][c];
+  }
+  return out;
+}
+
+function mirrorShape(shape) {
+  return shape.map(function(row) { return row.slice().reverse(); });
+}
+
+// ─── PIECE SPAWNING ──────────────────────────────────────────────────────────
+function spawn() {
+  current = nextPiece || randomPiece();
+  nextPiece = randomPiece();
+  x = Math.floor((COLS - current.shape[0].length) / 2);
+  y = -2;
+  rot = 0; mirror = false;
+  if (!valid(current.shape, x, y)) {
+    state = 'over';
+    goScoreEl.textContent = score;
+    goLinesEl.textContent = lines;
+    gameOverEl.style.display = 'flex';
+  }
+}
+
+function randomPiece() {
+  return {
+    shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+    color: COLORS[Math.floor(Math.random() * COLORS.length)]
+  };
+}
+
+// ─── SCORING & LEVEL ─────────────────────────────────────────────────────────
+function clearRows() {
+  var cleared = 0;
+  for (var r = ROWS - 1; r >= 0; r--) {
+    var full = true;
+    for (var c = 0; c < COLS; c++) { if (!board[r][c]) { full = false; break; } }
+    if (full) {
+      board.splice(r, 1);
+      board.unshift(new Array(COLS).fill(0));
+      cleared++;
+      r++;
+    }
+  }
+  if (!cleared) return;
+  var pts = [0,100,300,600,1000];
+  score += (pts[cleared] || 1500) * level;
+  lines += cleared;
+  level = Math.floor(lines / 8) + 1;
+  dropInterval = Math.max(60, 800 - (level - 1) * 65);
+  scoreEl.textContent = score;
+  levelEl.textContent = level;
+  linesEl.textContent = lines;
+}
+
+// ─── INPUT ────────────────────────────────────────────────────────────────────
+var touchStartX, touchStartY, touchTimer;
+var lastTap = 0;
+
+function moveLeft()  { if (valid(current.shape, x-1, y)) x--; }
+function moveRight() { if (valid(current.shape, x+1, y)) x++; }
+function moveDown()  {
+  if (valid(current.shape, x, y+1)) { y++; }
+  else {
+    place(current.shape, current.color, x, y);
+    clearRows();
+    spawn();
+  }
+}
+function doRotate() {
+  var r = rotateCW(current.shape);
+  if (valid(r, x, y)) current.shape = r;
+  else if (valid(r, x-1, y)) { x--; current.shape = r; }
+  else if (valid(r, x+1, y)) { x++; current.shape = r; }
+}
+function doFlip() {
+  var m = mirrorShape(current.shape);
+  if (valid(m, x, y)) { current.shape = m; mirror = !mirror; }
+}
+
+window.addEventListener('keydown', function(e) {
+  if (state !== 'play') return;
+  switch(e.key) {
+    case 'ArrowLeft':  e.preventDefault(); moveLeft();  break;
+    case 'ArrowRight': e.preventDefault(); moveRight(); break;
+    case 'ArrowDown':  e.preventDefault(); moveDown();  break;
+    case 'ArrowUp':    e.preventDefault(); doRotate();    break;
+    case ' ':          e.preventDefault(); doFlip();  break;
+  }
+});
+
+canvas.addEventListener('touchstart', function(e) {
+  e.preventDefault();
+  var t = e.touches[0];
+  touchStartX = t.clientX; touchStartY = t.clientY;
+  var now = Date.now();
+  if (now - lastTap < 300) { doFlip(); lastTap = 0; return; }
+  lastTap = now;
+  touchTimer = setTimeout(function() { doRotate(); touchTimer = null; }, 180);
+}, {passive:false});
+
+canvas.addEventListener('touchmove', function(e) {
+  e.preventDefault();
+  if (!touchStartX) return;
+  var t = e.touches[0];
+  var dx = t.clientX - touchStartX, dy = t.clientY - touchStartY;
+  if (Math.abs(dx) > 20) { if (dx < 0) moveLeft(); else moveRight(); touchStartX = t.clientX; }
+  if (dy > 30) { moveDown(); touchStartY = t.clientY; }
+}, {passive:false});
+
+canvas.addEventListener('touchend', function(e) {
+  e.preventDefault();
+  if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
+  touchStartX = null; touchStartY = null;
+}, {passive:false});
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function drawBlock(px, py, color, alpha) {
+  var bx = OX + px * BLOCK, by = OY + py * BLOCK;
+  var s = BLOCK - 1;
+  ctx.globalAlpha = alpha != null ? alpha : 1;
+  ctx.fillStyle = color;
+  ctx.fillRect(bx + 1, by + 1, s - 1, s - 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(bx + 2, by + 2, s - 5, 3);
+  ctx.fillRect(bx + 2, by + 2, 3, s - 5);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 6;
+  ctx.strokeRect(bx + 1.5, by + 1.5, s - 2, s - 2);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(0,229,255,0.06)';
+  ctx.lineWidth = 1;
+  for (var c = 0; c <= COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(OX + c * BLOCK, OY);
+    ctx.lineTo(OX + c * BLOCK, OY + H);
+    ctx.stroke();
+  }
+  for (var r = 0; r <= ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(OX, OY + r * BLOCK);
+    ctx.lineTo(OX + W, OY + r * BLOCK);
+    ctx.stroke();
+  }
+
+  // Board blocks
+  for (var r = 0; r < ROWS; r++)
+    for (var c = 0; c < COLS; c++)
+      if (board[r][c]) drawBlock(c, r, board[r][c]);
+
+  if (state === 'play' && current) {
+    // Ghost
+    var gy = y;
+    while (valid(current.shape, x, gy + 1)) gy++;
+    for (var gr = 0; gr < current.shape.length; gr++) {
+      for (var gc = 0; gc < current.shape[gr].length; gc++) {
+        if (!current.shape[gr][gc]) continue;
+        var gny = gy + gr, gnx = x + gc;
+        if (gny >= 0) drawBlock(gnx, gny, current.color, 0.15);
+      }
+    }
+
+    // Current piece
+    for (var pr = 0; pr < current.shape.length; pr++) {
+      for (var pc = 0; pc < current.shape[pr].length; pc++) {
+        if (!current.shape[pr][pc]) continue;
+        var ny2 = y + pr, nx2 = x + pc;
+        if (ny2 >= 0) drawBlock(nx2, ny2, current.color);
+      }
+    }
+
+    // Next piece
+    var nx = COLS + 1, ny = 2;
+    ctx.fillStyle = 'rgba(0,229,255,0.5)';
+    ctx.font = 'bold ' + Math.floor(BLOCK * 0.55) + 'px Courier New, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('NEXT', OX + nx * BLOCK + 1.5 * BLOCK, OY + ny * BLOCK - 4);
+    var sh = nextPiece.shape, sw = sh[0].length;
+    var ox2 = OX + nx * BLOCK + Math.floor((4 - sw) / 2) * BLOCK;
+    var oy2 = OY + (ny + 1) * BLOCK;
+    for (var sr = 0; sr < sh.length; sr++) {
+      for (var sc = 0; sc < sh[sr].length; sc++) {
+        if (!sh[sr][sc]) continue;
+        var bx2 = ox2 + sc * BLOCK, by2 = oy2 + sr * BLOCK;
+        var s2 = BLOCK - 1;
+        ctx.fillStyle = nextPiece.color;
+        ctx.fillRect(bx2 + 1, by2 + 1, s2 - 1, s2 - 1);
+        ctx.strokeStyle = nextPiece.color;
+        ctx.shadowColor = nextPiece.color;
+        ctx.shadowBlur = 4;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(bx2 + 1.5, by2 + 1.5, s2 - 2, s2 - 2);
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+}
+
+// ─── GAME LOOP ────────────────────────────────────────────────────────────────
+function loop(ts) {
+  if (state !== 'play') { render(); animId = requestAnimationFrame(loop); return; }
+  var dt = ts - (lastTime || ts);
+  lastTime = ts;
+  dropTimer = (dropTimer || 0) + dt;
+  if (dropTimer >= dropInterval) {
+    dropTimer = 0;
+    moveDown();
+  }
+  render();
+  animId = requestAnimationFrame(loop);
+}
+
+// ─── START / RESTART ──────────────────────────────────────────────────────────
+function startGame() {
+  board = emptyBoard();
+  score = 0; lines = 0; level = 1;
+  dropInterval = 800; dropTimer = 0;
+  nextPiece = null;
+  state = 'play';
+  spawn();
+  scoreEl.textContent = '0';
+  levelEl.textContent = '1';
+  linesEl.textContent = '0';
+  overlay.style.display = 'none';
+  gameOverEl.style.display = 'none';
+  lastTime = performance.now();
+  if (animId) cancelAnimationFrame(animId);
+  animId = requestAnimationFrame(loop);
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+board = emptyBoard();
+render();
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// Expose for debugging
+window._pj = { startGame: startGame, getBoard: function() { return board; } };
+
+})();
+</script>
+</body>
+</html>
