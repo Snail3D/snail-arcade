@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Stepper Dash</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#fff;font-family:'Orbitron',monospace;overflow:hidden;height:100vh;width:100vw;user-select:none;-webkit-user-select:none;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,15,0.92);z-index:10;backdrop-filter:blur(4px)}
+#overlay.hidden{display:none}
+.title{font-size:clamp(2rem,8vw,5rem);font-weight:900;color:#00f5d4;text-shadow:0 0 30px #00f5d4,0 0 60px #00f5d4;letter-spacing:.1em;margin-bottom:.3em;text-align:center}
+.subtitle{font-size:clamp(.7rem,2.5vw,1.1rem);color:#ff2a6d;letter-spacing:.2em;margin-bottom:2em;text-align:center;padding:0 1em}
+.start-btn{background:linear-gradient(135deg,#00f5d4,#00a896);border:none;padding:.8em 2.5em;font-family:'Orbitron',monospace;font-size:clamp(.9rem,3vw,1.3rem);font-weight:700;color:#0a0a0f;cursor:pointer;border-radius:4px;letter-spacing:.1em;transition:transform .1s,box-shadow .1s}
+.start-btn:hover{transform:scale(1.05);box-shadow:0 0 30px #00f5d4}
+.start-btn:active{transform:scale(.97)}
+.hint{font-size:clamp(.6rem,1.8vw,.85rem);color:#5a5a7a;margin-top:1.5em;letter-spacing:.1em;text-align:center}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:1em 1.2em;z-index:5;pointer-events:none}
+.hud-item{font-size:clamp(.7rem,2.2vw,.95rem);font-weight:700;letter-spacing:.1em}
+#score-val{color:#00f5d4}
+#hi-val{color:#f5d400}
+#heat-bar-wrap{width:clamp(100px,25vw,200px);height:10px;background:#1a1a2e;border-radius:5px;overflow:hidden;border:1px solid #333}
+#heat-fill{height:100%;width:50%;background:linear-gradient(90deg,#00f5d4,#ff2a6d);border-radius:5px;transition:width .1s}
+#heat-label{color:#ff2a6d;font-size:clamp(.6rem,1.8vw,.8rem)}
+#gameover{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,15,0.95);z-index:20;backdrop-filter:blur(6px)}
+#gameover.hidden{display:none}
+.go-title{font-size:clamp(1.8rem,7vw,4rem);font-weight:900;color:#ff2a6d;text-shadow:0 0 30px #ff2a6d;margin-bottom:.3em}
+.go-score{font-size:clamp(.9rem,3vw,1.3rem);color:#00f5d4;margin-bottom:.2em}
+.go-hi{font-size:clamp(.7rem,2.2vw,1rem);color:#f5d400;margin-bottom:2em}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div class="title">STEPPER DASH</div>
+  <div class="subtitle">RACE THE FILAMENT — DODGE THE CHAOS</div>
+  <button class="start-btn" id="startBtn">PRINT IT</button>
+  <div class="hint">SPACE / TAP TO JUMP</div>
+</div>
+<div id="hud">
+  <div class="hud-item" style="color:#00f5d4">DIST: <span id="score-val">0</span>m</div>
+  <div style="display:flex;flex-direction:column;align-items:center">
+    <div id="heat-label">HEAT</div>
+    <div id="heat-bar-wrap"><div id="heat-fill"></div></div>
+  </div>
+  <div class="hud-item" style="color:#f5d400">BEST: <span id="hi-val">0</span>m</div>
+</div>
+<div id="gameover" class="hidden">
+  <div class="go-title">MELTDOWN</div>
+  <div class="go-score">DISTANCE: <span id="go-score">0</span>m</div>
+  <div class="go-hi">BEST: <span id="go-hi">0</span>m</div>
+  <button class="start-btn" id="retryBtn">RETRY</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const gameoverEl = document.getElementById('gameover');
+const scoreEl = document.getElementById('score-val');
+const hiEl = document.getElementById('hi-val');
+const heatFill = document.getElementById('heat-fill');
+const goScore = document.getElementById('go-score');
+const goHi = document.getElementById('go-hi');
+
+let W, H;
+let hi = parseInt(localStorage.getItem('stepperdash_hi') || '0');
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+let gameState = 'menu'; // menu, playing, dead
+let dist = 0;
+let speed = 4;
+let heat = 50;
+let frame = 0;
+let lastTime = 0;
+let dt = 0;
+let shake = 0;
+let grainOff = 0;
+
+// Player
+const player = {
+  x: 0, y: 0, vy: 0, w: 36, h: 36,
+  grounded: true, jumpCount: 0,
+  rot: 0, coilPhase: 0
+};
+
+// Obstacles
+let obstacles = [];
+let particles = [];
+let sparks = [];
+let trackPoints = [];
+
+// Filament track wave
+function trackY(x) {
+  return H - 80 + Math.sin((x * 0.012) + frame * 0.015) * 18 + Math.sin((x * 0.025) + frame * 0.008) * 8;
+}
+
+function reset() {
+  dist = 0;
+  speed = 4;
+  heat = 50;
+  frame = 0;
+  shake = 0;
+  obstacles = [];
+  particles = [];
+  sparks = [];
+  player.x = W * 0.2;
+  player.y = H * 0.65;
+  player.vy = 0;
+  player.grounded = true;
+  player.jumpCount = 0;
+  player.rot = 0;
+  player.coilPhase = 0;
+}
+
+function jump() {
+  if (gameState !== 'playing') return;
+  if (player.grounded || player.jumpCount < 1) {
+    player.vy = -13;
+    player.grounded = false;
+    player.jumpCount++;
+    spawnJumpParticles();
+  }
+}
+
+function spawnJumpParticles() {
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x: player.x, y: player.y + player.h / 2,
+      vx: (Math.random() - .5) * 6, vy: Math.random() * 3 + 1,
+      life: 1, size: Math.random() * 4 + 2,
+      color: Math.random() > .5 ? '#00f5d4' : '#00a896'
+    });
+  }
+}
+
+function spawnSparks(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    sparks.push({
+      x, y,
+      vx: (Math.random() - .5) * 10, vy: -Math.random() * 8 - 2,
+      life: 1, size: Math.random() * 3 + 1
+    });
+  }
+}
+
+function spawnObstacle() {
+  const r = Math.random();
+  let type = 'blob';
+  if (r < 0.33) type = 'tangle';
+  else if (r < 0.55) type = 'clog';
+  else if (r < 0.75) type = 'heat';
+  else type = 'dust';
+
+  const size = 20 + Math.random() * 30;
+  obstacles.push({
+    x: W + 60,
+    y: type === 'heat' ? H * 0.3 + Math.random() * H * 0.25 : H * 0.55 + Math.random() * H * 0.15,
+    w: size, h: size,
+    type,
+    rot: 0,
+    collected: false
+  });
+}
+
+function rects(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function updatePlaying() {
+  frame++;
+  dist += speed * 0.1;
+  scoreEl.textContent = Math.floor(dist);
+  hiEl.textContent = hi;
+
+  // Speed ramp
+  if (frame % 600 === 0) speed = Math.min(speed + 0.5, 12);
+
+  // Heat
+  heat = Math.max(0, Math.min(100, heat - 0.03));
+  heatFill.style.width = heat + '%';
+  if (heat > 80) {
+    heatFill.style.background = 'linear-gradient(90deg,#ff2a6d,#ff0000)';
+  } else {
+    heatFill.style.background = 'linear-gradient(90deg,#00f5d4,#ff2a6d)';
+  }
+
+  // Player physics
+  const gravity = 0.65;
+  player.vy += gravity;
+  player.y += player.vy;
+  const groundY = H * 0.65;
+  if (player.y >= groundY) {
+    player.y = groundY;
+    player.vy = 0;
+    player.grounded = true;
+    player.jumpCount = 0;
+  }
+
+  // Player rotation based on speed
+  player.rot += speed * 0.06;
+  player.coilPhase += 0.15;
+
+  // Spawn obstacles
+  const spawnRate = Math.max(40, 100 - Math.floor(frame / 120));
+  if (frame % spawnRate === 0) spawnObstacle();
+
+  // Shake
+  if (shake > 0) shake *= 0.85;
+
+  // Update obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+    o.rot += 0.04;
+
+    // Heat source
+    if (o.type === 'heat') {
+      const dx = o.x - player.x;
+      const dy = o.y - player.y;
+      const dist2 = Math.sqrt(dx * dx + dy * dy);
+      if (dist2 < 150) heat = Math.min(100, heat + 0.8);
+      // Visual glow influence
+    }
+
+    if (o.x < -100) { obstacles.splice(i, 1); continue; }
+
+    // Collision
+    if (!o.collected) {
+      const pr = { x: player.x - player.w / 2, y: player.y, w: player.w, h: player.h };
+      const or = { x: o.x - o.w / 2, y: o.y - o.h / 2, w: o.w, h: o.h };
+      if (rects(pr, or)) {
+        if (o.type === 'heat') {
+          heat = Math.min(100, heat + 15);
+          spawnSparks(o.x, o.y, 12);
+          o.collected = true;
+          obstacles.splice(i, 1);
+          shake = 6;
+          continue;
+        }
+        if (o.type === 'dust') {
+          heat = Math.min(100, heat + 5);
+          spawnSparks(o.x, o.y, 6);
+          o.collected = true;
+          obstacles.splice(i, 1);
+          shake = 3;
+          continue;
+        }
+        // Death obstacles
+        spawnSparks(player.x, player.y, 20);
+        shake = 12;
+        gameState = 'dead';
+        if (Math.floor(dist) > hi) {
+          hi = Math.floor(dist);
+          localStorage.setItem('stepperdash_hi', hi);
+        }
+        goScore.textContent = Math.floor(dist);
+        goHi.textContent = hi;
+        gameoverEl.classList.remove('hidden');
+        return;
+      }
+    }
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= 0.03;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Sparks
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.vy += 0.3;
+    s.life -= 0.04;
+    if (s.life <= 0) sparks.splice(i, 1);
+  }
+
+  // Heat death
+  if (heat >= 100) {
+    spawnSparks(player.x, player.y, 20);
+    shake = 12;
+    gameState = 'dead';
+    if (Math.floor(dist) > hi) {
+      hi = Math.floor(dist);
+      localStorage.setItem('stepperdash_hi', hi);
+    }
+    goScore.textContent = Math.floor(dist);
+    goHi.textContent = hi;
+    gameoverEl.classList.remove('hidden');
+  }
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.translate(player.x, player.y + player.h / 2);
+  ctx.rotate(player.rot);
+
+  const s = player.w / 2;
+  // Body
+  ctx.fillStyle = '#0a0a1a';
+  ctx.strokeStyle = '#00f5d4';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(-s, -s, player.w, player.h);
+  ctx.fill();
+  ctx.stroke();
+
+  // Coil indicators (stepper motor poles)
+  for (let i = 0; i < 4; i++) {
+    const angle = (i / 4) * Math.PI * 2 + player.coilPhase;
+    const cx = Math.cos(angle) * s * 0.5;
+    const cy = Math.sin(angle) * s * 0.5;
+    const bright = (Math.sin(player.coilPhase * 2 + i) + 1) / 2;
+    ctx.fillStyle = `rgba(0, 245, 212, ${0.4 + bright * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Axis dot
+  ctx.fillStyle = '#ff2a6d';
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawObstacle(o) {
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(o.rot);
+
+  const hw = o.w / 2;
+  const hh = o.h / 2;
+
+  if (o.type === 'blob') {
+    ctx.fillStyle = '#ff2a6d';
+    ctx.shadowColor = '#ff2a6d';
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hw, hh, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (o.type === 'tangle') {
+    ctx.strokeStyle = '#a500ff';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#a500ff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const r = hw * (0.4 + Math.sin(i * 1.7 + o.rot * 3) * 0.3);
+      if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  } else if (o.type === 'clog') {
+    ctx.fillStyle = '#f5d400';
+    ctx.shadowColor = '#f5d400';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(0, -hh);
+    ctx.lineTo(hw, hh * 0.5);
+    ctx.lineTo(-hw, hh * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  } else if (o.type === 'heat') {
+    // Heat wave visual - pulsing glow
+    const pulse = (Math.sin(frame * 0.2) + 1) / 2;
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, hw * 1.5);
+    grad.addColorStop(0, `rgba(255, 100, 0, ${0.8 + pulse * 0.2})`);
+    grad.addColorStop(0.5, `rgba(255, 42, 109, ${0.4 + pulse * 0.3})`);
+    grad.addColorStop(1, 'rgba(255,42,109,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, hw * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner core
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, 0, hw * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (o.type === 'dust') {
+    ctx.fillStyle = 'rgba(180,180,200,0.7)';
+    for (let i = 0; i < 5; i++) {
+      const dx = Math.cos(i * 1.4 + o.rot) * hw * 0.5;
+      const dy = Math.sin(i * 1.4 + o.rot) * hh * 0.5;
+      ctx.beginPath();
+      ctx.arc(dx, dy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawTrack() {
+  ctx.save();
+  ctx.strokeStyle = '#00f5d4';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#00f5d4';
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  for (let x = 0; x <= W + 20; x += 8) {
+    const y = trackY(x);
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Glow line below
+  ctx.strokeStyle = 'rgba(0,245,212,0.2)';
+  ctx.lineWidth = 8;
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  for (let x = 0; x <= W + 20; x += 8) {
+    const y = trackY(x) + 12;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGrain() {
+  grainOff = (grainOff + 1) % 100;
+  const imageData = ctx.getImageData(0, 0, W, H);
+  const data = imageData.data;
+  // Light grain pass - every 7th pixel
+  for (let i = 0; i < data.length; i += 7 * 4) {
+    const v = (Math.random() - 0.5) * 18;
+    data[i] = Math.max(0, Math.min(255, data[i] + v));
+    data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + v));
+    data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + v));
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function drawBg() {
+  // Deep space gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a1a');
+  grad.addColorStop(0.5, '#0f0f1f');
+  grad.addColorStop(1, '#1a0a20');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,245,212,0.04)';
+  ctx.lineWidth = 1;
+  const gridSize = 60;
+  const offsetX = (frame * speed * 0.5) % gridSize;
+  for (let x = -offsetX; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillRect(0, y, W, 2);
+  }
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0.5) {
+    ctx.translate(
+      (Math.random() - 0.5) * shake * 2,
+      (Math.random() - 0.5) * shake * 2
+    );
+  }
+
+  drawBg();
+  drawTrack();
+
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Sparks
+  for (const s of sparks) {
+    ctx.globalAlpha = s.life;
+    ctx.fillStyle = '#f5d400';
+    ctx.shadowColor = '#f5d400';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  // Obstacles
+  for (const o of obstacles) {
+    if (!o.collected) drawObstacle(o);
+  }
+
+  drawPlayer();
+
+  ctx.restore();
+
+  // Grain last
+  drawGrain();
+}
+
+function loop(ts) {
+  dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  if (gameState === 'playing') {
+    updatePlaying();
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+function startGame() {
+  overlay.classList.add('hidden');
+  gameoverEl.classList.add('hidden');
+  reset();
+  gameState = 'playing';
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('retryBtn').addEventListener('click', startGame);
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (gameState === 'menu') startGame();
+    else jump();
+  }
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (gameState === 'menu') startGame();
+  else jump();
+}, { passive: false });
+canvas.addEventListener('click', () => {
+  if (gameState === 'menu') startGame();
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'Enter') {
+    if (gameState === 'menu') startGame();
+  }
+});
+
+hiEl.textContent = hi;
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
