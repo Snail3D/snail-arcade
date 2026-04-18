@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Z-Hop Dash</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a12; overflow: hidden; touch-action: none; }
+  canvas { display: block; }
+
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(6, 6, 18, 0.95);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 10;
+    font-family: 'Courier New', monospace;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(2rem, 8vw, 4rem);
+    color: #00f0ff;
+    text-shadow: 0 0 30px rgba(0,240,255,0.6), 0 0 60px rgba(0,240,255,0.3);
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+  }
+  #overlay .sub {
+    color: #ff00aa;
+    font-size: clamp(0.8rem, 3vw, 1.1rem);
+    margin-bottom: 30px;
+    text-shadow: 0 0 15px rgba(255,0,170,0.5);
+  }
+  #overlay .desc {
+    color: #888;
+    font-size: clamp(0.7rem, 2.5vw, 0.9rem);
+    text-align: center;
+    max-width: 320px;
+    line-height: 1.5;
+    margin-bottom: 30px;
+  }
+  #startBtn {
+    background: transparent;
+    border: 2px solid #00f0ff;
+    color: #00f0ff;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    padding: 12px 40px;
+    cursor: pointer;
+    letter-spacing: 0.15em;
+    text-shadow: 0 0 10px rgba(0,240,255,0.5);
+    box-shadow: 0 0 20px rgba(0,240,255,0.2), inset 0 0 20px rgba(0,240,255,0.05);
+    transition: all 0.2s;
+  }
+  #startBtn:hover, #startBtn:active {
+    background: rgba(0,240,255,0.1);
+    box-shadow: 0 0 40px rgba(0,240,255,0.4), inset 0 0 30px rgba(0,240,255,0.1);
+  }
+  #score-ui {
+    position: fixed; top: 12px; left: 0; right: 0;
+    display: none; justify-content: center; gap: 24px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(0.8rem, 3vw, 1rem);
+    color: #00f0ff;
+    text-shadow: 0 0 10px rgba(0,240,255,0.5);
+    z-index: 5;
+    pointer-events: none;
+  }
+  #score-ui.show { display: flex; }
+  #game-over {
+    position: fixed; inset: 0;
+    background: rgba(6, 6, 18, 0.97);
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 15;
+    font-family: 'Courier New', monospace;
+  }
+  #game-over.show { display: flex; }
+  #game-over h2 {
+    font-size: clamp(1.5rem, 6vw, 2.5rem);
+    color: #ff00aa;
+    text-shadow: 0 0 20px rgba(255,0,170,0.6);
+    margin-bottom: 16px;
+  }
+  #game-over .final-score {
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    color: #00f0ff;
+    text-shadow: 0 0 30px rgba(0,240,255,0.6);
+    margin-bottom: 8px;
+  }
+  #game-over .best {
+    color: #ff00aa;
+    font-size: clamp(0.8rem, 3vw, 1rem);
+    margin-bottom: 30px;
+  }
+  #restartBtn {
+    background: transparent;
+    border: 2px solid #ff00aa;
+    color: #ff00aa;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(1rem, 4vw, 1.2rem);
+    padding: 10px 36px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    text-shadow: 0 0 10px rgba(255,0,170,0.5);
+    box-shadow: 0 0 20px rgba(255,0,170,0.2);
+  }
+  #restartBtn:hover, #restartBtn:active {
+    background: rgba(255,0,170,0.1);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="overlay">
+  <h1>Z-HOP DASH</h1>
+  <div class="sub">// PRINT HEAD RUNNER //</div>
+  <div class="desc">Dodge z-hop artifacts, filament tangles & heat waves. Collect cooling fans for shield bursts. How far can you extrude?</div>
+  <button id="startBtn">START PRINT</button>
+</div>
+
+<div id="score-ui">
+  <span id="disp-score">SCORE: 0</span>
+  <span id="disp-best">BEST: 0</span>
+</div>
+
+<div id="game-over">
+  <h2>PRINT FAILED</h2>
+  <div class="final-score" id="final-score">0</div>
+  <div class="best">BEST: <span id="best-score">0</span></div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const scoreUI = document.getElementById('score-ui');
+const gameOver = document.getElementById('game-over');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+
+let W, H;
+let player, obstacles, particles, collectibles;
+let score, best, speed, frame;
+let state; // menu, play, over
+let keys = {};
+
+// Touch
+let touchX = null;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+function init() {
+  player = { x: W * 0.5, y: H * 0.7, w: 36, h: 36, vy: 0, grounded: true, shield: 0, track: 0 };
+  obstacles = [];
+  particles = [];
+  collectibles = [];
+  score = 0;
+  best = parseInt(localStorage.getItem('zhop_best') || '0');
+  speed = 3;
+  frame = 0;
+  state = 'menu';
+  document.getElementById('disp-best').textContent = 'BEST: ' + best;
+}
+
+// Input
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space' && state === 'play') e.preventDefault();
+});
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+}, { passive: false });
+canvas.addEventListener('touchend', e => { e.preventDefault(); touchX = null; }, { passive: false });
+
+// Start
+startBtn.addEventListener('click', () => startGame());
+restartBtn.addEventListener('click', () => startGame());
+
+function startGame() {
+  init();
+  state = 'play';
+  overlay.classList.add('hidden');
+  gameOver.classList.remove('show');
+  scoreUI.classList.add('show');
+  loop();
+}
+
+// Obstacle types
+const LANES = [0.25, 0.5, 0.75];
+
+function spawnObstacle() {
+  const type = Math.random();
+  const laneIdx = Math.floor(Math.random() * 3);
+  const lane = LANES[laneIdx];
+  if (type < 0.4) {
+    // Z-hop pillar (vertical jump artifact)
+    obstacles.push({
+      type: 'zhhop',
+      x: lane * W,
+      y: -60,
+      w: 28,
+      h: 60,
+      lane: lane,
+      speed: speed + 1,
+      phase: Math.random() * Math.PI * 2,
+    });
+  } else if (type < 0.7) {
+    // Tangled filament ball
+    obstacles.push({
+      type: 'tangle',
+      x: lane * W,
+      y: -50,
+      r: 22,
+      lane: lane,
+      speed: speed + 0.5,
+      rot: 0,
+    });
+  } else {
+    // Heat wave (horizontal sweeping)
+    obstacles.push({
+      type: 'heat',
+      x: lane * W + (Math.random() < 0.5 ? -60 : 60),
+      y: -40,
+      w: 80,
+      h: 20,
+      lane: lane,
+      speed: speed * 1.5,
+      dir: lane * W > W / 2 ? -1 : 1,
+    });
+  }
+}
+
+function spawnCollectible() {
+  if (Math.random() > 0.4) return;
+  const laneIdx = Math.floor(Math.random() * 3);
+  const lane = LANES[laneIdx];
+  collectibles.push({
+    type: 'fan',
+    x: lane * W,
+    y: -30,
+    r: 14,
+    lane: lane,
+    speed: speed,
+    rot: 0,
+    pulse: 0,
+  });
+}
+
+function spawnParticle(x, y, color) {
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      life: 1,
+      color,
+      size: Math.random() * 4 + 2,
+    });
+  }
+}
+
+// Loop
+function loop() {
+  if (state !== 'play') return;
+  frame++;
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+function update() {
+  // Speed ramp
+  speed = 3 + Math.floor(score / 200) * 0.5;
+
+  // Player movement
+  let moveX = 0;
+  if (keys['ArrowLeft'] || keys['KeyA']) moveX = -1;
+  if (keys['ArrowRight'] || keys['KeyD']) moveX = 1;
+
+  // Touch control
+  if (touchX !== null) {
+    const cx = W / 2;
+    if (touchX < cx - 30) moveX = -1;
+    else if (touchX > cx + 30) moveX = 1;
+  }
+
+  player.x += moveX * (speed + 3);
+  player.x = Math.max(player.w / 2, Math.min(W - player.w / 2, player.x));
+
+  // Player bob
+  player.track += speed * 0.3;
+
+  // Shield decay
+  if (player.shield > 0) player.shield -= 0.5;
+
+  // Spawn obstacles
+  if (frame % Math.max(30, 80 - Math.floor(score / 100)) === 0) {
+    spawnObstacle();
+    if (Math.random() < 0.5) spawnCollectible();
+  }
+
+  // Update obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.y += o.speed;
+    if (o.type === 'tangle') o.rot += 0.1;
+    if (o.type === 'heat') {
+      o.x += o.dir * 2;
+      o.y += o.speed * 0.7;
+    }
+
+    // Collision
+    let hit = false;
+    const px = player.x, py = player.y, pw = player.w * 0.6, ph = player.h * 0.6;
+    if (o.type === 'tangle') {
+      const dx = px - o.x, dy = py - o.y;
+      hit = Math.sqrt(dx*dx + dy*dy) < o.r + pw/2;
+    } else if (o.type === 'heat') {
+      hit = px + pw/2 > o.x - o.w/2 && px - pw/2 < o.x + o.w/2 &&
+            py + ph/2 > o.y - o.h/2 && py - ph/2 < o.y + o.h/2;
+    } else {
+      hit = px + pw/2 > o.x - o.w/2 && px - pw/2 < o.x + o.w/2 &&
+            py + ph/2 > o.y - o.h/2 && py - ph/2 < o.y + o.h/2;
+    }
+
+    if (hit) {
+      if (player.shield > 0) {
+        player.shield = 0;
+        spawnParticle(px, py, '#00f0ff');
+        obstacles.splice(i, 1);
+        continue;
+      } else {
+        gameOverFn();
+        return;
+      }
+    }
+
+    if (o.y > H + 100) obstacles.splice(i, 1);
+  }
+
+  // Update collectibles
+  for (let i = collectibles.length - 1; i >= 0; i--) {
+    const c = collectibles[i];
+    c.y += c.speed;
+    c.rot += 0.15;
+    c.pulse += 0.2;
+
+    const dx = player.x - c.x, dy = player.y - c.y;
+    if (Math.sqrt(dx*dx + dy*dy) < c.r + player.w / 2 + 10) {
+      player.shield = 60;
+      spawnParticle(c.x, c.y, '#00ff88');
+      collectibles.splice(i, 1);
+      score += 50;
+      continue;
+    }
+
+    if (c.y > H + 50) collectibles.splice(i, 1);
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.04;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  score++;
+  document.getElementById('disp-score').textContent = 'SCORE: ' + score;
+}
+
+function render() {
+  // Dark bg with scan lines
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Film grain
+  ctx.globalAlpha = 0.03;
+  for (let i = 0; i < 300; i++) {
+    const gx = Math.random() * W, gy = Math.random() * H;
+    ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+    ctx.fillRect(gx, gy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Track lines (scrolling perspective)
+  ctx.strokeStyle = 'rgba(0,240,255,0.1)';
+  ctx.lineWidth = 1;
+  const tOff = player.track % 80;
+  for (let row = 0; row < 12; row++) {
+    const y = H * 0.5 + row * 80 - tOff;
+    if (y < H * 0.4 || y > H) continue;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Lane markers
+  LANES.forEach((lane, i) => {
+    ctx.strokeStyle = i === 1 ? 'rgba(255,0,170,0.15)' : 'rgba(0,240,255,0.06)';
+    ctx.lineWidth = i === 1 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(lane * W, H * 0.4);
+    ctx.lineTo(lane * W, H);
+    ctx.stroke();
+  });
+
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Obstacles
+  obstacles.forEach(o => {
+    if (o.type === 'zhhop') {
+      // Z-hop pillar — shows vertical jump artifact
+      const glow = 0.5 + 0.5 * Math.sin(o.phase + frame * 0.05);
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 10 + glow * 10;
+      ctx.fillStyle = `rgba(255,0,170,${0.5 + glow * 0.3})`;
+      ctx.fillRect(o.x - o.w/2, o.y - o.h/2, o.w, o.h);
+      // Arrow indicator
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('↑Z', o.x, o.y + 5);
+      ctx.shadowBlur = 0;
+    } else if (o.type === 'tangle') {
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.rotate(o.rot);
+      ctx.shadowColor = '#ff6600';
+      ctx.shadowBlur = 12;
+      // Tangled ball
+      ctx.strokeStyle = '#ff6600';
+      ctx.lineWidth = 3;
+      for (let a = 0; a < 6; a++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, o.r, a * 1.0, a * 1.0 + 0.6);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    } else if (o.type === 'heat') {
+      ctx.shadowColor = '#ff3300';
+      ctx.shadowBlur = 15;
+      const grad = ctx.createLinearGradient(o.x - o.w/2, 0, o.x + o.w/2, 0);
+      grad.addColorStop(0, 'rgba(255,100,0,0)');
+      grad.addColorStop(0.5, 'rgba(255,50,0,0.8)');
+      grad.addColorStop(1, 'rgba(255,100,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(o.x - o.w/2, o.y - o.h/2, o.w, o.h);
+      ctx.shadowBlur = 0;
+    }
+  });
+
+  // Collectibles
+  collectibles.forEach(c => {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    const p = 1 + 0.2 * Math.sin(c.pulse);
+    ctx.scale(p, p);
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 12;
+    // Fan icon
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 2;
+    for (let f = 0; f < 4; f++) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(f * Math.PI / 2) * c.r, Math.sin(f * Math.PI / 2) * c.r);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#00ff88';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  });
+
+  // Player (print head)
+  const px = player.x, py = player.y;
+  const bob = Math.sin(frame * 0.15) * 2;
+  ctx.save();
+  ctx.translate(px, py + bob);
+
+  // Shield glow
+  if (player.shield > 0) {
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 20 + player.shield * 0.3;
+    ctx.strokeStyle = `rgba(0,255,136,${player.shield / 60})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, player.w / 2 + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // Nozzle body
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillRect(-player.w/2, -player.h/2, player.w, player.h);
+
+  // Inner detail
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(-player.w/2 + 4, -player.h/2 + 4, player.w - 8, player.h - 8);
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillRect(-player.w/4, -player.h/4, player.w/2, player.h/2);
+
+  // Hotend glow
+  ctx.shadowColor = '#ff6600';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#ff6600';
+  ctx.fillRect(-player.w/4 + 2, player.h/2 - 4, player.w/2 - 4, 6);
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+
+  // Score
+  ctx.fillStyle = 'rgba(0,240,255,0.6)';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('SCORE: ' + score, W/2, 18);
+}
+
+function gameOverFn() {
+  state = 'over';
+  if (score > best) {
+    best = score;
+    localStorage.setItem('zhop_best', best);
+  }
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('best-score').textContent = best;
+  document.getElementById('disp-best').textContent = 'BEST: ' + best;
+  scoreUI.classList.remove('show');
+  gameOver.classList.add('show');
+}
+
+// Start screen render
+function renderMenu() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Film grain
+  ctx.globalAlpha = 0.04;
+  for (let i = 0; i < 400; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+    ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Animated grid
+  const t = Date.now() * 0.001;
+  ctx.strokeStyle = 'rgba(0,240,255,0.07)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += 60) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Title glow
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 40 + Math.sin(t * 2) * 10;
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 48px Courier New';
+  ctx.fillText('Z-HOP DASH', W/2, H/2 - 40);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#ff00aa';
+  ctx.font = '18px Courier New';
+  ctx.fillText('// PRINT HEAD RUNNER //', W/2, H/2);
+
+  ctx.fillStyle = '#555';
+  ctx.font = '14px Courier New';
+  ctx.fillText('← → or A/D to move', W/2, H/2 + 50);
+  ctx.fillText('Collect fans for shield', W/2, H/2 + 72);
+}
+
+// Menu animation
+function menuLoop() {
+  if (state !== 'menu') return;
+  renderMenu();
+  requestAnimationFrame(menuLoop);
+}
+
+init();
+menuLoop();
+</script>
+</body>
+</html>
