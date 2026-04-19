@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Vibe Check</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050508;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      touch-action: none;
+      user-select: none;
+    }
+    canvas { display: block; }
+    #ui {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 20px;
+      color: #00ffcc;
+      font-size: 15px;
+      text-shadow: 0 0 12px #00ffcc88;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #ui span { letter-spacing: 1px; }
+    #vibe-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #00ffcc, #ff00aa);
+      transform-origin: left;
+      transition: transform 0.3s;
+      z-index: 10;
+    }
+    #overlay {
+      position: absolute; inset: 0;
+      background: rgba(5, 5, 8, 0.92);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 20;
+      gap: 18px;
+    }
+    #overlay h1 {
+      font-size: clamp(2.2rem, 8vw, 3.5rem);
+      color: #00ffcc;
+      text-shadow: 0 0 30px #00ffcc, 0 0 60px #00ffcc55;
+      letter-spacing: 4px;
+    }
+    #overlay .subtitle {
+      color: #ff00aa;
+      text-shadow: 0 0 12px #ff00aa;
+      font-size: 1rem;
+      letter-spacing: 2px;
+      margin-top: -10px;
+    }
+    #overlay .instructions {
+      color: #888;
+      font-size: 0.85rem;
+      text-align: center;
+      line-height: 1.7;
+      max-width: 300px;
+    }
+    #overlay .instructions b { color: #00ffcc; }
+    .btn {
+      padding: 14px 44px;
+      background: transparent;
+      border: 2px solid #00ffcc;
+      color: #00ffcc;
+      font-family: 'Courier New', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 3px;
+      cursor: pointer;
+      text-shadow: 0 0 10px #00ffcc;
+      box-shadow: 0 0 20px #00ffcc33, inset 0 0 20px #00ffcc11;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .btn:hover, .btn:active {
+      background: #00ffcc22;
+      box-shadow: 0 0 30px #00ffcc55, inset 0 0 30px #00ffcc22;
+    }
+    #game-over {
+      display: none;
+      position: absolute; inset: 0;
+      background: rgba(5, 5, 8, 0.95);
+      flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 25;
+      gap: 14px;
+    }
+    #game-over h2 {
+      font-size: clamp(2rem, 7vw, 3rem);
+      color: #ff3366;
+      text-shadow: 0 0 30px #ff336688;
+      letter-spacing: 4px;
+    }
+    #game-over .final-score {
+      color: #00ffcc;
+      font-size: 1.4rem;
+      text-shadow: 0 0 15px #00ffcc;
+    }
+    #game-over .high-score {
+      color: #ffaa00;
+      font-size: 1rem;
+      text-shadow: 0 0 10px #ffaa00;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <span id="score-display">SCORE: 0</span>
+  <span id="vibe-display">VIBE: ██████░░░░</span>
+</div>
+<div id="vibe-bar"></div>
+
+<div id="overlay">
+  <h1>VIBE CHECK</h1>
+  <div class="subtitle">// NEURAL INFERENCE ARCADE //</div>
+  <div class="instructions">
+    Catch <b style="color:#00ff66">ACCEPTED</b> tokens<br>
+    Dodge <b style="color:#ff3355">REJECTED</b> blocks<br><br>
+    Desktop: Arrow keys or WASD<br>
+    Mobile: Touch &amp; drag
+  </div>
+  <button class="btn" id="start-btn">INITIALIZE</button>
+</div>
+
+<div id="game-over">
+  <h2>MODEL COLLAPSED</h2>
+  <div class="final-score" id="final-score">SCORE: 0</div>
+  <div class="high-score" id="high-score">HIGH: 0</div>
+  <button class="btn" id="retry-btn">REBOOT</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// UI elements
+const overlay = document.getElementById('overlay');
+const gameOverScreen = document.getElementById('game-over');
+const scoreDisplay = document.getElementById('score-display');
+const vibeDisplay = document.getElementById('vibe-display');
+const vibeBar = document.getElementById('vibe-bar');
+const startBtn = document.getElementById('start-btn');
+const retryBtn = document.getElementById('retry-btn');
+const finalScoreEl = document.getElementById('final-score');
+const highScoreEl = document.getElementById('high-score');
+
+let W, H;
+let score = 0, highScore = 0, vibe = 100;
+let running = false, dead = false;
+let frame = 0;
+let keys = {};
+let touchActive = false, touchX = 0, touchY = 0;
+
+// Player — neural net node graph
+let player = { x: 0, y: 0, vx: 0, vy: 0, size: 28 };
+
+// Falling tokens
+let tokens = [];
+const TOKEN_TYPES = {
+  ACCEPT:  { color: '#00ff66', glow: '#00ff6644', label: '✓', score: 10,  w: 28, h: 28 },
+  REJECT:  { color: '#ff3355', glow: '#ff335544', label: '✗', score: -25, w: 30, h: 30 },
+  BONUS:   { color: '#00ccff', glow: '#00ccff44', label: '★', score: 50,  w: 22, h: 22 },
+  SLOW:    { color: '#ffaa00', glow: '#ffaa0044', label: '◐', score: 5,   w: 24, h: 24 },
+};
+
+let lastSpawn = 0;
+let spawnInterval = 900;
+let tokenSpeed = 2.5;
+let gridOffset = 0;
+
+// Particles
+let particles = [];
+
+// Film grain data
+let grainCanvas, grainCtx;
+let grainFrame = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  player.x = W / 2;
+  player.y = H - 140;
+  // rebuild grain canvas
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = W;
+  grainCanvas.height = H;
+  grainCtx = grainCanvas.getContext('2d');
+}
+window.addEventListener('resize', resize);
+
+function spawnToken() {
+  const roll = Math.random();
+  let type;
+  if (roll < 0.55)      type = 'ACCEPT';
+  else if (roll < 0.82) type = 'REJECT';
+  else if (roll < 0.92) type = 'BONUS';
+  else                   type = 'SLOW';
+
+  const tpl = TOKEN_TYPES[type];
+  tokens.push({
+    x: Math.random() * (W - tpl.w - 40) + 20 + tpl.w / 2,
+    y: -tpl.h,
+    type,
+    ...tpl,
+    vy: tokenSpeed + Math.random() * 1.2,
+    rot: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.06,
+    pulse: Math.random() * Math.PI * 2,
+  });
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.03,
+      color,
+      size: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function updateTokens(dt) {
+  // Spawn
+  if (frame - lastSpawn > spawnInterval / 16.67) {
+    spawnToken();
+    lastSpawn = frame;
+  }
+
+  tokens = tokens.filter(t => {
+    t.y += t.vy;
+    t.rot += t.rotSpeed;
+    t.pulse += 0.08;
+
+    // Collision with player
+    const dx = t.x - player.x;
+    const dy = t.y - player.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const hitRadius = player.size + Math.min(t.w, t.h) / 2 - 6;
+
+    if (dist < hitRadius) {
+      const pts = TOKEN_TYPES[t.type].score;
+      if (t.type === 'REJECT') {
+        vibe = Math.max(0, vibe - 18);
+        spawnParticles(t.x, t.y, '#ff3355', 8);
+      } else if (t.type === 'SLOW') {
+        score += pts;
+        vibe = Math.min(100, vibe + 5);
+        spawnParticles(t.x, t.y, '#ffaa00', 6);
+      } else if (t.type === 'BONUS') {
+        score += pts;
+        vibe = Math.min(100, vibe + 12);
+        spawnParticles(t.x, t.y, '#00ccff', 12);
+      } else {
+        score += pts;
+        vibe = Math.min(100, vibe + 3);
+        spawnParticles(t.x, t.y, '#00ff66', 6);
+      }
+      score = Math.max(0, score);
+      return false;
+    }
+
+    return t.y < H + 40;
+  });
+}
+
+function updatePlayer() {
+  const accel = 0.7, friction = 0.88, maxSpeed = 9;
+
+  if (keys['ArrowLeft']  || keys['KeyA']) player.vx -= accel;
+  if (keys['ArrowRight'] || keys['KeyD']) player.vx += accel;
+  if (keys['ArrowUp']    || keys['KeyW']) player.vy -= accel;
+  if (keys['ArrowDown']  || keys['KeyS']) player.vy += accel;
+
+  if (touchActive) {
+    const dx = touchX - player.x;
+    const dy = touchY - player.y;
+    player.vx += dx * 0.08;
+    player.vy += dy * 0.08;
+  }
+
+  player.vx *= friction;
+  player.vy *= friction;
+  player.vx = Math.max(-maxSpeed, Math.min(maxSpeed, player.vx));
+  player.vy = Math.max(-maxSpeed, Math.min(maxSpeed, player.vy));
+
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Bounds
+  const margin = player.size;
+  player.x = Math.max(margin, Math.min(W - margin, player.x));
+  player.y = Math.max(margin, Math.min(H - margin, player.y));
+}
+
+function updateParticles() {
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.12;
+    p.life -= p.decay;
+    return p.life > 0;
+  });
+}
+
+function drawGrid() {
+  gridOffset = (gridOffset + 0.4) % 40;
+  ctx.strokeStyle = 'rgba(0,255,200,0.04)';
+  ctx.lineWidth = 1;
+  const spacing = 40;
+  for (let x = -spacing + gridOffset; x < W + spacing; x += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = -spacing + gridOffset; y < H + spacing; y += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+function drawPlayer() {
+  const { x, y, size } = player;
+  const pulse = Math.sin(frame * 0.08) * 2;
+
+  // Glow rings
+  for (let i = 3; i >= 1; i--) {
+    ctx.beginPath();
+    ctx.arc(x, y, size + i * 6 + pulse, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,255,200,${0.04 * i})`;
+    ctx.fill();
+  }
+
+  // Core hexagon
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+    const px = x + Math.cos(a) * (size + pulse);
+    const py = y + Math.sin(a) * (size + pulse);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#00ffcc';
+  ctx.shadowColor = '#00ffcc';
+  ctx.shadowBlur = 20;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Inner nodes
+  const nodePositions = [
+    [0, 0], [size * 0.5, 0], [-size * 0.5, 0],
+    [0, size * 0.5], [0, -size * 0.5],
+  ];
+  ctx.fillStyle = '#ffffff';
+  for (const [nx, ny] of nodePositions) {
+    ctx.beginPath();
+    ctx.arc(x + nx, y + ny, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Connection lines
+  ctx.strokeStyle = 'rgba(0,255,200,0.3)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < nodePositions.length; i++) {
+    for (let j = i + 1; j < nodePositions.length; j++) {
+      const dx = nodePositions[i][0] - nodePositions[j][0];
+      const dy = nodePositions[i][1] - nodePositions[j][1];
+      if (Math.sqrt(dx*dx + dy*dy) < size * 0.9) {
+        ctx.beginPath();
+        ctx.moveTo(x + nodePositions[i][0], y + nodePositions[i][1]);
+        ctx.lineTo(x + nodePositions[j][0], y + nodePositions[j][1]);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawToken(t) {
+  const { x, y, type, color, glow, label, w, h, rot, pulse } = t;
+  const pulseScale = 1 + Math.sin(pulse) * 0.08;
+  const cw = w * pulseScale;
+  const ch = h * pulseScale;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+
+  // Glow
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.rect(-cw / 2 - 4, -ch / 2 - 4, cw + 8, ch + 8);
+  ctx.fill();
+
+  // Block
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.rect(-cw / 2, -ch / 2, cw, ch);
+  ctx.fill();
+
+  // Label
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000';
+  ctx.font = `bold ${Math.min(cw, ch) * 0.55}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, 1);
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function drawGrain() {
+  if (!grainCtx) return;
+  grainFrame++;
+  if (grainFrame % 3 !== 0) return; // Only update grain every 3 frames
+
+  const imageData = grainCtx.createImageData(W, H);
+  const data = imageData.data;
+  const intensity = 18;
+  for (let i = 0; i < data.length; i += 4) {
+    const v = (Math.random() - 0.5) * intensity;
+    data[i] = v > 0 ? v : 0;
+    data[i+1] = v > 0 ? v : 0;
+    data[i+2] = v > 0 ? v : 0;
+    data[i+3] = 22;
+  }
+  grainCtx.putImageData(imageData, 0, 0);
+  ctx.drawImage(grainCanvas, 0, 0);
+}
+
+function drawVibeBar() {
+  const pct = vibe / 100;
+  vibeBar.style.transform = `scaleX(${pct})`;
+  vibeBar.style.background = vibe > 50
+    ? `linear-gradient(90deg, #00ffcc, #00ccff)`
+    : vibe > 25
+    ? `linear-gradient(90deg, #ffaa00, #ff6600)`
+    : `linear-gradient(90deg, #ff3355, #ff0044)`;
+}
+
+function updateUI() {
+  scoreDisplay.textContent = `SCORE: ${score}`;
+  const bars = Math.round(vibe / 10);
+  vibeDisplay.textContent = `VIBE: ${'█'.repeat(bars)}${'░'.repeat(10 - bars)}`;
+  drawVibeBar();
+}
+
+function gameLoop() {
+  if (!running) return;
+  frame++;
+
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  drawParticles();
+  for (const t of tokens) drawToken(t);
+  drawPlayer();
+  drawGrain();
+
+  updatePlayer();
+  updateTokens();
+  updateParticles();
+  updateUI();
+
+  // Check death
+  if (vibe <= 0) {
+    die();
+    return;
+  }
+
+  // Ramp difficulty
+  if (frame % 600 === 0) {
+    tokenSpeed = Math.min(tokenSpeed + 0.15, 8);
+    spawnInterval = Math.max(spawnInterval - 30, 400);
+  }
+
+  if (!dead) requestAnimationFrame(gameLoop);
+}
+
+function die() {
+  dead = true;
+  running = false;
+  if (score > highScore) highScore = score;
+  finalScoreEl.textContent = `SCORE: ${score}`;
+  highScoreEl.textContent = `HIGH: ${highScore}`;
+  gameOverScreen.style.display = 'flex';
+}
+
+function startGame() {
+  resize();
+  score = 0;
+  vibe = 100;
+  dead = false;
+  tokens = [];
+  particles = [];
+  tokenSpeed = 2.5;
+  spawnInterval = 900;
+  frame = 0;
+  lastSpawn = 0;
+  player.x = W / 2;
+  player.y = H - 140;
+  player.vx = 0;
+  player.vy = 0;
+  gridOffset = 0;
+  overlay.style.display = 'none';
+  gameOverScreen.style.display = 'none';
+  running = true;
+  gameLoop();
+}
+
+startBtn.addEventListener('click', startGame);
+retryBtn.addEventListener('click', startGame);
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (!running && !dead) startGame();
+    else if (dead) startGame();
+  }
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+canvas.addEventListener('touchstart', e => {
+  touchActive = true;
+  const t = e.touches[0];
+  touchX = t.clientX;
+  touchY = t.clientY;
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  const t = e.touches[0];
+  touchX = t.clientX;
+  touchY = t.clientY;
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchActive = false; });
+canvas.addEventListener('mousedown', e => {
+  touchActive = true;
+  touchX = e.clientX;
+  touchY = e.clientY;
+});
+canvas.addEventListener('mousemove', e => {
+  if (touchActive) {
+    touchX = e.clientX;
+    touchY = e.clientY;
+  }
+});
+canvas.addEventListener('mouseup', () => { touchActive = false; });
+
+// Initial resize
+resize();
+</script>
+</body>
+</html>
