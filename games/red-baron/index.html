@@ -288,10 +288,10 @@ function drawMenu(){
   ctx.fillText('SPACE + ARROWS ON DESKTOP',W/2,H*0.68+44);
 
   // Start button
-  const btnY=H*0.82,btnW=200,btnH=50;
+  const btnY=H*0.82,btnW=200,btnH=50,btnX=H/2-btnW/2;
   const pulse=Math.sin(frame*0.05)*3;
   ctx.fillStyle='#cc0000';
-  roundRect(btnX=H/2-btnW/2,btnY-pulse,btnW,btnH,12);ctx.fill();
+  roundRect(btnX,btnY-pulse,btnW,btnH,12);ctx.fill();
   ctx.fillStyle='#fff';ctx.font='bold 22px monospace';
   ctx.fillText('▶ START',W/2,btnY+btnH/2+7);
 
