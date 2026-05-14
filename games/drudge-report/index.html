@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DRUDGE REPORT — The War Room</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Share+Tech+Mono&family=Bebas+Neue&display=swap');
+  
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #0a0a0a;
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  .slideshow {
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    opacity: 0;
+    transform: scale(0.95);
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+
+  .slide.active {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: all;
+  }
+
+  .slide h1 {
+    font-family: 'Anton', sans-serif;
+    font-size: clamp(2.5rem, 6vw, 5rem);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: center;
+    line-height: 1.1;
+    margin-bottom: 20px;
+  }
+
+  .slide h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(1.5rem, 3vw, 2.5rem);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 15px;
+  }
+
+  .slide p, .slide li {
+    font-size: clamp(0.9rem, 1.5vw, 1.2rem);
+    line-height: 1.6;
+    max-width: 900px;
+  }
+
+  /* SLIDE 1: Title */
+  .slide-1 { background: linear-gradient(135deg, #0a0a0a 0%, #1a0a0a 50%, #0a0a1a 100%); }
+  .slide-1 h1 { color: #ff0033; text-shadow: 0 0 40px rgba(255,0,51,0.5), 3px 3px 0 #000; }
+  .slide-1 .sub { color: #888; font-size: clamp(0.8rem, 1.2vw, 1rem); margin-top: 10px; }
+  .slide-1 .date-stamp { color: #ffcc00; font-size: 0.85rem; margin-top: 20px; border: 1px solid #ffcc00; padding: 5px 15px; }
+  .slide-1 .big-number { font-family: 'Anton'; font-size: clamp(4rem, 10vw, 8rem); color: #ffcc00; }
+  .slide-1 .big-label { font-size: clamp(1rem, 2vw, 1.5rem); color: #aaa; }
+
+  /* SLIDE 2: What is it */
+  .slide-2 { background: linear-gradient(135deg, #0a0a0a 0%, #0a1a0a 50%, #0a0a1a 100%); }
+  .slide-2 h1 { color: #fff; }
+  .slide-2 .tags { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 20px 0; }
+  .slide-2 .tag { background: #ff0033; color: #fff; padding: 6px 14px; font-size: 0.85rem; text-transform: uppercase; border-radius: 2px; }
+
+  /* SLIDE 3: Stats */
+  .slide-3 { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a0a 50%, #0a0a0a 100%); }
+  .slide-3 h1 { color: #ff0033; text-shadow: 0 0 20px rgba(255,0,51,0.3); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 25px;
+    width: 100%;
+    max-width: 800px;
+    margin-top: 30px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #333;
+    padding: 25px;
+    text-align: center;
+    transition: border-color 0.3s;
+  }
+  .stat-card:hover { border-color: #ff0033; }
+  .stat-card .num { font-family: 'Anton'; font-size: clamp(2rem, 5vw, 3.5rem); color: #ffcc00; }
+  .stat-card .label { font-size: clamp(0.7rem, 1vw, 0.95rem); color: #888; text-transform: uppercase; margin-top: 8px; }
+
+  /* SLIDE 4: Headlines */
+  .slide-4 { background: linear-gradient(135deg, #0a0a0a 0%, #1a0a0a 50%, #0a0a1a 100%); justify-content: flex-start; padding-top: 60px; }
+  .slide-4 h1 { color: #ffcc00; font-size: clamp(1.5rem, 3vw, 2.5rem); }
+  .headlines-list { list-style: none; width: 100%; max-width: 750px; margin-top: 25px; }
+  .headlines-list li {
+    padding: 10px 15px;
+    border-left: 3px solid #ff0033;
+    margin-bottom: 8px;
+    font-size: clamp(0.75rem, 1.3vw, 1rem);
+    color: #ddd;
+    transition: background 0.2s, padding-left 0.2s;
+  }
+  .headlines-list li:hover { background: rgba(255,0,51,0.1); padding-left: 25px; }
+  .headlines-list li.red { color: #ff0033; font-weight: bold; }
+  .headlines-list li.italic { color: #999; font-style: italic; }
+
+  /* SLIDE 5: Media Links */
+  .slide-5 { background: linear-gradient(135deg, #0a0a0a 0%, #0a1a1a 50%, #0a0a0a 100%); }
+  .slide-5 h1 { color: #fff; text-shadow: none; }
+  .links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    width: 100%;
+    max-width: 750px;
+    margin-top: 25px;
+  }
+  .link-card {
+    background: rgba(255,204,0,0.05);
+    border: 1px solid #ffcc00;
+    padding: 12px;
+    text-align: center;
+    color: #ffcc00;
+    font-size: clamp(0.8rem, 1.2vw, 1rem);
+    transition: all 0.3s;
+  }
+  .link-card:hover { background: rgba(255,204,0,0.15); transform: translateY(-3px); }
+
+  /* SLIDE 6: Legacy */
+  .slide-6 { background: linear-gradient(135deg, #0a0a0a 0%, #1a0a1a 50%, #0a0a0a 100%); }
+  .slide-6 h1 { color: #ff0033; }
+
+  /* Navigation */
+  .nav {
+    position: fixed;
+    bottom: 25px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 100;
+  }
+  .nav button {
+    background: transparent;
+    border: 2px solid #ff0033;
+    color: #fff;
+    padding: 8px 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  .nav button:hover { background: #ff0033; }
+  .nav button:disabled { opacity: 0.3; cursor: default; background: transparent; }
+
+  /* Progress bar */
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: #ff0033;
+    transition: width 0.5s;
+    z-index: 200;
+  }
+
+  /* Slide counter */
+  .slide-counter {
+    position: fixed;
+    top: 15px;
+    right: 20px;
+    font-size: 0.8rem;
+    color: #555;
+    z-index: 100;
+  }
+
+  /* Animated scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 50;
+  }
+
+  /* Glitch animation for title */
+  @keyframes glitch {
+    0%, 100% { text-shadow: 0 0 40px rgba(255,0,51,0.5), 3px 3px 0 #000; }
+    25% { text-shadow: -2px 0 #ff0033, 2px 0 #00ffff, 3px 3px 0 #000; }
+    50% { text-shadow: 2px 0 #ff0033, -2px 0 #00ffff, 3px 3px 0 #000; }
+    75% { text-shadow: 0 0 40px rgba(255,0,51,0.5), 3px 3px 0 #000; }
+  }
+  .glitch { animation: glitch 3s infinite; }
+
+  /* Pulse for numbers */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+  .pulse { animation: pulse 2s ease-in-out infinite; }
+
+  @media (max-width: 600px) {
+    .slide { padding: 25px; }
+    .stats-grid { grid-template-columns: 1fr; padding: 0 20px; }
+    .links-grid { grid-template-columns: 1fr; padding: 0 20px; }
+    .headlines-list { font-size: 0.7rem; }
+    .nav button { padding: 6px 14px; font-size: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="slide-counter" id="counter">1 / 6</div>
+
+<div class="slideshow" id="slideshow">
+
+  <!-- SLIDE 1: Title -->
+  <div class="slide slide-1 active" data-slide="1">
+    <h1 class="glitch">Drudge Report</h1>
+    <p class="sub" style="color: #888; font-size: clamp(0.9rem, 1.3vw, 1.2rem); max-width: 600px; text-align: center;">
+      The original conspiracy-theory-fed, red-headed news aggregator. Still going strong in 2026 like a cockroach that won't die.<br>
+      Built by Matt Drudge. No algorithm. No feeds. Just a human behind the keyboard picking the loudest headlines in America.
+    </p>
+    <div class="date-stamp">MAY 13, 2026 — LIVE</div>
+    <div style="margin-top: 30px; text-align: center;">
+      <div class="big-number pulse">25.7M</div>
+      <div class="big-label">daily visitors (past 24 hours)</div>
+    </div>
+  </div>
+
+  <!-- SLIDE 2: The Origin Story -->
+  <div class="slide slide-2" data-slide="2">
+    <h1>The Origin Story</h1>
+    <div class="tags">
+      <span class="tag">News Aggregator</span>
+      <span class="tag">Political Bias: Right</span>
+      <span class="tag">Since 1997</span>
+      <span class="tag">No Algorithm</span>
+      <span class="tag">Human Edited</span>
+    </div>
+    <p style="color: #ccc; max-width: 700px; text-align: center;">
+      Matt Drudge launched Drudge Report on May 1, 1997 — one week before the Monica Lewinsky scandal 
+      broke and the site crashed the early internet. It's been a news aggregator ever since: no original 
+      reporting, just headlines sourced from everywhere, picked by one person at a desk.<br><br>
+      <span style="color: #ff0033; font-size: 1.1em;">"Always edited by a human being."</span><br>
+      <span style="color: #888;"> — Their claim, anyway. The red headlines tell their own story.</span>
+    </p>
+  </div>
+
+  <!-- SLIDE 3: The Numbers That Break Brains -->
+  <div class="slide slide-3" data-slide="3">
+    <h1>Numbers That Break Brains</h1>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="num pulse">25.7M</div>
+        <div class="label">Past 24 Hours</div>
+      </div>
+      <div class="stat-card">
+        <div class="num pulse">689M</div>
+        <div class="label">Past 31 Days</div>
+      </div>
+      <div class="stat-card">
+        <div class="num pulse">5.82B</div>
+        <div class="label">Past Year</div>
+      </div>
+      <div class="stat-card">
+        <div class="num" style="color: #ff0033;">9</div>
+        <div class="label">Years of the Lewinsky Era</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 4: Today's Headlines — The War Room -->
+  <div class="slide slide-4" data-slide="4">
+    <h1>Today's Headlines — The War Room</h1>
+    <p style="color: #888; font-size: 0.85rem;">Extracted live from drudgereport.com — May 13, 2026</p>
+    <ul class="headlines-list">
+      <li class="red">China gains major edge on U.S. amid Iran war, intel finds...</li>
+      <li>Eric Trump Hops Along on Plane...</li>
+      <li>Rubio's name tweaked to bypass travel ban...</li>
+      <li>Beijing Plots Secret Arms Sales to Iran...</li>
+      <li>AI Rivalry Overshadows Push For Guardrails...</li>
+      <li>Lecturer and Philosopher: Xi Behind Closed Doors...</li>
+      <li>Taiwan fears 'grand bargain'...</li>
+      <li style="color: #ff0033; font-weight: bold;">THE SHRINKING SUMMIT</li>
+      <li>MELANIA STAYS HOME</li>
+      <li style="color: #ff0033;">TRUMP APPROVAL HITS NEW LOW</li>
+      <li class="italic">WHO'S THAT GIRL? Natalie Fueling Trump's Wild Midnight Social Sprees...</li>
+      <li class="italic">WSJ: 'TRUTH' rants reveal desperation...</li>
+      <li style="color: #ff0033;">TRUMP'S FIVE-ALARM ECONOMY...</li>
+      <li style="color: #ff0033;">Oil crisis could become full-blown global catastrophe...</li>
+      <li>USA slipping into 'Competitive Authoritarianism'?</li>
+      <li>CONGRESSIONAL MEDICAL OFFICE SUFFERS DATA BREACH...</li>
+      <li>Gulf Countries Arrest Shiite 'Traitors'...</li>
+      <li>Musk Questions Lupita Nyong'o's Beauty in Reignited Crusade Against 'ODYSSEY'...</li>
+    </ul>
+  </div>
+
+  <!-- SLIDE 5: The Media Empire -->
+  <div class="slide slide-5" data-slide="5">
+    <h1>The Media Empire</h1>
+    <p style="color: #888; max-width: 650px;">
+      Drudge Report is the world's most powerful news aggregator — it doesn't write stories, 
+      it picks which ones matter. Every major outlet links to it. Every politician checks it first thing.
+    </p>
+    <div class="links-grid">
+      <div class="link-card">NY TIMES</div>
+      <div class="link-card">POLITICO</div>
+      <div class="link-card">THE HILL</div>
+      <div class="link-card">BLOOMBERG</div>
+      <div class="link-card">CNN</div>
+      <div class="link-card">WSJ</div>
+      <div class="link-card">FOX NEWS</div>
+      <div class="link-card">BREITBART</div>
+      <div class="link-card">TMZ</div>
+      <div class="link-card">SEMAFOR</div>
+      <div class="link-card">ECONOMIST</div>
+      <div class="link-card">REUTERS</div>
+      <div class="link-card">BBC</div>
+      <div class="link-card">AL JAZEERA</div>
+      <div class="link-card">AP NEWS</div>
+    </div>
+  </div>
+
+  <!-- SLIDE 6: Why It Still Matters -->
+  <div class="slide slide-6" data-slide="6">
+    <h1>Why It Still Matters</h1>
+    <div style="max-width: 700px; text-align: center;">
+      <p style="color: #ccc; font-size: clamp(0.9rem, 1.3vw, 1.15rem); line-height: 1.8;">
+        In an age of algorithmic feeds and AI-generated content, Drudge Report remains the 
+        last truly human-curated news site on the internet. One desk. One person. One list 
+        of links that millions of people check before they make up their minds for the day.<br><br>
+        <span style="color: #ff0033; font-size: 1.2em;">It's ugly as sin, loud as hell, and gets 25 million visitors a day.</span><br><br>
+        <span style="color: #ffcc00;">That's not the dark side of journalism, Eric. That IS journalism.</span>
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button id="prevBtn" onclick="changeSlide(-1)">◀ PREV</button>
+  <button id="nextBtn" onclick="changeSlide(1)">NEXT ▶</button>
+</div>
+
+<script>
+  let currentSlide = 1;
+  const totalSlides = 6;
+
+  function updateProgress() {
+    const pct = ((currentSlide - 1) / (totalSlides - 1)) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+    document.getElementById('counter').textContent = currentSlide + ' / ' + totalSlides;
+  }
+
+  function showSlide(n) {
+    // Remove active from all
+    document.querySelectorAll('.slide').forEach(s => s.classList.remove('active'));
+    // Add active to target
+    document.querySelector('[data-slide="' + n + '"]').classList.add('active');
+    currentSlide = n;
+    updateProgress();
+  }
+
+  function changeSlide(dir) {
+    let next = currentSlide + dir;
+    if (next < 1) next = totalSlides;
+    if (next > totalSlides) next = 1;
+    showSlide(next);
+  }
+
+  // Keyboard navigation
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
+    if (e.key === 'ArrowLeft') changeSlide(-1);
+  });
+
+  updateProgress();
+</script>
+
+</body>
+</html>
