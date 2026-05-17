@@ -259,7 +259,7 @@ function executeMove(fr,fc,tr,tc,promo){
   else{gameOver=false;msg=chk?(turn==='w'?'White is in check!':'Black is in check!'):(turn==='w'?"White to move":"Black to move");}
   render();
   // AI responds (plays black)
-  if(aiOn&&turn==='b'&&!gameOver)setTimeout(runAI,60);
+  if(aiOn&&turn==='b'&&!gameOver)setTimeout(runAI,300);
 }
 
 /* ═══════════════════ UI RENDERING ═══════════════════ */
@@ -347,11 +347,9 @@ function undoMove(){
 function runAI(){
   const leg=allLegalMoves(board,'b');if(!leg.length||gameOver)return;
   let bestScore=-Infinity,bestMove=null;
-  const ordered=leg.slice().sort(function(a,b){
-    const sa=bd[a.tr][a.tc]?PIECE_VAL[pieceType(bd[a.tr][a.tc])]||0:0;
-    const sb=bd[b.tr][b.tc]?PIECE_VAL[pieceType(bd[b.tr][b.tc])]||0:0;
-    return sb-sa;
-  });
+  // Sort: captures first by MVV-LVA, then checks, then quiet moves with positional bonus
+  const mvEval=function(mv){const cap=board[mv.tr][mv.tc]?PIECE_VAL[pieceType(board[mv.tr][mv.tc])]||0:0;const pst=PST[pieceType(board[mv.tr])]?PST[pieceType(board[mv.tr])][7-mv.tr][mv.tc]:0;return cap*10+pst;};
+  const ordered=leg.slice().sort(function(a,b){return mvEval(b)-mvEval(a);});
   for(let i=0;i<ordered.length;i++){const mv=ordered[i];
     const nb=applyMove(board,mv.fr,mv.fc,mv.tr,mv.tc,{promo:mv.promo,ep:false,castle:null});
     const v=negamaxSearch(nb,2,-Infinity,Infinity,false);
