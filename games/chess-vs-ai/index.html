@@ -306,7 +306,7 @@ function onClick(r,c){
   if(board[r][c]&&pieceColor(board[r][c])===turn)selectSquare(r,c);
 }
 
-function selectSquare(r,c){selected={r,c};const clr=pieceColor(board[r][c]);hinted=allLegalMoves(board,clr).filter(function(m){return m.fr===r&&m.fc===c;}).map(function(m){return{tr:m.r,tc:m.c,promo:m.promo};});render();}
+function selectSquare(r,c){selected={r,c};const clr=pieceColor(board[r][c]);hinted=allLegalMoves(board,clr).filter(function(m){return m.fr===r&&m.fc===c;}).map(function(m){return{tr:m.tr,tc:m.tc,promo:m.promo};});render();}
 function clearSelection(){selected=null;hinted=[];}
 function doPromotion(fr,fc,tr,tc,ch){
   const pc=board[fr][fc];if(!pc||pieceType(pc)!=='P'){executeMove(fr,fc,tr,tc,null);return;}
