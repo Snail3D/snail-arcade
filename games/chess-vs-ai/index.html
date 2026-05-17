@@ -270,24 +270,24 @@ function render(){
     const div=document.createElement('div');
     const isLight=(ar+ac)%2===1;
     div.className='cell'+(isLight?' light':' dark');
-    // Last move highlight
-    if(lastFrom&&lastTo){if((ar===lastFrom.r&&ac===lastFrom.c)||(ar===lastTo.r&&ac===lastTo.c))div.classList.add('last');}
-    // Check highlight on king
-    if(isInCheck(board,turn)&&board[ar][ac]&&board[ar][ac].toUpperCase()==='K'&&pieceColor(board[ar][ac])===turn)div.classList.add('check');
-    // Selected highlight
-    if(selected&&selected.r===ar&&selected.c===ac)div.classList.add('selected');
-    // Move hints
-    const ht=hinted?hinted.find(function(h){return h.tr===ar&&h.tc===ac;}):null;
-    if(ht)div.classList.add(board[ar][ac]?'hint-cap':'hint');
-    // Piece
-    const pc=board[ar][ac];
+    // Last move highlight (use flipped dr,dc)
+    if(lastFrom&&lastTo){if((dr===lastFrom.r&&dc===lastFrom.c)||(dr===lastTo.r&&dc===lastTo.c))div.classList.add('last');}
+    // Check highlight on king (use flipped dr,dc)
+    if(isInCheck(board,turn)&&board[dr][dc]&&board[dr][dc].toUpperCase()==='K'&&pieceColor(board[dr][dc])===turn)div.classList.add('check');
+    // Selected highlight (compare flipped coords)
+    if(selected&&selected.r===dr&&selected.c===dc)div.classList.add('selected');
+    // Move hints (compare flipped coords)
+    const ht=hinted?hinted.find(function(h){return h.tr===dr&&h.tc===dc;}):null;
+    if(ht)div.classList.add(board[dr][dc]?'hint-cap':'hint');
+    // Piece (read from flipped dr,dc)
+    const pc=board[dr][dc];
     if(pc){
       const sp=document.createElement('span');
       sp.className='piece '+pieceColor(pc);
       sp.textContent=toUnicode(pieceType(pc),pieceColor(pc));
       div.appendChild(sp);
     }
-    (function(r,c){div.addEventListener('click',function(){onClick(r,c)});})(ar,ac);
+    (function(r,c){div.addEventListener('click',function(){onClick(dr,dc)});})(ar,ac);
     el.appendChild(div);
   }}
   document.getElementById('status').textContent=msg;
