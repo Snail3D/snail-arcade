@@ -296,13 +296,13 @@ function render(){
 /* ═══════════════════ CLICK HANDLER ═══════════════════ */
 function onClick(r,c){
   if(gameOver||!aiOn||turn==='b'||promoQ)return;
-  clearSelection();
   if(selected){
     const ht=(hinted||[]).find(function(h){return h.tr===r&&h.tc===c;});
     if(ht){doPromotion(selected.r,selected.c,r,c,ht.promo||'Q');clearSelection();return;}
-    if(board[r][c]&&pieceColor(board[r][c])===turn){selectSquare(r,c);return;}
-    selected=null;hinted=[];render();return;
+    // Not a valid move — clear selection
+    selected=null;hinted=[];render();
   }
+  // Click on own piece — select it
   if(board[r][c]&&pieceColor(board[r][c])===turn)selectSquare(r,c);
 }
 
