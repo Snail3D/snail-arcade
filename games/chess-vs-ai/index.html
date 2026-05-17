@@ -194,7 +194,7 @@ function pseudoMoves(bd,fr,fc){
     }
   }else{
     // Sliding pieces (R, B, Q)
-    const dirs=(ty==='R'||ty==='Q')?[[0,1],[0,-1],[1,0],[-1,0]]:[[1,1],[1,-1],[-1,1],[-1,-1]];
+    const dirs=(ty==='Q')?[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]]:[[0,1],[0,-1],[1,0],[-1,0]];
     for(let i=0;i<dirs.length;i++){let nr=fr+dirs[i][0],nc=fc+dirs[i][1];
       while(onBoard(nr,nc)){const tgt=bd[nr][nc];if(tgt){if(pieceColor(tgt)===op)mv.push({r:nr,c:nc});break;}
         mv.push({r:nr,c:nc});nr+=dirs[i][0];nc+=dirs[i][1];}
@@ -348,8 +348,8 @@ function runAI(){
   const leg=allLegalMoves(board,'b');if(!leg.length||gameOver)return;
   let bestScore=-Infinity,bestMove=null;
   const ordered=leg.slice().sort(function(a,b){
-    const sa=board[a.tr][a.tc]?PIECE_VAL[pieceType(board[a.tr][a.tc])]||0:0;
-    const sb=board[b.tr][b.tc]?PIECE_VAL[pieceType(board[b.tr][b.tc])]||0:0;
+    const sa=bd[a.tr][a.tc]?PIECE_VAL[pieceType(bd[a.tr][a.tc])]||0:0;
+    const sb=bd[b.tr][b.tc]?PIECE_VAL[pieceType(bd[b.tr][b.tc])]||0:0;
     return sb-sa;
   });
   for(let i=0;i<ordered.length;i++){const mv=ordered[i];
@@ -365,13 +365,21 @@ function negamaxSearch(bd,depth,alpha,beta,maximizing){
   const who=maximizing?'b':'w';
   const leg=allLegalMoves(bd,who);
   if(leg.length===0){if(isInCheck(bd,who))return-99999+depth;return 0;}
+  // Sort: captures first (MVV-LVA), then checks
   const ordered=leg.slice().sort(function(a,b){
-    const sa2=board[a.tr][a.tc]?PIECE_VAL[pieceType(board[a.tr][a.tc])]||0:0;
-    const sb2=board[b.tr][b.tc]?PIECE_VAL[pieceType(board[b.tr][b.tc])]||0:0;
+    const sa2=bd[a.tr][a.tc]?PIECE_VAL[pieceType(bd[a.tr][a.tc])]||0:0;
+    const sb2=bd[b.tr][b.tc]?PIECE_VAL[pieceType(bd[b.tr][b.tc])]||0:0;
     return sb2-sa2;
   });
-  let best=maximizing?-Infinity:Infinity;
+  // Also add check moves to front
+  const checks=[],captures=[];
   for(let i=0;i<ordered.length;i++){const mv=ordered[i];
+    const nb2=applyMove(bd,mv.fr,mv.fc,mv.tr,mv.tc,{promo:mv.promo,ep:false,castle:null});
+    if(isInCheck(nb2,who))checks.push(mv);else captures.push(mv);}
+  // Reorder: captures first (sorted by value), then checks, then quiet moves
+  const reordered=captures.concat(checks);
+  let best=maximizing?-Infinity:Infinity;
+  for(let i=0;i<reordered.length;i++){const mv=reordered[i];
     const nb2=applyMove(bd,mv.fr,mv.fc,mv.tr,mv.tc,{promo:mv.promo,ep:false,castle:null});
     const v=negamaxSearch(nb2,depth-1,alpha,beta,!maximizing);
     if(maximizing){best=Math.max(best,v);alpha=Math.max(alpha,v);}
