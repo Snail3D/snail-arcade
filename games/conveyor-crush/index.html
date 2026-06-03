@@ -57,8 +57,9 @@ const BIN_COLORS = ['#00f5ff', '#ff00aa', '#aaff00'];
 const OBJ_R = 26;
 
 // --- STATE ---
+// localStorage key: 'conveyor-crush-best'
 let gameState = 'menu'; // menu, playing, gameover
-let score = 0, hiScore = 0, lives = 3, level = 1, combo = 0;
+let score = 0, hiScore = parseInt(localStorage.getItem('conveyor-crush-best') || '0'), lives = 3, level = 1, combo = 0;
 let objects = [];
 let beltSpeed = BELT_SPEED_BASE;
 let spawnTimer = 0, spawnInterval = 90;
@@ -380,6 +381,9 @@ function drawGameOver() {
   ctx.fillStyle = '#fff';
   ctx.font = '16px Orbitron';
   ctx.fillText('SCORE: ' + score, W/2, H/2 - 30);
+  ctx.fillStyle = '#888';
+  ctx.font = '11px Orbitron';
+  ctx.fillText('BEST: ' + hiScore, W/2, H/2 + 10);
   if (score >= hiScore) {
     ctx.fillStyle = '#aaff00';
     ctx.shadowColor = '#aaff00';
@@ -544,7 +548,10 @@ function startGame() {
 
 function endGame() {
   gameState = 'gameover';
-  if (score > hiScore) hiScore = score;
+  if (score > hiScore) {
+    hiScore = score;
+    localStorage.setItem('conveyor-crush-best', hiScore);
+  }
 }
 
 function levelUp() {

@@ -3,190 +3,798 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Snail Racer</title>
-<meta property="og:title" content="Snail Racer">
-<meta property="og:description" content="Tap to race your snail to the finish line!">
-<meta property="og:type" content="website">
+<title>Snail Racer — Snail Arcade</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a1a0a;
-  color: #fff;
-  font-family: 'Courier New', monospace;
-  overflow: hidden;
-  touch-action: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  user-select: none;
-}
-#game {
-  width: 100%;
-  max-width: 600px;
-  padding: 20px;
-}
-h1 {
-  text-align: center;
-  color: #00ff88;
-  font-size: 1.8em;
-  margin-bottom: 20px;
-  text-shadow: 0 0 15px rgba(0,255,136,0.4);
-}
-.track {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  height: 50px;
-  margin: 8px 0;
-  position: relative;
-  overflow: hidden;
-}
-.track::after {
-  content: '';
-  position: absolute;
-  right: 40px;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: #00ff88;
-  opacity: 0.3;
-}
-.snail {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 1.8em;
-  left: 10px;
-  transition: left 0.15s ease-out;
-}
-.label {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 0.7em;
-  color: #555;
-}
-#tap-zone {
-  width: 100%;
-  max-width: 600px;
-  height: 100px;
-  background: #141414;
-  border: 2px solid #00ff88;
-  border-radius: 12px;
-  margin-top: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2em;
-  color: #00ff88;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-#tap-zone:active { background: #0a2a0a; }
-#status {
-  text-align: center;
-  margin-top: 15px;
-  font-size: 1.1em;
-  color: #888;
-  min-height: 1.5em;
-}
-#score {
-  text-align: center;
-  margin-top: 8px;
-  color: #00ff88;
-  font-size: 0.9em;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #060e06;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    box-shadow: 0 0 50px rgba(0,255,136,0.15);
+  }
+  #hud {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .hud-item {
+    background: rgba(0,0,0,0.6);
+    border: 2px solid #00ff88;
+    border-radius: 8px;
+    padding: 6px 14px;
+    color: #fff;
+    font-size: 14px;
+    text-align: center;
+    min-width: 70px;
+  }
+  .hud-item span {
+    display: block;
+    font-size: 20px;
+    font-weight: bold;
+    color: #00ff88;
+    text-shadow: 0 0 10px rgba(0,255,136,0.6);
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .panel {
+    background: rgba(0,0,0,0.82);
+    border: 3px solid #00ff88;
+    border-radius: 18px;
+    padding: 30px 40px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 40px rgba(0,255,136,0.35), inset 0 0 20px rgba(0,255,136,0.05);
+    max-width: 90%;
+    width: 360px;
+  }
+  .panel h1 {
+    font-size: 38px;
+    color: #00ff88;
+    margin-bottom: 6px;
+    text-shadow: 0 0 25px rgba(0,255,136,0.5);
+    letter-spacing: 2px;
+  }
+  .panel h2 {
+    font-size: 26px;
+    color: #ff5252;
+    margin-bottom: 10px;
+    text-shadow: 0 0 15px rgba(255,82,82,0.4);
+  }
+  .panel .subtitle {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 16px;
+  }
+  .panel p {
+    font-size: 15px;
+    color: #ccc;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 60px;
+    color: #ffeb3b;
+    margin: 10px 0;
+    text-shadow: 0 0 20px rgba(255,235,59,0.5);
+  }
+  .panel .best-line {
+    font-size: 16px;
+    color: #00ff88;
+    margin-top: 6px;
+  }
+  .panel .hint {
+    font-size: 13px;
+    color: #666;
+    margin-top: 16px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #1a2a1a;
+    border: 2px solid #00ff88;
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 12px;
+    color: #00ff88;
+  }
+  .panel .trophy {
+    font-size: 48px;
+    margin-bottom: 4px;
+  }
+  #start, #gameover { display: none; }
+  #start.active, #gameover.active { display: flex; }
 </style>
 </head>
 <body>
-<script src="../../sdk/discord-activity.bundle.js"></script>
-<div id="game">
-  <h1>Snail Racer</h1>
-  <div class="track" id="track-you">
-    <span class="snail" id="snail-you">🐌</span>
-    <span class="label">YOU</span>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="hud-item">TAP<span id="tap-count">0</span></div>
+    <div class="hud-item">SPEED<span id="speed-val">0</span></div>
   </div>
-  <div class="track" id="track-cpu1">
-    <span class="snail" id="snail-cpu1">🐌</span>
-    <span class="label">CPU 1</span>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <h1>🐌 Snail Racer</h1>
+      <p class="subtitle">Snail Arcade</p>
+      <p>Tap or click as fast as you can to race your snail to the finish line!</p>
+      <div class="keys">
+        <span class="key">TAP</span>
+        <span class="key">CLICK</span>
+        <span class="key">SPACE</span>
+      </div>
+      <p class="hint">Beat the CPUs and set a new record!</p>
+    </div>
   </div>
-  <div class="track" id="track-cpu2">
-    <span class="snail" id="snail-cpu2">🐌</span>
-    <span class="label">CPU 2</span>
+
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <div class="trophy" id="result-emoji">🏆</div>
+      <h2 id="result-title">You Win!</h2>
+      <p>Taps</p>
+      <div class="score-big" id="final-taps">0</div>
+      <p class="best-line" id="best-line">Best: <span id="final-best">0</span></p>
+      <p class="hint">Tap or press SPACE to race again</p>
+    </div>
   </div>
-  <div id="tap-zone">TAP TO RACE!</div>
-  <div id="status">Tap as fast as you can!</div>
-  <div id="score"></div>
 </div>
+
 <script>
-(window.__discordReady || Promise.resolve()).then(() => {
-  const finishPx = 480;
-  let youPos = 10, cpu1Pos = 10, cpu2Pos = 10;
-  let racing = false, finished = false, wins = 0, races = 0;
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const tapCountEl = document.getElementById('tap-count');
+  const speedValEl = document.getElementById('speed-val');
+  const finalTaps = document.getElementById('final-taps');
+  const finalBest = document.getElementById('final-best');
+  const resultTitle = document.getElementById('result-title');
+  const resultEmoji = document.getElementById('result-emoji');
+  const bestLine = document.getElementById('best-line');
 
-  const snailYou = document.getElementById('snail-you');
-  const snailCpu1 = document.getElementById('snail-cpu1');
-  const snailCpu2 = document.getElementById('snail-cpu2');
-  const tapZone = document.getElementById('tap-zone');
-  const status = document.getElementById('status');
-  const scoreEl = document.getElementById('score');
+  // Game dimensions (internal buffer)
+  const GAME_W = 800;
+  const GAME_H = 500;
 
-  function reset() {
-    youPos = 10; cpu1Pos = 10; cpu2Pos = 10;
-    snailYou.style.left = '10px';
-    snailCpu1.style.left = '10px';
-    snailCpu2.style.left = '10px';
-    finished = false;
-    racing = true;
-    status.textContent = 'TAP TAP TAP!';
-    tapZone.textContent = 'TAP!';
+  // Responsive canvas
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- Constants ---
+  const FINISH_X = GAME_W - 60;   // where the finish line is
+  const LANE_Y = [GAME_H - 90, GAME_H - 190, GAME_H - 290, GAME_H - 380]; // y positions for 4 lanes
+  const TRACK_TOP = LANE_Y[3] - 20;
+  const TRACK_BOTTOM = LANE_Y[0] + 70;
+  const MAX_SPEED = 9;
+  const FRICTION = 0.013;
+  const TAP_BOOST = 0.55;
+  const CPU_BASE = [0.025, 0.022, 0.028]; // per-frame speed multipliers for 3 CPUs
+
+  // --- Game State ---
+  const STATE_READY = 0;
+  const STATE_RACING = 1;
+  const STATE_FINISHED = 2;
+  let state = STATE_READY;
+
+  // Player
+  const player = { x: 40, speed: 0, tapCount: 0, lane: 0, wobble: 0 };
+
+  // CPUs
+  const cpus = [
+    { x: 40, speed: 0, lane: 1, wobble: 0 },
+    { x: 40, speed: 0, lane: 2, wobble: Math.PI * 0.7 },
+    { x: 40, speed: 0, lane: 3, wobble: Math.PI * 1.3 },
+  ];
+
+  // Finish order
+  let finishOrder = []; // 'player' or 'cpu0','cpu1','cpu2'
+  let finishTime = 0;
+
+  // Particles
+  const particles = [];
+
+  // Speed lines (motion streaks)
+  const streaks = [];
+
+  // Race progress scroll (for track details)
+  let scrollX = 0;
+
+  // localStorage best (fewest taps to finish)
+  let best = parseInt(localStorage.getItem('snail-racer-best') || '0', 10);
+  let bestSet = best > 0;
+
+  // --- Overlay helpers ---
+  function setOverlay(name) {
+    startScreen.classList.toggle('active', name === 'start');
+    gameoverScreen.classList.toggle('active', name === 'gameover');
   }
 
-  function checkWin() {
-    if (finished) return;
-    if (youPos >= finishPx) {
-      finished = true; racing = false; wins++; races++;
-      status.textContent = 'YOU WIN!';
-      tapZone.textContent = 'TAP TO RACE AGAIN';
-      scoreEl.textContent = 'Wins: ' + wins + ' / ' + races;
-    } else if (cpu1Pos >= finishPx || cpu2Pos >= finishPx) {
-      finished = true; racing = false; races++;
-      const winner = cpu1Pos >= finishPx ? 'CPU 1' : 'CPU 2';
-      status.textContent = winner + ' WINS! Try again!';
-      tapZone.textContent = 'TAP TO RACE AGAIN';
-      scoreEl.textContent = 'Wins: ' + wins + ' / ' + races;
+  // --- Reset / init ---
+  function resetRace() {
+    player.x = 40;
+    player.speed = 0;
+    player.tapCount = 0;
+    player.wobble = 0;
+    cpus.forEach((c, i) => {
+      c.x = 40;
+      c.speed = 0;
+      c.wobble = Math.PI * (i + 1) * 0.7;
+    });
+    finishOrder = [];
+    particles.length = 0;
+    streaks.length = 0;
+    scrollX = 0;
+    tapCountEl.textContent = '0';
+    speedValEl.textContent = '0';
+  }
+
+  function startRace() {
+    resetRace();
+    state = STATE_RACING;
+    setOverlay(null);
+  }
+
+  function endRace() {
+    if (state !== STATE_RACING) return;
+    state = STATE_FINISHED;
+    finishTime = Date.now();
+
+    // Determine player placement
+    const playerPlace = finishOrder.indexOf('player');
+    const isWin = playerPlace === 0;
+    const isNewBest = player.tapCount > 0 && (best === 0 || player.tapCount < best);
+
+    if (isNewBest) {
+      best = player.tapCount;
+      localStorage.setItem('snail-racer-best', best);
     }
+
+    // Update game over panel
+    if (isWin) {
+      resultTitle.textContent = 'You Win!';
+      resultTitle.style.color = '#00ff88';
+      resultEmoji.textContent = '🏆';
+      if (isNewBest) {
+        bestLine.innerHTML = '🎉 NEW RECORD! <span id="final-best">' + best + '</span>';
+      } else {
+        bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
+      }
+    } else {
+      const place = ['2nd', '3rd', '4th'][Math.max(0, playerPlace - 1)];
+      resultTitle.textContent = place + ' Place!';
+      resultTitle.style.color = '#ff5252';
+      resultEmoji.textContent = ['🥈', '🥉', '😢'][playerPlace - 1] || '🐌';
+      bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
+    }
+    finalTaps.textContent = player.tapCount;
+    finalBest.textContent = best;
+
+    // Show game over after short delay
+    setTimeout(() => {
+      if (state === STATE_FINISHED) setOverlay('gameover');
+    }, 900);
   }
 
-  function moveCPUs() {
-    if (!racing || finished) return;
-    cpu1Pos += Math.random() * 6;
-    cpu2Pos += Math.random() * 5;
-    snailCpu1.style.left = Math.min(cpu1Pos, finishPx) + 'px';
-    snailCpu2.style.left = Math.min(cpu2Pos, finishPx) + 'px';
-    checkWin();
-  }
-
-  setInterval(moveCPUs, 100);
-
-  function onTap() {
-    if (finished || !racing) {
-      reset();
+  // --- Input ---
+  function onInput(e) {
+    e.preventDefault();
+    if (state === STATE_READY) {
+      startRace();
       return;
     }
-    youPos += 8 + Math.random() * 4;
-    snailYou.style.left = Math.min(youPos, finishPx) + 'px';
-    checkWin();
+    if (state === STATE_FINISHED) {
+      // Allow restart after a moment
+      if (Date.now() - finishTime > 500) {
+        startRace();
+      }
+      return;
+    }
+    if (state === STATE_RACING) {
+      // Tap boost
+      player.speed += TAP_BOOST;
+      if (player.speed > MAX_SPEED) player.speed = MAX_SPEED;
+      player.tapCount++;
+      tapCountEl.textContent = player.tapCount;
+
+      // Tap particles (slime splat behind snail)
+      for (let i = 0; i < 5; i++) {
+        const laneY = LANE_Y[player.lane];
+        particles.push({
+          x: player.x - 10 + Math.random() * -15,
+          y: laneY + 20 + Math.random() * 20 - 10,
+          vx: -1 - Math.random() * 2,
+          vy: -1 + Math.random() * 2,
+          r: 2 + Math.random() * 3,
+          life: 1,
+          color: `hsl(${100 + Math.random() * 40}, 70%, 55%)`,
+        });
+      }
+    }
   }
 
-  tapZone.addEventListener('click', onTap);
-  tapZone.addEventListener('touchstart', (e) => { e.preventDefault(); onTap(); });
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      onInput(e);
+    }
+  });
+  canvas.addEventListener('mousedown', onInput);
+  canvas.addEventListener('touchstart', onInput, { passive: false });
+  startScreen.addEventListener('mousedown', onInput);
+  startScreen.addEventListener('touchstart', onInput, { passive: false });
+  gameoverScreen.addEventListener('mousedown', onInput);
+  gameoverScreen.addEventListener('touchstart', onInput, { passive: false });
 
-  reset();
-});
+  // --- Update ---
+  function update() {
+    if (state === STATE_RACING) {
+      // Player physics
+      player.speed -= player.speed * FRICTION;
+      if (player.speed < 0) player.speed = 0;
+      player.x += player.speed;
+
+      // Speed display (0-100%)
+      const pct = Math.round((player.speed / MAX_SPEED) * 100);
+      speedValEl.textContent = pct;
+
+      // Player wobble (snail bounce)
+      player.wobble += 0.12 + player.speed * 0.04;
+
+      // CPU movement
+      cpus.forEach((c, i) => {
+        // Variable speed based on position (rubber-banding)
+        const base = CPU_BASE[i];
+        const variance = Math.sin(Date.now() / 800 + c.wobble) * 0.008;
+        c.speed += base + variance + Math.random() * 0.006;
+        c.speed *= 0.97;
+        if (c.speed > MAX_SPEED * 0.88) c.speed = MAX_SPEED * 0.88;
+        c.x += c.speed;
+        c.wobble += 0.05 + c.speed * 0.02;
+
+        // Check if CPU finished
+        if (c.x >= FINISH_X && !finishOrder.includes('cpu' + i)) {
+          finishOrder.push('cpu' + i);
+          // CPU slime particles at finish
+          const laneY = LANE_Y[c.lane];
+          for (let j = 0; j < 15; j++) {
+            particles.push({
+              x: c.x,
+              y: laneY + 20 + Math.random() * 20 - 10,
+              vx: (Math.random() - 0.5) * 4,
+              vy: -1 - Math.random() * 3,
+              r: 2 + Math.random() * 4,
+              life: 1,
+              color: '#7bc95c',
+            });
+          }
+        }
+      });
+
+      // Check if player finished
+      if (player.x >= FINISH_X && !finishOrder.includes('player')) {
+        finishOrder.push('player');
+        endRace();
+        // Victory particles
+        for (let j = 0; j < 25; j++) {
+          particles.push({
+            x: player.x,
+            y: LANE_Y[player.lane] + 20,
+            vx: (Math.random() - 0.5) * 6,
+            vy: -2 - Math.random() * 4,
+            r: 3 + Math.random() * 4,
+            life: 1,
+            color: ['#00ff88', '#ffeb3b', '#ff9a56', '#7bc95c'][Math.floor(Math.random() * 4)],
+          });
+        }
+      }
+
+      // Scroll for track details
+      scrollX += player.speed * 0.3;
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15;
+      p.life -= 0.025;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Update speed streaks
+    if (state === STATE_RACING && player.speed > 2) {
+      if (Math.random() < player.speed / MAX_SPEED) {
+        streaks.push({
+          x: player.x - 20,
+          y: LANE_Y[player.lane] + 22 + Math.random() * 10 - 5,
+          len: 10 + Math.random() * 20 * (player.speed / MAX_SPEED),
+          life: 1,
+        });
+      }
+    }
+    for (let i = streaks.length - 1; i >= 0; i--) {
+      streaks[i].x -= 3;
+      streaks[i].life -= 0.08;
+      if (streaks[i].life <= 0) streaks.splice(i, 1);
+    }
+  }
+
+  // --- Drawing helpers ---
+  function drawTrack() {
+    // Track background (asphalt)
+    const trackGrad = ctx.createLinearGradient(0, TRACK_TOP, 0, TRACK_BOTTOM + 20);
+    trackGrad.addColorStop(0, '#1a1a1a');
+    trackGrad.addColorStop(0.5, '#222');
+    trackGrad.addColorStop(1, '#1a1a1a');
+    ctx.fillStyle = trackGrad;
+    ctx.fillRect(0, TRACK_TOP, GAME_W, TRACK_BOTTOM - TRACK_TOP + 20);
+
+    // Lane dividers (dashed white lines)
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([20, 15]);
+    for (let i = 1; i <= 3; i++) {
+      const y = LANE_Y[i] + 50;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(GAME_W, y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Track edges (neon green border)
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(0, TRACK_TOP);
+    ctx.lineTo(GAME_W, TRACK_TOP);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, TRACK_BOTTOM);
+    ctx.lineTo(GAME_W, TRACK_BOTTOM);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Start line
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(30, TRACK_TOP, 6, TRACK_BOTTOM - TRACK_TOP);
+    for (let y = TRACK_TOP; y < TRACK_BOTTOM; y += 16) {
+      ctx.fillStyle = (Math.floor(y / 16) % 2 === 0) ? '#fff' : '#222';
+      ctx.fillRect(30, y, 6, 8);
+    }
+
+    // Finish line (checkered)
+    const fx = FINISH_X;
+    const fw = 12;
+    for (let row = 0; row < Math.ceil((TRACK_BOTTOM - TRACK_TOP) / 12); row++) {
+      for (let col = 0; col < 2; col++) {
+        ctx.fillStyle = ((row + col) % 2 === 0) ? '#fff' : '#111';
+        ctx.fillRect(fx + col * (fw / 2), TRACK_TOP + row * 12, fw / 2, 12);
+      }
+    }
+    // "FINISH" text on finish line
+    ctx.save();
+    ctx.translate(fx + fw / 2, (TRACK_TOP + TRACK_BOTTOM) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 8;
+    ctx.fillText('FINISH', 0, 5);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // Distance markers
+    ctx.fillStyle = 'rgba(0,255,136,0.3)';
+    ctx.font = '10px Courier New';
+    const distStart = 100;
+    const distStep = 100;
+    for (let d = distStart; d < FINISH_X - 20; d += distStep) {
+      ctx.fillText(d + 'm', d, TRACK_TOP - 5);
+      ctx.fillText(d + 'm', d, TRACK_BOTTOM + 14);
+    }
+  }
+
+  function drawSnailShape(x, y, lane, wobble, speed, isPlayer) {
+    ctx.save();
+    ctx.translate(x, y + 20); // center in lane
+    ctx.rotate(Math.sin(wobble) * 0.08);
+
+    const r = 20; // snail radius
+    const dir = isPlayer ? 1 : -1; // face direction of travel
+    const flipX = isPlayer ? 1 : -1;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, r + 4, r * 1.2, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Slime trail (wavy line behind)
+    ctx.strokeStyle = `rgba(180,230,150,${0.2 + speed * 0.06})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-r * flipX, 4);
+    const trailLen = 25 + speed * 3;
+    for (let i = 0; i <= trailLen; i += 5) {
+      ctx.lineTo(-r * flipX - i * flipX, 4 + Math.sin(wobble * 2 - i * 0.15) * 3);
+    }
+    ctx.stroke();
+
+    // Body / foot
+    const bodyGrad = ctx.createLinearGradient(0, -r, 0, r);
+    bodyGrad.addColorStop(0, '#c8e6a0');
+    bodyGrad.addColorStop(1, '#8ab868');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 6, r + 3, r - 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell
+    const shellGrad = ctx.createRadialGradient(-3, -5, 2, 0, 0, r - 2);
+    shellGrad.addColorStop(0, '#ffb070');
+    shellGrad.addColorStop(0.5, '#e87830');
+    shellGrad.addColorStop(1, '#a04018');
+    ctx.fillStyle = shellGrad;
+    ctx.beginPath();
+    ctx.arc(0, -4, r - 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell spiral
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, -4, r - 7, 0.3, Math.PI * 1.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -4, r - 11, 0.5, Math.PI * 1.7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, -4, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Shell highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(-5, -10, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head (pointing in direction of travel)
+    const headX = (isPlayer ? r + 2 : -r - 2) * flipX;
+    ctx.fillStyle = '#d0eca0';
+    ctx.beginPath();
+    ctx.ellipse(headX, 2, 9, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    const eyeX = headX + (isPlayer ? 4 : -4) * flipX;
+    ctx.arc(eyeX, -1, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(eyeX + (isPlayer ? 1.5 : -1.5) * flipX, -1, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye highlight
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(eyeX - 1, -2, 1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antennae
+    ctx.strokeStyle = '#5a8a3a';
+    ctx.lineWidth = 1.8;
+    const antBaseX = headX;
+    const antBaseY = -2;
+    // Top antenna
+    ctx.beginPath();
+    ctx.moveTo(antBaseX, antBaseY);
+    ctx.lineTo(antBaseX + (isPlayer ? 8 : -8), antBaseY - 14);
+    ctx.stroke();
+    ctx.fillStyle = '#5a8a3a';
+    ctx.beginPath();
+    ctx.arc(antBaseX + (isPlayer ? 8 : -8), antBaseY - 14, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Side antenna
+    ctx.beginPath();
+    ctx.moveTo(antBaseX + (isPlayer ? 2 : -2), antBaseY);
+    ctx.lineTo(antBaseX + (isPlayer ? 6 : -6), antBaseY - 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(antBaseX + (isPlayer ? 6 : -6), antBaseY - 10, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth (small smile)
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(headX + (isPlayer ? 3 : -3), 3, 2.5, 0, Math.PI);
+    ctx.stroke();
+
+    // Speed indicator (motion lines)
+    if (speed > 1) {
+      ctx.strokeStyle = `rgba(0,255,136,${Math.min(0.6, speed / MAX_SPEED * 0.7)})`;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) {
+        const sy = -r + i * r / 1.5;
+        const len = 8 + speed * 2;
+        ctx.beginPath();
+        ctx.moveTo(-r * flipX - 5, sy);
+        ctx.lineTo(-r * flipX - 5 - len, sy);
+        ctx.stroke();
+      }
+    }
+
+    // Player label
+    if (isPlayer) {
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#00ff88';
+      ctx.shadowBlur = 6;
+      ctx.fillText('YOU', 0, -r - 8);
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+  }
+
+  function drawCpuLabel(x, lane) {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = 'bold 9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('CPU ' + (lane), x, LANE_Y[lane] + 8);
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawStreaks() {
+    for (const s of streaks) {
+      ctx.globalAlpha = s.life * 0.5;
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x - s.len, s.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawProgressBar() {
+    if (state !== STATE_RACING) return;
+    const barW = 200;
+    const barH = 8;
+    const bx = (GAME_W - barW) / 2;
+    const by = GAME_H - 28;
+
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+
+    // Track progress
+    const progress = Math.min(1, player.x / FINISH_X);
+    const fillGrad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
+    fillGrad.addColorStop(0, '#00ff88');
+    fillGrad.addColorStop(1, '#ffeb3b');
+    ctx.fillStyle = fillGrad;
+    ctx.fillRect(bx, by, barW * progress, barH);
+
+    // Border
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx - 1, by - 1, barW + 2, barH + 2);
+
+    // Snail icon on progress bar
+    const iconX = bx + barW * progress;
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('🐌', Math.min(iconX, GAME_W - 20), by + barH + 10);
+  }
+
+  // --- Main loop ---
+  let lastTime = 0;
+  function loop(t) {
+    const dt = Math.min(33, t - lastTime || 16);
+    lastTime = t;
+
+    update();
+
+    // --- Render ---
+    // Clear with dark background
+    ctx.fillStyle = '#0a0f0a';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    drawTrack();
+
+    // Draw speed streaks (behind snails)
+    drawStreaks();
+
+    // Draw CPUs
+    cpus.forEach((c, i) => {
+      drawCpuLabel(c.x, cpus[i].lane);
+      drawSnailShape(c.x, LANE_Y[c.lane], c.lane, c.wobble, c.speed, false);
+    });
+
+    // Draw player
+    drawSnailShape(player.x, LANE_Y[player.lane], player.lane, player.wobble, player.speed, true);
+
+    // Draw particles (on top)
+    drawParticles();
+
+    // Progress bar
+    drawProgressBar();
+
+    requestAnimationFrame(loop);
+  }
+
+  // --- Init ---
+  setOverlay('start');
+  requestAnimationFrame(loop);
+})();
 </script>
 </body>
 </html>

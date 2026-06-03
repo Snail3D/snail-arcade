@@ -119,6 +119,8 @@ resize();
 window.addEventListener('resize', resize);
 
 // Game state
+// localStorage key: 'nozzle-nexus-best'
+let bestScore = parseInt(localStorage.getItem('nozzle-nexus-best') || '0');
 let state = 'menu'; // menu, playing, gameover
 let score = 0, level = 1, lives = 3;
 let frame = 0;
@@ -295,7 +297,7 @@ function update() {
       screenShake = 15;
       enemies.splice(i, 1);
       lives--;
-      if (lives <= 0) { state = 'gameover'; showEnd(); }
+      if (lives <= 0) { state = 'gameover'; showEnd(); if (score > bestScore) { bestScore = score; localStorage.setItem('nozzle-nexus-best', bestScore); } }
       continue;
     }
 
@@ -618,6 +620,7 @@ function showEnd() {
     <h1>GAME OVER</h1>
     <div class="subtitle">// PRINT FAILED //</div>
     <div class="tagline">Score: ${score} &nbsp; Level: ${level}</div>
+    <div class="tagline" style="color:#ffcc00">Best: ${bestScore}</div>
     <button id="startBtn">RETRY</button>
   `;
   document.getElementById('startBtn').addEventListener('click', () => {

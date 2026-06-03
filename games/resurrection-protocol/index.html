@@ -108,6 +108,9 @@
   resize();
   window.addEventListener('resize', resize);
 
+  // localStorage key: 'resurrection-protocol-best'
+  let bestScore = parseInt(localStorage.getItem('resurrection-protocol-best') || '0');
+
   // Game state
   let state = 'menu'; // menu, playing, dead, gameover
   let score = 0;
@@ -293,6 +296,10 @@
       spawnExplosion(this.x, this.y, '#00ff88', 12);
       if (lives <= 0) {
         state = 'gameover';
+        if (score > bestScore) {
+          bestScore = score;
+          localStorage.setItem('resurrection-protocol-best', bestScore);
+        }
       }
     }
   };
@@ -894,13 +901,16 @@
     ctx.fillStyle = '#00ff88';
     ctx.font = `${Math.min(24, W*0.045)}px 'Courier New', monospace`;
     ctx.fillText(`FINAL SCORE: ${Math.floor(score)}`, W/2, H/2 + 10);
-    ctx.fillText(`WAVES SURVIVED: ${wave}`, W/2, H/2 + 40);
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = `${Math.min(18, W*0.035)}px 'Courier New', monospace`;
+    ctx.fillText(`BEST: ${bestScore}`, W/2, H/2 + 40);
+    ctx.fillText(`WAVES SURVIVED: ${wave}`, W/2, H/2 + 65);
 
     ctx.shadowBlur = 10;
     ctx.shadowColor = '#888';
     ctx.fillStyle = '#888';
     ctx.font = `${Math.min(18, W*0.035)}px 'Courier New', monospace`;
-    ctx.fillText('TAP / SPACE / ENTER TO RETRY', W/2, H/2 + 90);
+    ctx.fillText('TAP / SPACE / ENTER TO RETRY', W/2, H/2 + 115);
     ctx.restore();
   }
 

@@ -31,6 +31,9 @@
 // COMMENT CASCADE — SnailKing Arcade
 // ============================================================
 
+// localStorage key: 'comment-cascade-best'
+let bestScore = parseInt(localStorage.getItem('comment-cascade-best') || '0');
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -278,7 +281,13 @@ function update(dt) {
   if (newLevel > state.level) state.level = newLevel;
 
   // Game over
-  if (state.lives <= 0) state.phase = 'gameover';
+  if (state.lives <= 0) {
+    state.phase = 'gameover';
+    if (state.score > bestScore) {
+      bestScore = Math.floor(state.score);
+      localStorage.setItem('comment-cascade-best', bestScore);
+    }
+  }
 }
 
 function drawRoundRect(x, y, w, h, r, fill, stroke) {
@@ -511,6 +520,10 @@ function drawGameOver() {
   ctx.fillStyle = COLORS.accent;
   ctx.font = 'bold 20px "Courier New", monospace';
   ctx.fillText(`Score: ${Math.floor(state.score)}`, canvas.width / 2, canvas.height * 0.42);
+
+  ctx.fillStyle = COLORS.combo;
+  ctx.font = '14px "Courier New", monospace';
+  ctx.fillText(`Best: ${bestScore}`, canvas.width / 2, canvas.height * 0.58);
 
   ctx.fillStyle = COLORS.combo;
   ctx.font = '14px "Courier New", monospace';

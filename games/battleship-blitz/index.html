@@ -61,6 +61,7 @@
         .enemy-board .cell { cursor: crosshair; }
         .cell.miss { background: #010a0a; }
         .cell.miss::after { content: '○'; color: #0a0; font-size: 1.5em; text-shadow: 0 0 4px #0a0; }
+        .high-score { font-size: 0.7rem; color: #0f0; margin-left: 8px; }
         .cell.hit { background: #200; }
         .cell.hit::after { content: 'X'; color: #f60; font-weight: bold; }
         .cell.sunk { background: #300; }
@@ -137,6 +138,7 @@
         <div class="panel-item"><div class="panel-label">SHOTS</div><div class="panel-value" id="shots">0</div></div>
         <div class="panel-item"><div class="panel-label">HITS</div><div class="panel-value" id="hits">0</div></div>
         <div class="panel-item"><div class="panel-label">ACC</div><div class="panel-value" id="acc">0%</div></div>
+        <div class="panel-item"><div class="panel-label">BEST ACC</div><div class="panel-value" id="bestAcc">—</div></div>
     </div>
 
     <div id="fleet"></div>
@@ -164,6 +166,16 @@ let aiHunt, aiQueue;
 
 function mkBoard() {
     return Array.from({ length: SIZE }, () => Array(SIZE).fill(null).map(() => ({ ship: null, hit: false })));
+}
+
+// High score handling
+const BEST_ACC_KEY = 'battleship-blitz-best-acc';
+function getBestAcc() { return parseFloat(localStorage.getItem(BEST_ACC_KEY) || '0'); }
+function saveBestAcc(acc) {
+    if (acc > getBestAcc()) {
+        localStorage.setItem(BEST_ACC_KEY, acc.toString());
+        document.getElementById('bestAcc').textContent = acc + '%';
+    }
 }
 
 function canPlace(b, r, c, sz, h) {
@@ -210,7 +222,10 @@ function renderGrid(el, board, enemy) {
             cell.className = 'cell';
             cell.dataset.r = r;
             cell.dataset.c = c;
-            if (enemy) cell.addEventListener('click', () => fire(r, c));
+            if (enemy) {
+                cell.addEventListener('click', () => fire(r, c));
+                cell.addEventListener('touchstart', (e) => { e.preventDefault(); fire(r, c); }, { passive: false });
+            }
             el.appendChild(cell);
         }
     }
@@ -364,9 +379,11 @@ function endGame(win) {
     const modal = document.getElementById('modal');
     const title = document.getElementById('modalTitle');
     const stats = document.getElementById('modalStats');
+    const acc = shots ? Math.round(hits/shots*100) : 0;
     title.textContent = win ? 'VICTORY' : 'DEFEATED';
     title.className = win ? 'victory' : 'defeat';
-    stats.innerHTML = 'Shots: ' + shots + ' — Hits: ' + hits + ' — Accuracy: ' + (shots ? Math.round(hits/shots*100) : 0) + '%';
+    stats.innerHTML = 'Shots: ' + shots + ' — Hits: ' + hits + ' — Accuracy: ' + acc + '%';
+    if (win) saveBestAcc(acc);
     modal.style.display = 'flex';
 }
 
@@ -383,6 +400,12 @@ function newGame() {
     draw();
     setStatus('YOUR TURN — SELECT TARGET');
 }
+
+// Initialize best acc display
+document.addEventListener('DOMContentLoaded', () => {
+    const best = getBestAcc();
+    document.getElementById('bestAcc').textContent = best > 0 ? best + '%' : '—';
+});
 
 newGame();
 </script>

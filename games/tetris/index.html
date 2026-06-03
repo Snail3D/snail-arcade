@@ -176,9 +176,10 @@
     </div>
   </div>
   <div id="overlay">
-    <h1>SNAIL TETRIS</h1>
-    <p>Classic block stacking action</p>
-    <button id="startBtn">START GAME</button>
+  <h1>SNAIL TETRIS</h1>
+  <p>Classic block stacking action</p>
+  <p id="bestScore"></p>
+  <button id="startBtn">START GAME</button>
   </div>
 
   <script>
@@ -215,6 +216,9 @@
       J: [[1,0,0],[1,1,1]],
       L: [[0,0,1],[1,1,1]]
     };
+
+    // localStorage key: 'tetris-best'
+    let bestScore = parseInt(localStorage.getItem('tetris-best') || '0');
 
     let board = [];
     let currentPiece = null;
@@ -407,6 +411,10 @@
       currentY = 0;
       if (collides(currentPiece, currentX, currentY, currentPiece.shape)) {
         gameOver = true;
+        if (score > bestScore) {
+          bestScore = score;
+          localStorage.setItem('tetris-best', bestScore);
+        }
       }
       drawNextPiece();
     }

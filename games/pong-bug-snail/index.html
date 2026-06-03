@@ -2,97 +2,673 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Pong Bug – Snail Twist</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pong Bug — Snail Twist</title>
 <style>
-  body,html{margin:0;height:100%;display:flex;justify-content:center;align-items:center;background:#111;}
-  canvas{background:#222;background-image:none;display:block;}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #111;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  }
+  #hud {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 40px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .score-box {
+    text-align: center;
+  }
+  .score-label {
+    font-size: 12px;
+    color: #666;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .score-value {
+    font-size: 36px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(0,255,136,0.5);
+  }
+  .score-box.player .score-value { color: #00ff88; }
+  .score-box.cpu .score-value { color: #ff6b6b; }
+  #best {
+    position: absolute;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 14px;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+    background: rgba(0,0,0,0.6);
+  }
+  .panel {
+    background: rgba(10,10,10,0.92);
+    border: 3px solid #00ff88;
+    border-radius: 16px;
+    padding: 32px 44px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 40px rgba(0,255,136,0.3), inset 0 0 60px rgba(0,255,136,0.05);
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  .panel h1 {
+    font-size: 38px;
+    color: #00ff88;
+    margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(0,255,136,0.6);
+    letter-spacing: 2px;
+  }
+  .panel h2 {
+    font-size: 28px;
+    color: #ff6b6b;
+    margin-bottom: 12px;
+    text-shadow: 0 0 15px rgba(255,107,107,0.5);
+  }
+  .panel p {
+    font-size: 15px;
+    color: #aaa;
+    margin: 8px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 64px;
+    color: #ffeb3b;
+    margin: 16px 0;
+    text-shadow: 0 0 20px rgba(255,235,59,0.6);
+  }
+  .panel .hint {
+    font-size: 13px;
+    color: #777;
+    margin-top: 16px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #1a1a1a;
+    border: 2px solid #444;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #ccc;
+  }
+  .snail-icon {
+    font-size: 48px;
+    margin-bottom: 8px;
+  }
+  #start, #gameover { display: none; }
+  #start.active, #gameover.active { display: flex; }
+  .divider {
+    width: 100px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00ff88, transparent);
+    margin: 12px auto;
+  }
 </style>
 </head>
 <body>
-<canvas id="game" width="800" height="500"></canvas>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <div class="score-box player">
+      <div class="score-label">You</div>
+      <div class="score-value" id="player-score">0</div>
+    </div>
+    <div class="score-box cpu">
+      <div class="score-label">CPU</div>
+      <div class="score-value" id="cpu-score">0</div>
+    </div>
+  </div>
+  <div id="best">BEST: <span id="best-val">0</span></div>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <div class="snail-icon">🐌</div>
+      <h1>PONG SNAIL</h1>
+      <div class="divider"></div>
+      <p>Battle the CPU in this classic arcade showdown!</p>
+      <p>Move your snail paddle to deflect the ball.</p>
+      <div class="keys">
+        <span class="key">↑ ↓</span>
+        <span class="key">W S</span>
+        <span class="key">MOUSE</span>
+        <span class="key">TAP &amp; DRAG</span>
+      </div>
+      <p class="hint">Press SPACE or tap to start</p>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2>🏁 GAME OVER</h2>
+      <p>Final Score</p>
+      <div class="score-big" id="final-score">0</div>
+      <p id="best-line">Best: <span id="final-best">0</span></p>
+      <p class="hint">Press SPACE or tap to play again</p>
+    </div>
+  </div>
+</div>
+
 <script>
-window.onload = function(){
+(() => {
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
-  const paddleW = 20, paddleH = 100;
-  const ballR = 10;
-  let paddle = {x:10, y:H/2-paddleH/2, speed:4};
-  let ball = {x:W/2, y:H/2, vx:4, vy:2};
-  let moving = true;
-  let dragging = false;
+  const wrap = document.getElementById('wrap');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const playerScoreEl = document.getElementById('player-score');
+  const cpuScoreEl = document.getElementById('cpu-score');
+  const bestEl = document.getElementById('best-val');
+  const bestLine = document.getElementById('best-line');
+  const finalScore = document.getElementById('final-score');
+  const finalBest = document.getElementById('final-best');
 
-  // Touch control: finger drags paddle vertically
-  const touchHandler = (e)=>{
-    e.preventDefault();
-    if(e.type === 'touchstart'){
-      dragging = true;
-    } else if(e.type === 'touchmove'){
-      if(!dragging) return;
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches[0];
-      const mouseY = touch.clientY - rect.top;
-      paddle.y = Math.min(H-paddleH, Math.max(0, mouseY-paddleH/2));
-    } else if(e.type === 'touchend'){
-      dragging = false;
+  // Game dimensions (internal pixel buffer)
+  const GAME_W = 800;
+  const GAME_H = 500;
+  const PADDLE_W = 18;
+  const PADDLE_H = 90;
+  const BALL_R = 10;
+  const PADDLE_SPEED = 7;
+  const CPU_SPEED = 4.5;
+  const WIN_SCORE = 7;
+
+  // Responsive canvas sizing
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const aspect = GAME_W / GAME_H;
+    let w, h;
+    if (vw / vh > aspect) {
+      h = Math.min(vh, GAME_H);
+      w = h * aspect;
+    } else {
+      w = Math.min(vw, GAME_W);
+      h = w / aspect;
     }
-  };
-  canvas.addEventListener('touchstart', touchHandler);
-  canvas.addEventListener('touchmove', touchHandler);
-  canvas.addEventListener('touchend', touchHandler);
+    canvas.style.width = Math.floor(w) + 'px';
+    canvas.style.height = Math.floor(h) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-  function resetBall(direction='right'){
-    ball.x = W/2;
-    ball.y = H/2;
-    ball.vx = direction==='right' ? 4 : -4;
-    ball.vy = (Math.random()*2-1)*3;
+  // Game state
+  const STATE_READY = 0;
+  const STATE_PLAYING = 1;
+  const STATE_GAMEOVER = 2;
+  let state = STATE_READY;
+
+  // Scores
+  let playerScore = 0;
+  let cpuScore = 0;
+  let best = parseInt(localStorage.getItem('pong-snail-best') || '0', 10);
+  bestEl.textContent = best;
+  if (best > 0) document.getElementById('best').style.display = 'block';
+
+  // Ball
+  let ball = { x: GAME_W / 2, y: GAME_H / 2, vx: 5, vy: 3, speed: 5 };
+
+  // Paddles
+  let player = { x: 20, y: GAME_H / 2 - PADDLE_H / 2 };
+  let cpu = { x: GAME_W - 20 - PADDLE_W, y: GAME_H / 2 - PADDLE_H / 2 };
+
+  // Input state
+  let keys = { up: false, down: false };
+  let mouseY = null;
+  let touching = false;
+
+  // Particles
+  const particles = [];
+
+  // Trail points for ball
+  const trail = [];
+  const MAX_TRAIL = 12;
+
+  // Helper: spawn particles on hit
+  function spawnParticles(x, y, color, count = 8) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 3;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        color,
+        r: 2 + Math.random() * 3
+      });
+    }
   }
 
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    // paddle (snail)
-    ctx.fillStyle = '#0ff';
-    ctx.fillRect(paddle.x, paddle.y, paddleW, paddleH);
-    // snail head (yellow)
-    ctx.fillStyle = '#ff0';
-    ctx.fillRect(paddle.x, paddle.y-15, 10, 15);
-    // ball
-    ctx.fillStyle = '#f33';
-    ctx.arc(ball.x, ball.y, ballR, 0, Math.PI*2);
+  function resetBall(direction = 1) {
+    ball.x = GAME_W / 2;
+    ball.y = GAME_H / 2;
+    const speed = ball.speed;
+    const angle = (Math.random() * 0.6 - 0.3);
+    ball.vx = direction * speed * Math.cos(angle);
+    ball.vy = speed * Math.sin(angle) * 1.5;
+    trail.length = 0;
+  }
+
+  function resetGame() {
+    playerScore = 0;
+    cpuScore = 0;
+    player.y = GAME_H / 2 - PADDLE_H / 2;
+    cpu.y = GAME_H / 2 - PADDLE_H / 2;
+    ball.speed = 5;
+    resetBall(Math.random() > 0.5 ? 1 : -1);
+    particles.length = 0;
+    updateHUD();
+  }
+
+  function updateHUD() {
+    playerScoreEl.textContent = playerScore;
+    cpuScoreEl.textContent = cpuScore;
+  }
+
+  function startGame() {
+    if (state === STATE_READY || state === STATE_GAMEOVER) {
+      resetGame();
+      state = STATE_PLAYING;
+      startScreen.classList.remove('active');
+      gameoverScreen.classList.remove('active');
+    }
+  }
+
+  // Input handlers
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = true;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (state !== STATE_PLAYING) startGame();
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = false;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') keys.down = false;
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleY = GAME_H / rect.height;
+    mouseY = (e.clientY - rect.top) * scaleY;
+  });
+  canvas.addEventListener('mouseleave', () => { mouseY = null; });
+
+  function getTouchY(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleY = GAME_H / rect.height;
+    return (e.touches[0].clientY - rect.top) * scaleY;
+  }
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touching = true;
+    if (state !== STATE_PLAYING) startGame();
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (touching) mouseY = getTouchY(e);
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => { touching = false; });
+
+  // Click/tap on overlays to start
+  startScreen.addEventListener('click', startGame);
+  startScreen.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+  gameoverScreen.addEventListener('click', startGame);
+  gameoverScreen.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+
+  // Draw: background grid
+  function drawBackground() {
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(0,255,136,0.04)';
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+    for (let x = 0; x < GAME_W; x += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, GAME_H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < GAME_H; y += gridSize) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(GAME_W, y);
+      ctx.stroke();
+    }
+
+    // Center line
+    ctx.strokeStyle = 'rgba(0,255,136,0.15)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 10]);
+    ctx.beginPath();
+    ctx.moveTo(GAME_W / 2, 0);
+    ctx.lineTo(GAME_W / 2, GAME_H);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Center circle
+    ctx.strokeStyle = 'rgba(0,255,136,0.12)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(GAME_W / 2, GAME_H / 2, 50, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Draw: player snail paddle
+  function drawPaddle(x, y, isPlayer) {
+    const color = isPlayer ? '#00ff88' : '#ff6b6b';
+    const darkColor = isPlayer ? '#00aa55' : '#aa3333';
+    const headColor = isPlayer ? '#88ffbb' : '#ff9999';
+
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 15;
+
+    // Body (paddle)
+    const grad = ctx.createLinearGradient(x, y, x + PADDLE_W, y);
+    grad.addColorStop(0, darkColor);
+    grad.addColorStop(0.5, color);
+    grad.addColorStop(1, darkColor);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, PADDLE_W, PADDLE_H, 6);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    // Shell spiral on paddle
+    const cx = x + PADDLE_W / 2;
+    const cy = y + PADDLE_H / 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 1.7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Shell highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(cx - 2, cy - 4, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Snail head (eyestalks)
+    const headX = isPlayer ? x - 4 : x + PADDLE_W + 4;
+    const headDir = isPlayer ? -1 : 1;
+
+    ctx.fillStyle = headColor;
+    // Left eyestalk
+    ctx.beginPath();
+    ctx.ellipse(headX, y + 18, 4, 8, headDir * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Right eyestalk
+    ctx.beginPath();
+    ctx.ellipse(headX, y + 32, 4, 8, headDir * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(headX + headDir * 2, y + 12, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(headX + headDir * 2, y + 26, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(headX + headDir * 2.5, y + 12, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(headX + headDir * 2.5, y + 26, 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  function update(){
-    if(!moving) return;
+  // Draw: ball with trail
+  function drawBall() {
+    // Trail
+    for (let i = 0; i < trail.length; i++) {
+      const t = trail[i];
+      const alpha = (i / trail.length) * 0.4;
+      const r = BALL_R * (0.3 + 0.7 * (i / trail.length));
+      ctx.fillStyle = `rgba(255,200,100,${alpha})`;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Ball glow
+    ctx.shadowColor = '#ffcc66';
+    ctx.shadowBlur = 20;
+
+    // Ball gradient
+    const grad = ctx.createRadialGradient(
+      ball.x - 3, ball.y - 3, 1,
+      ball.x, ball.y, BALL_R
+    );
+    grad.addColorStop(0, '#fff8e0');
+    grad.addColorStop(0.5, '#ffcc66');
+    grad.addColorStop(1, '#ff9933');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+  }
+
+  // Draw: particles
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Update: game logic
+  function update(dt) {
+    if (state !== STATE_PLAYING) return;
+
+    // Player movement
+    if (keys.up) player.y -= PADDLE_SPEED;
+    if (keys.down) player.y += PADDLE_SPEED;
+    if (mouseY !== null) {
+      const target = mouseY - PADDLE_H / 2;
+      player.y += (target - player.y) * 0.15;
+    }
+    player.y = Math.max(0, Math.min(GAME_H - PADDLE_H, player.y));
+
+    // CPU movement (AI)
+    const cpuCenter = cpu.y + PADDLE_H / 2;
+    const diff = ball.y - cpuCenter;
+    if (Math.abs(diff) > 20) {
+      cpu.y += Math.sign(diff) * CPU_SPEED;
+    }
+    // Add some reaction delay variation when ball is far
+    if (ball.x < GAME_W / 2 || ball.vx < 0) {
+      cpu.y += (Math.random() - 0.5) * 2;
+    }
+    cpu.y = Math.max(0, Math.min(GAME_H - PADDLE_H, cpu.y));
+
+    // Ball trail
+    trail.push({ x: ball.x, y: ball.y });
+    if (trail.length > MAX_TRAIL) trail.shift();
+
+    // Ball movement
     ball.x += ball.vx;
     ball.y += ball.vy;
 
-    // top/bottom bounce
-    if(ball.y - ballR < 0 || ball.y + ballR > H) ball.vy = -ball.vy;
-    // left paddle collision
-    if(ball.vx < 0 && ball.x - ballR < paddle.x + paddleW && ball.y > paddle.y && ball.y < paddle.y + paddleH){
-      ball.vx = -ball.vx * 1.2;
-      ball.x = paddle.x + paddleW;
+    // Top/bottom bounce
+    if (ball.y - BALL_R < 0) {
+      ball.y = BALL_R;
+      ball.vy = -ball.vy;
+      spawnParticles(ball.x, ball.y, '#ffcc66', 4);
     }
-    // right wall bounce (optional friction)
-    if(ball.x + ballR > W - paddleW - 10){
-      ball.vx = -ball.vx * 0.9;
+    if (ball.y + BALL_R > GAME_H) {
+      ball.y = GAME_H - BALL_R;
+      ball.vy = -ball.vy;
+      spawnParticles(ball.x, ball.y, '#ffcc66', 4);
     }
-    // left miss -> reset
-    if(ball.x - ballR < 0){
-      moving = false;
-      requestAnimationFrame(()=>{resetBall('right'); moving = true;}); 
+
+    // Player paddle collision
+    if (ball.vx < 0 &&
+        ball.x - BALL_R < player.x + PADDLE_W &&
+        ball.x + BALL_R > player.x &&
+        ball.y > player.y - BALL_R &&
+        ball.y < player.y + PADDLE_H + BALL_R) {
+      ball.x = player.x + PADDLE_W + BALL_R;
+      const hitPos = (ball.y - player.y) / PADDLE_H; // 0 to 1
+      const angle = (hitPos - 0.5) * Math.PI * 0.6; // -54 to +54 degrees
+      const speed = Math.min(ball.speed * 1.05, 10);
+      ball.vx = Math.cos(angle) * speed;
+      ball.vy = Math.sin(angle) * speed;
+      ball.speed = Math.min(ball.speed + 0.1, 9);
+      spawnParticles(ball.x, ball.y, '#00ff88', 10);
+    }
+
+    // CPU paddle collision
+    if (ball.vx > 0 &&
+        ball.x + BALL_R > cpu.x &&
+        ball.x - BALL_R < cpu.x + PADDLE_W &&
+        ball.y > cpu.y - BALL_R &&
+        ball.y < cpu.y + PADDLE_H + BALL_R) {
+      ball.x = cpu.x - BALL_R;
+      const hitPos = (ball.y - cpu.y) / PADDLE_H;
+      const angle = Math.PI - (hitPos - 0.5) * Math.PI * 0.6;
+      const speed = Math.min(ball.speed * 1.05, 10);
+      ball.vx = Math.cos(angle) * speed;
+      ball.vy = Math.sin(angle) * speed;
+      ball.speed = Math.min(ball.speed + 0.1, 9);
+      spawnParticles(ball.x, ball.y, '#ff6b6b', 10);
+    }
+
+    // Scoring
+    if (ball.x - BALL_R < 0) {
+      cpuScore++;
+      updateHUD();
+      if (cpuScore >= WIN_SCORE) {
+        endGame();
+      } else {
+        resetBall(1);
+        particles.length = 0;
+      }
+    }
+    if (ball.x + BALL_R > GAME_W) {
+      playerScore++;
+      updateHUD();
+      if (playerScore >= WIN_SCORE) {
+        endGame();
+      } else {
+        resetBall(-1);
+        particles.length = 0;
+      }
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.025;
+      if (p.life <= 0) particles.splice(i, 1);
     }
   }
 
-  function loop(){
-    if(moving) requestAnimationFrame(loop);
-    draw();
-    update();
+  function endGame() {
+    state = STATE_GAMEOVER;
+    if (playerScore > best) {
+      best = playerScore;
+      localStorage.setItem('pong-snail-best', best);
+      bestEl.textContent = best;
+      document.getElementById('best').style.display = 'block';
+      bestLine.innerHTML = '🎉 NEW BEST: <span id="final-best">' + best + '</span>';
+    } else {
+      bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
+    }
+    finalScore.textContent = playerScore;
+    gameoverScreen.classList.add('active');
   }
+
+  function draw() {
+    ctx.clearRect(0, 0, GAME_W, GAME_H);
+    drawBackground();
+    drawPaddle(player.x, player.y, true);
+    drawPaddle(cpu.x, cpu.y, false);
+    if (state === STATE_PLAYING || state === STATE_GAMEOVER) {
+      drawBall();
+    }
+    drawParticles();
+  }
+
+  let lastTime = 0;
+  function loop(timestamp) {
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Initialize
+  startScreen.classList.add('active');
+  updateHUD();
   requestAnimationFrame(loop);
-};
+})();
 </script>
 </body>
 </html>

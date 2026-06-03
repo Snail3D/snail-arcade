@@ -2,347 +2,657 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Bed Blaster — Snail Arcade</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
     background: #0a0a14;
-    color: #f0eff4;
     font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100vh;
-    overflow: hidden;
-    user-select: none;
   }
   canvas {
+    display: block;
     border: 2px solid #00f0ff;
-    box-shadow: 0 0 30px rgba(0,240,255,0.2);
+    box-shadow: 0 0 30px rgba(0,240,255,0.3), 0 0 60px rgba(0,240,255,0.1);
     border-radius: 4px;
+    image-rendering: crisp-edges;
   }
   #hud {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    gap: 40px;
-    margin-bottom: 12px;
+    gap: 32px;
     font-size: 14px;
     color: #00f0ff;
     letter-spacing: 0.1em;
+    text-shadow: 0 0 10px rgba(0,240,255,0.5);
+    pointer-events: none;
+    z-index: 5;
   }
-  #overlay {
+  #hud span { background: rgba(0,0,0,0.5); padding: 6px 14px; border-radius: 4px; border: 1px solid rgba(0,240,255,0.3); }
+  #hud b { color: #fff; }
+  #best {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 13px;
+    text-shadow: 0 0 10px rgba(255,235,59,0.5);
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+  }
+  #best.visible { display: block; }
+  .overlay {
     position: absolute;
     inset: 0;
-    background: rgba(10,10,20,0.9);
-    display: flex;
+    display: none;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     z-index: 10;
+    pointer-events: none;
   }
-  #overlay h1 { font-size: 2.5em; color: #00f0ff; text-shadow: 0 0 20px rgba(0,240,255,0.5); margin-bottom: 12px; }
-  #overlay p { color: #888; margin-bottom: 8px; max-width: 400px; text-align: center; line-height: 1.6; }
-  #overlay .snail { font-size: 4em; margin-bottom: 16px; }
+  .overlay.active { display: flex; }
+  .panel {
+    background: rgba(10,10,20,0.92);
+    border: 2px solid #00f0ff;
+    border-radius: 12px;
+    padding: 28px 40px;
+    text-align: center;
+    color: #f0eff4;
+    box-shadow: 0 0 40px rgba(0,240,255,0.3), inset 0 0 30px rgba(0,240,255,0.05);
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  .panel h1 {
+    font-size: 2.4em;
+    color: #00f0ff;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(0,240,255,0.6);
+  }
+  .panel h2 {
+    font-size: 1.8em;
+    color: #ff5252;
+    margin-bottom: 12px;
+    text-shadow: 0 0 15px rgba(255,82,82,0.5);
+  }
+  .panel p {
+    color: #aaa;
+    margin: 8px 0;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .panel .score-big {
+    font-size: 48px;
+    color: #ffeb3b;
+    margin: 10px 0;
+    text-shadow: 0 0 15px rgba(255,235,59,0.5);
+  }
+  .panel .hint {
+    font-size: 13px;
+    color: #666;
+    margin-top: 14px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #1a1a2e;
+    border: 2px solid #00f0ff;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #00f0ff;
+  }
   .btn {
     margin-top: 20px;
-    background: #00f0ff;
+    background: linear-gradient(180deg, #00f0ff 0%, #00c8d4 100%);
     color: #0a0a14;
     border: none;
-    padding: 12px 36px;
+    padding: 14px 40px;
     font-family: inherit;
     font-size: 16px;
     font-weight: bold;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
+    box-shadow: 0 0 20px rgba(0,240,255,0.4);
+    transition: transform 0.1s, box-shadow 0.1s;
   }
-  .btn:hover { background: #fff; }
-  #gameover { display: none; }
+  .btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(0,240,255,0.6); }
+  .btn:active { transform: scale(0.98); }
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,50,50,0.4);
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .flash.on { opacity: 1; }
+  .new-best {
+    color: #00ff88 !important;
+    font-size: 14px;
+    margin-top: 8px;
+  }
 </style>
 </head>
 <body>
-<div id="hud">
-  <span>SCORE: <b id="score">0</b></span>
-  <span>LEVEL: <b id="level">1</b></span>
-  <span>LIVES: <b id="lives">3</b></span>
-</div>
-<canvas id="c" width="800" height="480"></canvas>
+<div id="wrap">
+  <canvas id="c"></canvas>
 
-<div id="overlay">
-  <div class="snail">🐌🔥</div>
-  <h1>BED BLASTER</h1>
-  <p>Dodge blobs, clogs & stringing as you extrude across the print bed. Collect filament spools to power up!</p>
-  <p style="color:#555;font-size:12px;margin-top:8px;">↑↓ or W/S to move · Space to fire</p>
-  <button class="btn" onclick="startGame()">PRINT IT</button>
-</div>
+  <div id="hud">
+    <span>SCORE: <b id="score">0</b></span>
+    <span>LEVEL: <b id="level">1</b></span>
+    <span>LIVES: <b id="lives">3</b></span>
+  </div>
+  <div id="best">BEST: <span id="best-val">0</span></div>
+  <div class="flash" id="flash"></div>
 
-<div id="overlay" id="gameover" style="display:none">
-  <h1 id="go-title">PRINT FAILED</h1>
-  <p>Score: <b id="go-score">0</b></p>
-  <button class="btn" onclick="startGame()">RETRY</button>
+  <div class="overlay" id="start-screen">
+    <div class="panel">
+      <h1>BED BLASTER</h1>
+      <p>Dodge blobs, clogs & stringing as you extrude across the print bed.</p>
+      <p>Collect filament spools for bonus points!</p>
+      <div class="keys">
+        <span class="key">↑↓</span>
+        <span class="key">W/S</span>
+        <span class="key">TAP</span>
+      </div>
+      <p class="hint">Auto-fire enabled • Survive as long as you can</p>
+      <button class="btn" id="start-btn">PRINT IT</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameover-screen">
+    <div class="panel">
+      <h2>PRINT FAILED</h2>
+      <p>Score</p>
+      <div class="score-big" id="final-score">0</div>
+      <p>Best: <span id="final-best">0</span></p>
+      <p class="new-best" id="new-best" style="display:none">🎉 NEW BEST!</p>
+      <p class="hint">Tap or press SPACE to retry</p>
+    </div>
+  </div>
 </div>
 
 <script>
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const levelEl = document.getElementById('level');
+  const livesEl = document.getElementById('lives');
+  const bestEl = document.getElementById('best-val');
+  const bestContainer = document.getElementById('best');
+  const startScreen = document.getElementById('start-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
+  const finalScore = document.getElementById('final-score');
+  const finalBest = document.getElementById('final-best');
+  const newBestEl = document.getElementById('new-best');
+  const flashEl = document.getElementById('flash');
+  const wrap = document.getElementById('wrap');
 
-let score = 0, lives = 3, level = 1, gameRunning = false;
-let player, bullets, blobs, filaments, particles, frame, speed;
+  // Game dimensions
+  const GAME_W = 800;
+  const GAME_H = 480;
 
-const overlay = document.getElementById('overlay');
-const gameoverEl = document.getElementById('gameover');
-
-function startGame() {
-  overlay.style.display = 'none';
-  gameoverEl.style.display = 'none';
-  score = 0; lives = 3; level = 1; frame = 0; speed = 3;
-  player = { x: 80, y: H / 2, w: 44, h: 28, vy: 0 };
-  bullets = []; blobs = []; filaments = []; particles = [];
-  gameRunning = true;
-  loop();
-}
-
-function spawnBlob() {
-  const types = ['blob', 'clog', 'string'];
-  blobs.push({
-    x: W + 20, y: Math.random() * (H - 60) + 30,
-    w: 30 + Math.random() * 20, h: 30 + Math.random() * 20,
-    type: types[Math.floor(Math.random() * types.length)],
-    speed: 2 + Math.random() * 2 + level * 0.3,
-    color: { blob: '#ff4444', clog: '#888', string: '#00f0ff' }[types[0]]
-  });
-}
-
-function spawnFilament() {
-  filaments.push({
-    x: W + 20, y: Math.random() * (H - 60) + 30,
-    r: 12, speed: 2 + Math.random() * 1.5 + level * 0.2,
-    color: Math.random() < 0.5 ? '#00f0ff' : '#ff00ff'
-  });
-}
-
-function explode(x, y, color) {
-  for (let i = 0; i < 8; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 1 + Math.random() * 4;
-    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 30, color });
+  // Responsive scaling
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H, 1.2);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
   }
-}
+  window.addEventListener('resize', resize);
+  resize();
 
-function rects(a, b) {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
+  // Game state
+  const STATE_READY = 0;
+  const STATE_PLAYING = 1;
+  const STATE_DEAD = 2;
+  let state = STATE_READY;
 
-function drawSnail(x, y, w, h) {
-  // Body
-  ctx.fillStyle = '#c26b3c';
-  ctx.beginPath();
-  ctx.ellipse(x + w * 0.3, y + h * 0.7, w * 0.5, h * 0.3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Shell
-  ctx.strokeStyle = '#8B4513';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(x + w * 0.15, y + h * 0.6, h * 0.35, 0, Math.PI * 2);
-  ctx.stroke();
-  // Head
-  ctx.fillStyle = '#c26b3c';
-  ctx.beginPath();
-  ctx.ellipse(x + w * 0.85, y + h * 0.55, w * 0.18, h * 0.22, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Eye
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(x + w * 0.9, y + h * 0.45, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#000';
-  ctx.beginPath();
-  ctx.arc(x + w * 0.92, y + h * 0.45, 2, 0, Math.PI * 2);
-  ctx.fill();
-  // Nozzle
-  ctx.fillStyle = '#aaa';
-  ctx.fillRect(x + w - 4, y + h * 0.45, 10, h * 0.12);
-}
+  // High score
+  let best = parseInt(localStorage.getItem('bed-blaster-best') || '0', 10);
+  bestEl.textContent = best;
+  if (best > 0) bestContainer.classList.add('visible');
 
-function draw() {
-  // Grid background (print bed)
-  ctx.fillStyle = '#0a0a14';
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(0,240,255,0.06)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-  // Heated bed glow
-  ctx.fillStyle = 'rgba(255,100,0,0.03)';
-  ctx.fillRect(0, 0, W, H);
+  // Game vars
+  let score = 0, lives = 3, level = 1, frame = 0, speed = 3;
+  let player, bullets, blobs, filaments, particles;
+  let touchY = null;
 
-  // Filaments
-  filaments.forEach(f => {
-    ctx.fillStyle = f.color;
-    ctx.shadowColor = f.color;
+  function startGame() {
+    score = 0; lives = 3; level = 1; frame = 0; speed = 3;
+    player = { x: 80, y: GAME_H / 2, w: 44, h: 28, vy: 0 };
+    bullets = []; blobs = []; filaments = []; particles = [];
+    state = STATE_PLAYING;
+    startScreen.classList.remove('active');
+    gameoverScreen.classList.remove('active');
+    loop();
+  }
+
+  function showGameOver() {
+    state = STATE_DEAD;
+    const isNewBest = score > best;
+    if (isNewBest) {
+      best = score;
+      localStorage.setItem('bed-blaster-best', best);
+      bestEl.textContent = best;
+      bestContainer.classList.add('visible');
+    }
+    finalScore.textContent = score;
+    finalBest.textContent = best;
+    newBestEl.style.display = isNewBest ? 'block' : 'none';
+    gameoverScreen.classList.add('active');
+  }
+
+  function flash() {
+    flashEl.classList.add('on');
+    setTimeout(() => flashEl.classList.remove('on'), 150);
+  }
+
+  function spawnBlob() {
+    const types = ['blob', 'clog', 'string'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    const colors = { blob: '#ff4444', clog: '#888', string: '#00f0ff' };
+    blobs.push({
+      x: GAME_W + 20,
+      y: Math.random() * (GAME_H - 80) + 40,
+      w: 28 + Math.random() * 24,
+      h: 28 + Math.random() * 24,
+      type,
+      speed: 2 + Math.random() * 2 + level * 0.3,
+      color: colors[type],
+      wobble: Math.random() * Math.PI * 2
+    });
+  }
+
+  function spawnFilament() {
+    filaments.push({
+      x: GAME_W + 20,
+      y: Math.random() * (GAME_H - 80) + 40,
+      r: 12,
+      speed: 2 + Math.random() * 1.5 + level * 0.2,
+      color: Math.random() < 0.5 ? '#00f0ff' : '#ff00ff',
+      pulse: 0
+    });
+  }
+
+  function spawnParticles(x, y, color, count = 12, spread = 5) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 1 + Math.random() * spread;
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 25 + Math.random() * 20,
+        maxLife: 45,
+        color,
+        size: 2 + Math.random() * 4
+      });
+    }
+  }
+
+  function spawnTrail(x, y, color) {
+    particles.push({
+      x: x + Math.random() * 6 - 3,
+      y: y + Math.random() * 6 - 3,
+      vx: -1 - Math.random(),
+      vy: Math.random() * 2 - 1,
+      life: 10 + Math.random() * 10,
+      maxLife: 20,
+      color,
+      size: 2 + Math.random() * 2
+    });
+  }
+
+  function rects(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function drawSnail(x, y, w, h) {
+    // Nozzle glow
+    ctx.shadowColor = '#00f0ff';
     ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = '#888';
+    ctx.fillRect(x + w - 2, y + h * 0.45, 12, h * 0.12);
     ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.beginPath();
-    ctx.arc(f.x - 3, f.y - 3, f.r * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-  });
 
-  // Blobs
-  blobs.forEach(b => {
-    if (b.type === 'blob') {
-      ctx.fillStyle = 'rgba(255,68,68,0.7)';
-      ctx.shadowColor = '#ff4444';
+    // Body
+    const bodyGrad = ctx.createRadialGradient(x + w * 0.3, y + h * 0.7, 2, x + w * 0.3, y + h * 0.7, w * 0.5);
+    bodyGrad.addColorStop(0, '#d4845a');
+    bodyGrad.addColorStop(1, '#a05030');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.3, y + h * 0.7, w * 0.5, h * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x + w * 0.15, y + h * 0.6, h * 0.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(139,69,19,0.3)';
+    ctx.beginPath();
+    ctx.arc(x + w * 0.15, y + h * 0.6, h * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell spiral
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x + w * 0.15, y + h * 0.6, h * 0.2, 0.5, Math.PI * 1.8);
+    ctx.stroke();
+
+    // Head
+    const headGrad = ctx.createRadialGradient(x + w * 0.85, y + h * 0.55, 2, x + w * 0.85, y + h * 0.55, w * 0.2);
+    headGrad.addColorStop(0, '#d4845a');
+    headGrad.addColorStop(1, '#a05030');
+    ctx.fillStyle = headGrad;
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.85, y + h * 0.55, w * 0.18, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x + w * 0.9, y + h * 0.45, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(x + w * 0.92, y + h * 0.45, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x + w * 0.93, y + h * 0.43, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function draw() {
+    // Background
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Grid (print bed)
+    ctx.strokeStyle = 'rgba(0,240,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < GAME_W; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, GAME_H); ctx.stroke();
+    }
+    for (let y = 0; y < GAME_H; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(GAME_W, y); ctx.stroke();
+    }
+
+    // Heated bed glow
+    const bedGrad = ctx.createRadialGradient(GAME_W / 2, GAME_H / 2, 50, GAME_W / 2, GAME_H / 2, GAME_W * 0.7);
+    bedGrad.addColorStop(0, 'rgba(255,80,0,0.06)');
+    bedGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = bedGrad;
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Filaments
+    for (const f of filaments) {
+      ctx.shadowColor = f.color;
       ctx.shadowBlur = 15;
+      const pulseSize = f.r + Math.sin(f.pulse) * 2;
+      ctx.fillStyle = f.color;
       ctx.beginPath();
-      ctx.arc(b.x + b.w / 2, b.y + b.h / 2, b.w * 0.5, 0, Math.PI * 2);
+      ctx.arc(f.x, f.y, pulseSize, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-    } else if (b.type === 'clog') {
-      ctx.fillStyle = '#666';
-      ctx.shadowColor = '#999';
-      ctx.shadowBlur = 8;
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#aaa';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(b.x, b.y, b.w, b.h);
-    } else {
-      ctx.strokeStyle = '#00f0ff';
+
+      // Shine
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.arc(f.x - 3, f.y - 3, pulseSize * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Blobs
+    for (const b of blobs) {
+      if (b.type === 'blob') {
+        ctx.shadowColor = '#ff4444';
+        ctx.shadowBlur = 18;
+        const grad = ctx.createRadialGradient(b.x + b.w / 2, b.y + b.h / 2, 2, b.x + b.w / 2, b.y + b.h / 2, b.w * 0.5);
+        grad.addColorStop(0, '#ff6666');
+        grad.addColorStop(1, '#cc2222');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(b.x + b.w / 2, b.y + b.h / 2, b.w * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (b.type === 'clog') {
+        ctx.shadowColor = '#999';
+        ctx.shadowBlur = 8;
+        const grad = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y + b.h);
+        grad.addColorStop(0, '#888');
+        grad.addColorStop(0.5, '#aaa');
+        grad.addColorStop(1, '#666');
+        ctx.fillStyle = grad;
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#bbb';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(b.x, b.y, b.w, b.h);
+      } else {
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 12;
+        ctx.strokeStyle = '#00f0ff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        const cx = b.x + b.w / 2;
+        const cy = b.y + b.h / 2;
+        ctx.moveTo(cx + Math.cos(b.wobble) * 20, cy + Math.sin(b.wobble) * 10);
+        for (let i = 1; i <= 4; i++) {
+          const angle = b.wobble + i * Math.PI / 2;
+          ctx.lineTo(cx + Math.cos(angle) * (15 + i * 5), cy + Math.sin(angle) * (8 + i * 3));
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // Bullets
+    for (const b of bullets) {
       ctx.shadowColor = '#00f0ff';
       ctx.shadowBlur = 10;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(b.x, b.y);
-      for (let i = 0; i < 4; i++) {
-        ctx.lineTo(b.x + (Math.random() - 0.5) * 60, b.y + (Math.random() - 0.5) * 60);
-      }
-      ctx.stroke();
+      const grad = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y);
+      grad.addColorStop(0, '#00f0ff');
+      grad.addColorStop(1, '#00ff88');
+      ctx.fillStyle = grad;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
       ctx.shadowBlur = 0;
     }
-  });
 
-  // Bullets
-  bullets.forEach(b => {
-    ctx.fillStyle = '#00f0ff';
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 8;
-    ctx.fillRect(b.x, b.y, 16, 4);
-    ctx.shadowBlur = 0;
-  });
+    // Player
+    drawSnail(player.x, player.y, player.w, player.h);
 
-  // Player
-  drawSnail(player.x, player.y, player.w, player.h);
+    // Engine trail particles
+    if (frame % 2 === 0) {
+      spawnTrail(player.x - 5, player.y + player.h * 0.5, '#ff8800');
+    }
 
-  // Particles
-  particles.forEach(p => {
-    ctx.globalAlpha = p.life / 30;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(p.x, p.y, 4, 4);
+    // Particles
+    for (const p of particles) {
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
     ctx.globalAlpha = 1;
-  });
 
-  // Level indicator
-  ctx.fillStyle = '#00f0ff';
-  ctx.font = '12px Courier New';
-  ctx.fillText('LAYER ' + level, W / 2 - 30, 20);
+    // Level indicator
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillText('LAYER ' + level, GAME_W / 2 - 30, 20);
 
-  // Score / lives
-  document.getElementById('score').textContent = score;
-  document.getElementById('level').textContent = level;
-  document.getElementById('lives').textContent = lives;
-}
+    // Update HUD
+    scoreEl.textContent = score;
+    levelEl.textContent = level;
+    livesEl.textContent = lives;
+  }
 
-function update() {
-  frame++;
+  function update() {
+    frame++;
 
-  // Level progression
-  if (frame % 1200 === 0) level++;
+    // Level progression
+    if (frame % 1200 === 0) level++;
 
-  // Spawn
-  if (frame % Math.max(30, 60 - level * 3) === 0) spawnBlob();
-  if (frame % Math.max(60, 90 - level * 4) === 0) spawnFilament();
-  if (frame % 120 === 0) bullets.push({ x: player.x + player.w, y: player.y + player.h / 2 - 2, w: 16, h: 4 });
-
-  // Player
-  player.y += player.vy;
-  player.y = Math.max(0, Math.min(H - player.h, player.y));
-
-  // Bullets
-  bullets = bullets.filter(b => { b.x += 8; return b.x < W; });
-
-  // Blobs
-  blobs = blobs.filter(b => {
-    b.x -= b.speed;
-    if (b.x + b.w < 0) { score += 10; return false; }
-    if (rects(player, b)) {
-      lives--;
-      explode(player.x + player.w / 2, player.y + player.h / 2, '#ff4444');
-      if (lives <= 0) { gameRunning = false; showGameOver(); }
-      return false;
+    // Spawn
+    if (frame % Math.max(30, 60 - level * 3) === 0) spawnBlob();
+    if (frame % Math.max(60, 90 - level * 4) === 0) spawnFilament();
+    if (frame % 120 === 0) {
+      bullets.push({ x: player.x + player.w, y: player.y + player.h / 2 - 2, w: 16, h: 4 });
     }
-    // Bullet hit
-    for (let i = bullets.length - 1; i >= 0; i--) {
-      if (rects(bullets[i], b)) { bullets.splice(i, 1); score += 25; explode(b.x + b.w / 2, b.y + b.h / 2, b.color); return false; }
+
+    // Player
+    player.y += player.vy;
+    player.y = Math.max(0, Math.min(GAME_H - player.h, player.y));
+
+    // Bullets
+    bullets = bullets.filter(b => { b.x += 8; return b.x < GAME_W; });
+
+    // Blobs
+    blobs = blobs.filter(b => {
+      b.x -= b.speed;
+      b.wobble += 0.1;
+      if (b.x + b.w < 0) { score += 10; return false; }
+      if (rects(player, b)) {
+        lives--;
+        flash();
+        spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#ff4444', 15, 6);
+        if (lives <= 0) { showGameOver(); }
+        return false;
+      }
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        if (rects(bullets[i], b)) {
+          bullets.splice(i, 1);
+          score += 25;
+          spawnParticles(b.x + b.w / 2, b.y + b.h / 2, b.color, 18, 7);
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Filaments
+    filaments = filaments.filter(f => {
+      f.x -= f.speed;
+      f.pulse += 0.15;
+      if (f.x + f.r < 0) return false;
+      const dx = f.x - (player.x + player.w / 2), dy = f.y - (player.y + player.h / 2);
+      if (Math.sqrt(dx * dx + dy * dy) < f.r + 20) {
+        score += 50;
+        spawnParticles(f.x, f.y, f.color, 20, 8);
+        return false;
+      }
+      return true;
+    });
+
+    // Particles
+    particles = particles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.life--;
+      return p.life > 0;
+    });
+
+    speed = 3 + level * 0.5;
+  }
+
+  function loop() {
+    if (state !== STATE_PLAYING) return;
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Keyboard controls
+  document.addEventListener('keydown', e => {
+    if (state === STATE_DEAD && e.key === ' ') { e.preventDefault(); startGame(); return; }
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') player.vy = -5.5;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') player.vy = 5.5;
+    if (e.key === ' ') e.preventDefault();
+  });
+  document.addEventListener('keyup', e => {
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+      player.vy = 0;
     }
-    return true;
   });
 
-  // Filaments
-  filaments = filaments.filter(f => {
-    f.x -= f.speed;
-    if (f.x + f.r < 0) return false;
-    const dx = f.x - (player.x + player.w / 2), dy = f.y - (player.y + player.h / 2);
-    if (Math.sqrt(dx * dx + dy * dy) < f.r + 20) { score += 50; explode(f.x, f.y, f.color); return false; }
-    return true;
-  });
+  // Touch controls
+  function handleTouchStart(e) {
+    e.preventDefault();
+    if (state === STATE_DEAD) { startGame(); return; }
+    touchY = e.touches[0].clientY;
+  }
+  function handleTouchMove(e) {
+    e.preventDefault();
+    if (state !== STATE_PLAYING || touchY === null) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleY = GAME_H / rect.height;
+    const newTouchY = e.touches[0].clientY;
+    const diff = (newTouchY - touchY) * scaleY;
+    player.y += diff;
+    player.y = Math.max(0, Math.min(GAME_H - player.h, player.y));
+    touchY = newTouchY;
+  }
+  function handleTouchEnd(e) {
+    e.preventDefault();
+    touchY = null;
+  }
 
-  // Particles
-  particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.life--; return p.life > 0; });
+  canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+  canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
 
-  // Speed
-  speed = 3 + level * 0.5;
-}
+  // Button click
+  document.getElementById('start-btn').addEventListener('click', startGame);
 
-function showGameOver() {
-  overlay.style.display = 'flex';
-  gameoverEl.style.display = 'flex';
-  document.getElementById('go-score').textContent = score;
-}
-
-function loop() {
-  if (!gameRunning) return;
-  update();
-  draw();
-  requestAnimationFrame(loop);
-}
-
-// Controls
-document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') player.vy = -5;
-  if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') player.vy = 5;
-  if (e.key === ' ') e.preventDefault();
-});
-document.addEventListener('keyup', e => {
-  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') player.vy = 0;
-});
-
-// Touch
-let touchY = null;
-canvas.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; e.preventDefault(); }, { passive: false });
-canvas.addEventListener('touchmove', e => {
-  if (touchY !== null) player.y += (e.touches[0].clientY - touchY) * 0.5;
-  touchY = e.touches[0].clientY;
-  player.y = Math.max(0, Math.min(H - player.h, player.y));
-  e.preventDefault();
-}, { passive: false });
-canvas.addEventListener('touchend', () => touchY = null);
+  // Show start screen
+  startScreen.classList.add('active');
+})();
 </script>
 </body>
 </html>

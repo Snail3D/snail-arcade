@@ -49,6 +49,10 @@
       font-weight: bold;
       color: #333;
     }
+    #high-score {
+      font-size: 14px;
+      color: #27ae60;
+    }
     
     #timer {
       font-size: 16px;
@@ -181,6 +185,7 @@
   <div id="game-container">
     <div id="header">
       <div id="score">Score: 0</div>
+      <div id="high-score">Best: 0</div>
       <div id="timer">Time: 60</div>
     </div>
     
@@ -212,10 +217,15 @@
         this.snail = document.getElementById('snail');
         this.gameArea = document.getElementById('game-area');
         this.scoreElement = document.getElementById('score');
+        this.highScoreElement = document.getElementById('high-score');
         this.timerElement = document.getElementById('timer');
         this.startScreen = document.getElementById('start-screen');
         this.gameOverScreen = document.getElementById('game-over-screen');
         this.finalScoreElement = document.getElementById('final-score');
+
+        // Load high score
+        this.highScore = parseInt(localStorage.getItem('snail-shopping-spree-best') || '0');
+        this.highScoreElement.textContent = 'Best: ' + this.highScore;
         
         this.snailX = 180;
         this.snailY = 200;
@@ -242,6 +252,14 @@
             this.updateSnailPosition();
           }
         });
+        this.gameArea.addEventListener('touchstart', (e) => {
+          if (this.gameRunning) {
+            e.preventDefault();
+            const rect = this.gameArea.getBoundingClientRect();
+            this.snailX = e.touches[0].clientX - rect.left - 20;
+            this.updateSnailPosition();
+          }
+        }, { passive: false });
         
         // Keyboard controls
         document.addEventListener('keydown', (e) => {
@@ -266,13 +284,27 @@
             this.updateSnailPosition();
           }
         });
-        
+        document.getElementById('left-btn').addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          if (this.gameRunning) {
+            this.snailX = Math.max(0, this.snailX - 40);
+            this.updateSnailPosition();
+          }
+        }, { passive: false });
+
         document.getElementById('right-btn').addEventListener('click', () => {
           if (this.gameRunning) {
             this.snailX = Math.min(this.gameArea.offsetWidth - 40, this.snailX + 40);
             this.updateSnailPosition();
           }
         });
+        document.getElementById('right-btn').addEventListener('touchstart', (e) => {
+          e.preventDefault();
+          if (this.gameRunning) {
+            this.snailX = Math.min(this.gameArea.offsetWidth - 40, this.snailX + 40);
+            this.updateSnailPosition();
+          }
+        }, { passive: false });
       }
       
       startGame() {
@@ -422,11 +454,16 @@
       
       endGame() {
         this.gameRunning = false;
-        this.finalScoreElement.textContent = `Score: ${this.score}`;
+        // Save high score
+        if (this.score > this.highScore) {
+          this.highScore = this.score;
+          localStorage.setItem('snail-shopping-spree-best', this.highScore.toString());
+        }
+        bestScore = this.highScore;
+        this.finalScoreElement.innerHTML = `Score: ${this.score}<br>Best: ${this.highScore}`;
         this.gameOverScreen.classList.remove('hidden');
       }
     }
-    
     // Start the game
     new SnailShoppingSpree();
   </script>

@@ -21,6 +21,7 @@ h1{font-size:min(3.5vw,18px);color:#e94560;margin:4px 0}
 .piece.b{color:#1a1a2e}
 #ctrls{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;justify-content:center}
 #ctrls button{background:#e94560;color:#fff;border:none;padding:8px 14px;border-radius:5px;font-size:min(3.2vw,13px);cursor:pointer;font-weight:bold}
+#best-wins{color:#27ae60;font-size:min(2.5vw,11px);margin-left:12px}
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100}
 .modal div{background:#16213e;padding:20px;border-radius:10px;border:2px solid #e94560;text-align:center}
 .modal h2{color:#e94560;margin-bottom:12px;font-size:min(3vw,16px)}
@@ -36,6 +37,7 @@ h1{font-size:min(3.5vw,18px);color:#e94560;margin:4px 0}
 <button onclick="undoMove()">Undo</button>
 <button id="aiBtn" onclick="toggleAI()" style="background:#27ae60">AI: On</button>
 <button onclick="doFlip()">Flip</button>
+<span id="best-wins">Wins: 0</span>
 </div>
 <script>
 /* ═══════════════════ CONSTANTS ═══════════════════ */
@@ -65,6 +67,11 @@ function toUnicode(type,color){
 /* ═══════════════════ STATE ═══════════════════ */
 let board,turn,cRights,epTgt,sq50,hist;
 let selected=null,hinted=[],aiOn=true,flipped=false,promoQ=null,lastFrom=null,lastTo=null,gameOver=false,msg="White to move";
+let playerWins=0;
+
+// Load high score
+const BEST_WINS_KEY='chess-vs-ai-wins';
+playerWins=parseInt(localStorage.getItem(BEST_WINS_KEY)||'0');
 
 /* ═══════════════════ INIT ═══════════════════ */
 function init(){
@@ -254,7 +261,14 @@ function executeMove(fr,fc,tr,tc,promo){
   lastFrom={r:fr,c:fc};lastTo={r:tr,c:tc};
   // Check game state
   const leg=allLegalMoves(board,turn);const chk=isInCheck(board,turn);
-  if(leg.length===0){gameOver=true;msg=chk?(cl==='w'?'Checkmate! Black wins.':'Checkmate! White wins.'):'Stalemate. Draw.';}
+  if(leg.length===0){gameOver=true;msg=chk?(cl==='w'?'Checkmate! Black wins.':'Checkmate! White wins.'):'Stalemate. Draw.';
+    // Save win for player (white wins when black is checkmated)
+    if(!chk && pieceColor(pc)==='b'){
+      playerWins++;
+      localStorage.setItem(BEST_WINS_KEY,playerWins.toString());
+      document.getElementById('best-wins').textContent='Wins: '+playerWins;
+    }
+  }
   else if(sq50>=100){gameOver=true;msg='Draw (50-move rule).';}
   else{gameOver=false;msg=chk?(turn==='w'?'White is in check!':'Black is in check!'):(turn==='w'?"White to move":"Black to move");}
   render();
@@ -287,7 +301,10 @@ function render(){
       sp.textContent=toUnicode(pieceType(pc),pieceColor(pc));
       div.appendChild(sp);
     }
-    (function(r,c){div.addEventListener('click',function(){onClick(dr,dc)});})(ar,ac);
+    (function(r,c){
+      div.addEventListener('click',function(){onClick(dr,dc)});
+      div.addEventListener('touchstart',function(e){e.preventDefault();onClick(dr,dc);},{passive:false});
+    })(ar,ac);
     el.appendChild(div);
   }}
   document.getElementById('status').textContent=msg;
@@ -398,6 +415,7 @@ function evaluateBoard(bd){
 }
 
 /* ═══════════════════ START ═══════════════════ */
+document.getElementById('best-wins').textContent='Wins: '+playerWins;
 init();
 </script>
 </body>

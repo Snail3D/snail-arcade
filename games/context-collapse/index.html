@@ -73,6 +73,9 @@ const TILE = 40;
 const COLS = Math.floor(W / TILE);
 const ROWS = Math.floor(H / TILE);
 
+// localStorage key: 'context-collapse-best'
+let bestDepth = parseInt(localStorage.getItem('context-collapse-best') || '0');
+
 let turns = 0, depth = 0, context = 100;
 let player = { x: 1, y: 1 };
 let thinkBlocks = [], reasonTokens = [], walls = [], crumbs = [];
@@ -195,6 +198,11 @@ function showGameOver() {
   overlay.style.display = 'flex';
   document.querySelector('#overlay h1').textContent = '💀 CONTEXT OVERFLOW';
   document.querySelector('#overlay p').textContent = 'Your context window collapsed at depth ' + depth + ' after ' + turns + ' turns.';
+  if (depth > bestDepth) {
+    bestDepth = depth;
+    localStorage.setItem('context-collapse-best', bestDepth);
+  }
+  document.querySelector('#overlay p').innerHTML += '<br><span style="color:#ffcc00">Best: Depth ' + bestDepth + '</span>';
 }
 
 function drawBg() {

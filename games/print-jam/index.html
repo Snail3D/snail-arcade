@@ -106,6 +106,9 @@ resize();
 window.addEventListener('resize', function() { resize(); });
 
 // ─── GAME STATE ───────────────────────────────────────────────────────────────
+// localStorage key: 'print-jam-best'
+let bestScore = parseInt(localStorage.getItem('print-jam-best') || '0');
+
 var state = 'menu';
 var board, current, nextPiece, x, y, rot, mirror;
 var score, lines, level, dropTimer, dropInterval;
@@ -163,7 +166,11 @@ function spawn() {
   rot = 0; mirror = false;
   if (!valid(current.shape, x, y)) {
     state = 'over';
-    goScoreEl.textContent = score;
+    if (score > bestScore) {
+      bestScore = score;
+      localStorage.setItem('print-jam-best', bestScore);
+    }
+    goScoreEl.textContent = score + ' (Best: ' + bestScore + ')';
     goLinesEl.textContent = lines;
     gameOverEl.style.display = 'flex';
   }

@@ -57,6 +57,9 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
+// localStorage key: 'snail-siege-best'
+let bestScore = parseInt(localStorage.getItem('snail-siege-best') || '0');
+
 // ─── GAME STATE ────────────────────────────────────────────────────
 let game = {
   score: 0,
@@ -726,12 +729,16 @@ function startGame() {
 
 function endGame() {
   game.running = false;
+  if (game.score > bestScore) {
+    bestScore = game.score;
+    localStorage.setItem('snail-siege-best', bestScore);
+  }
   showWaveMsg('GAME OVER');
   setTimeout(() => {
     overlay.classList.remove('hidden');
     overlay.style.display = 'flex';
     document.querySelector('.title').textContent = 'GAME OVER';
-    document.querySelector('.sub').textContent = `Score: ${game.score} · Wave: ${game.wave}`;
+    document.querySelector('.sub').innerHTML = `Score: ${game.score} · Wave: ${game.wave}<br><span style="color:#ffcc00">Best: ${bestScore}</span>`;
     startBtn.textContent = 'PLAY AGAIN';
   }, 1500);
 }

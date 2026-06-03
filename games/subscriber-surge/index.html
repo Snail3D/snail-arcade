@@ -24,6 +24,7 @@
     font-size: 13px; color: #ff0000; letter-spacing: 0.08em;
   }
   #hud b { color: #fff; }
+  #best-subs { color: #27ae60; margin-left: 20px; }
   #overlay {
     position: absolute; inset: 0;
     background: rgba(10,10,20,0.92);
@@ -56,6 +57,7 @@
   <span>▶️ <b id="views">0</b> views</span>
   <span>💰 <b id="coins">0</b> coins</span>
   <span>⚡ <b id="cps">0</b>/sec</span>
+  <span id="best-subs">Best: 0</span>
 </div>
 <canvas id="c" width="800" height="460"></canvas>
 <div class="progress-bar"><div class="progress-fill" id="prog" style="width:0%"></div></div>
@@ -74,11 +76,19 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const W = canvas.width, H = canvas.height;
 
+// localStorage key: 'subscriber-surge-best'
+let bestSubs = parseInt(localStorage.getItem('subscriber-surge-best') || '0');
+
 let subs = 0, views = 0, coins = 0, cps = 1;
 let clickPower = 1;
 let notifs = [];
 let demoted = false, demoteTimer = 0;
 let frames = 0;
+
+// Load best subs
+const BEST_SUBS_KEY = 'subscriber-surge-best';
+bestSubs = parseInt(localStorage.getItem(BEST_SUBS_KEY) || '0');
+document.getElementById('best-subs').textContent = 'Best: ' + bestSubs.toLocaleString();
 let upgrades = [
   { name: 'Better Thumbnail', cost: 50, cps: 1, click: 0, owned: 0, icon: '🖼️' },
   { name: 'SEO Boost', cost: 150, cps: 3, click: 1, owned: 0, icon: '🔍' },
@@ -106,6 +116,15 @@ function startGame() {
 
 function addSub(n) {
   subs += n;
+  if (subs > bestSubs) {
+    bestSubs = subs;
+    localStorage.setItem('subscriber-surge-best', bestSubs);
+  }
+  if (subs >= milestones[currentMilestone]) {
+    bestSubs = subs;
+    localStorage.setItem(BEST_SUBS_KEY, bestSubs.toString());
+    document.getElementById('best-subs').textContent = 'Best: ' + bestSubs.toLocaleString();
+  }
   if (subs >= milestones[currentMilestone]) {
     const bonus = milestones[currentMilestone] * 0.1;
     coins += Math.floor(bonus);
@@ -308,10 +327,20 @@ function loop() {
 }
 
 canvas.addEventListener('click', e => {
+  handleCanvasClick(e);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  handleCanvasClick(e);
+}, { passive: false });
+
+function handleCanvasClick(e) {
   if (!gameRunning) return;
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (W / rect.width);
-  const y = (e.clientY - rect.top) * (H / rect.height);
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const x = (clientX - rect.left) * (W / rect.width);
+  const y = (clientY - rect.top) * (H / rect.height);
 
   // Check upgrade clicks
   const startY = H - 200;
@@ -323,7 +352,7 @@ canvas.addEventListener('click', e => {
   // Add view
   addView(clickPower * 10);
   notifs.push({ text: '+' + (clickPower * 10) + ' views!', y: H / 2 - 50 + Math.random() * 30, life: 40, color: '#ff6666' });
-});
+}
 </script>
 </body>
 </html>

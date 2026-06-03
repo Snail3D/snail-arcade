@@ -247,6 +247,9 @@ const overlayCanvas = document.getElementById('overlay-canvas');
 const lc = layerCanvas.getContext('2d');
 const oc = overlayCanvas.getContext('2d');
 
+// localStorage key: 'entropy-engine-best'
+let bestScore = parseInt(localStorage.getItem('entropy-engine-best') || '0');
+
 let W, H;
 let gameState = 'menu';
 let score = 0;
@@ -526,6 +529,11 @@ function endGame(reason) {
   document.getElementById('gameover').style.display = 'block';
   document.getElementById('gameoverReason').textContent = reason;
   document.getElementById('finalScore').textContent = `SCORE: ${score} | LAYER: ${layer}`;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('entropy-engine-best', bestScore);
+  }
+  document.getElementById('finalScore').innerHTML += `<br><span style="color:#ffcc00">BEST: ${bestScore}</span>`;
 }
 
 // Touch / mouse controls

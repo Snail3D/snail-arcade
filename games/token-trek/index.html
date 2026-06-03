@@ -173,6 +173,7 @@
 
   // --- State ---
   let grid, player, level, score, tokens, tokenLimit, goalTarget;
+  let best = parseInt(localStorage.getItem('token-trek-best') || '0', 10);
   let particles = [];
   let gameState = 'menu'; // menu, playing, win, lose
   let msgTimer = null;
@@ -351,7 +352,8 @@
       showOverlay(
         '<h1>🏆 CONTEXT MASTER!</h1>' +
         '<div class="subtitle">You navigated every token maze!</div>' +
-        '<div class="instructions">Final Score: <span>' + score + '</span></div>',
+        '<div class="instructions">Final Score: <span>' + score + '</span></div>' +
+        (score > best ? (best = score, localStorage.setItem('token-trek-best', best), '<div class="subtitle" style="color:#ffeb3b">⭐ NEW BEST! ⭐</div>') : '<div class="instructions">Best: ' + best + '</div>'),
         'PLAY AGAIN'
       );
       gameState = 'menu';

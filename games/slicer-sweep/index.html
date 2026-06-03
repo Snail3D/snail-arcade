@@ -323,6 +323,7 @@ function showChoices() {
     else if (p.str < lv.req) btn.classList.add('bad');
     btn.innerHTML = `<span class="cname" style="color:${p.color}">${p.name}</span><span class="cstr">${p.str}%</span><span class="cstats">${p.time.toFixed(1)}s / ${p.mat.toFixed(1)}m</span>`;
     btn.addEventListener('click', () => selectChoice(p));
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); selectChoice(p); }, { passive: false });
     choicesEl.appendChild(btn);
   });
   choicesEl.classList.add('show');
@@ -719,6 +720,7 @@ function startGame() {
 }
 
 startBtn.addEventListener('click', startGame);
+startBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startGame(); }, { passive: false });
 
 updateUI();
 requestAnimationFrame(gameLoop2);

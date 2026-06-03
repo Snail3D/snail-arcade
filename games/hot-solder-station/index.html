@@ -2,126 +2,270 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Hot Solder Station</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
+  html, body {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
     background: #0a0a0f;
     color: #e0e0e0;
     font-family: 'Courier New', monospace;
-    min-height: 100vh;
-    overflow: hidden;
-    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
-  #start-screen, #game-over-screen {
-    position: fixed;
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+  }
+  canvas {
+    display: block;
+    position: absolute;
     inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #0a0a0f;
-    z-index: 10;
-  }
-  #game-over-screen { display: none; }
-  h1 {
-    font-size: clamp(1.8em, 6vw, 3em);
-    color: #ff6b35;
-    text-shadow: 0 0 20px rgba(255,107,53,0.5), 0 0 40px rgba(255,107,53,0.3);
-    margin-bottom: 8px;
-  }
-  .subtitle {
-    color: #888;
-    font-size: 0.9em;
-    margin-bottom: 32px;
-  }
-  .btn {
-    background: linear-gradient(135deg, #ff6b35, #ff3d00);
-    color: #fff;
-    border: none;
-    padding: 14px 40px;
-    font-size: 1.1em;
-    font-family: 'Courier New', monospace;
-    cursor: pointer;
-    border-radius: 6px;
-    box-shadow: 0 0 20px rgba(255,107,53,0.4);
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .btn:active { transform: scale(0.96); }
-  .instructions {
-    color: #666;
-    font-size: 0.8em;
-    margin-top: 24px;
-    text-align: center;
-    line-height: 1.6;
-    max-width: 320px;
+    width: 100%;
+    height: 100%;
   }
   #hud {
     position: fixed;
     top: 0; left: 0; right: 0;
     display: none;
     justify-content: space-between;
-    align-items: center;
-    padding: 10px 16px;
-    background: linear-gradient(to bottom, rgba(10,10,15,0.9), transparent);
+    align-items: flex-start;
+    padding: 16px 20px;
+    padding-top: max(16px, env(safe-area-inset-top));
     z-index: 5;
     pointer-events: none;
   }
-  .hud-item {
-    font-size: 0.9em;
-    color: #aaa;
+  .hud-left, .hud-right {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  .hud-item span { color: #ff6b35; font-weight: bold; }
-  #canvas {
-    display: block;
+  .hud-item {
+    font-size: 14px;
+    color: #aaa;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  }
+  .hud-item span { 
+    color: #ff6b35; 
+    font-weight: bold;
+    text-shadow: 0 0 10px rgba(255,107,53,0.5);
+  }
+  .hud-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  #heat-bar-container {
+    width: 100px;
+    height: 10px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid #333;
+  }
+  #heat-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #00ff88, #ffff00, #ff6b35, #ff0000);
+    border-radius: 5px;
+    transition: width 0.3s ease;
+  }
+  #heat-label {
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+    margin-top: 2px;
+  }
+  .overlay {
     position: fixed;
     inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: auto;
+    padding: 20px;
+    background: rgba(10, 10, 15, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .overlay.active { display: flex; }
+  .panel {
+    background: linear-gradient(145deg, rgba(20,25,20,0.95), rgba(10,15,10,0.98));
+    border: 2px solid #00ff88;
+    border-radius: 20px;
+    padding: 32px 40px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 
+      0 0 40px rgba(0,255,136,0.2),
+      0 0 80px rgba(0,255,136,0.1),
+      inset 0 1px 0 rgba(255,255,255,0.1);
+    max-width: 360px;
     width: 100%;
-    height: 100%;
   }
-  .final-score {
-    font-size: 1.4em;
+  .panel h1 {
+    font-size: clamp(1.6em, 6vw, 2.2em);
     color: #ff6b35;
-    margin: 16px 0;
+    margin-bottom: 8px;
+    text-shadow: 0 0 30px rgba(255,107,53,0.6);
+    letter-spacing: 2px;
   }
-  .high-score {
+  .panel h2 {
+    font-size: 1.8em;
+    color: #ff4444;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(255,68,68,0.5);
+  }
+  .panel .subtitle {
     color: #888;
-    font-size: 0.85em;
+    font-size: 0.9em;
     margin-bottom: 24px;
   }
+  .panel .score-big {
+    font-size: 3em;
+    color: #ffee00;
+    margin: 16px 0;
+    text-shadow: 0 0 20px rgba(255,238,0,0.5);
+  }
+  .panel .high-score {
+    color: #888;
+    font-size: 0.9em;
+    margin-bottom: 24px;
+  }
+  .panel .high-score span { color: #00ff88; }
+  .btn {
+    background: linear-gradient(135deg, #ff6b35, #ff3d00);
+    color: #fff;
+    border: none;
+    padding: 16px 48px;
+    font-size: 1.1em;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 30px;
+    box-shadow: 
+      0 0 20px rgba(255,107,53,0.4),
+      0 4px 15px rgba(0,0,0,0.3);
+    transition: transform 0.1s, box-shadow 0.1s;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .btn:active { 
+    transform: scale(0.95); 
+    box-shadow: 0 0 10px rgba(255,107,53,0.3);
+  }
+  .instructions {
+    color: #666;
+    font-size: 0.85em;
+    margin-top: 24px;
+    text-align: center;
+    line-height: 1.7;
+    max-width: 280px;
+  }
+  .instructions strong { color: #ff6b35; }
+  .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #aaa;
+  }
+  .new-best {
+    color: #00ff88;
+    font-size: 0.9em;
+    margin-top: -8px;
+    margin-bottom: 16px;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+  .flash-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255,100,0,0.3);
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .flash-overlay.on { opacity: 1; }
 </style>
 </head>
 <body>
 
-<div id="start-screen">
-  <h1>🔥 HOT SOLDER STATION</h1>
-  <p class="subtitle">Connect the circuits before they overheat!</p>
-  <button class="btn" id="start-btn">START</button>
-  <p class="instructions">
-    Match circuit pads in pairs.<br>
-    Miss too many & the board overheats!<br>
-    Tap or click to connect.
-  </p>
-</div>
+<div id="wrap">
+  <canvas id="canvas"></canvas>
+  
+  <div id="hud">
+    <div class="hud-left">
+      <div class="hud-item">SCORE <span id="score">0</span></div>
+      <div class="hud-item">LEVEL <span id="level">1</span></div>
+    </div>
+    <div class="hud-center">
+      <div id="heat-bar-container">
+        <div id="heat-bar"></div>
+      </div>
+      <div id="heat-label">🔥 HEAT</div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-item">BEST <span id="best-hud">0</span></div>
+    </div>
+  </div>
 
-<div id="game-over-screen">
-  <h1>🔥 GAME OVER</h1>
-  <p class="final-score">Score: <span id="final-score">0</span></p>
-  <p class="high-score">Best: <span id="high-score">0</span></p>
-  <button class="btn" id="restart-btn">RETRY</button>
-</div>
+  <div class="flash-overlay" id="flash"></div>
 
-<div id="hud">
-  <div class="hud-item">SCORE <span id="score">0</span></div>
-  <div class="hud-item">LEVEL <span id="level">1</span></div>
-  <div class="hud-item">🔥 <span id="heat">0</span>%</div>
-</div>
+  <div class="overlay active" id="start-screen">
+    <div class="panel">
+      <h1>🔥 HOT SOLDER STATION</h1>
+      <p class="subtitle">Connect the circuits before they overheat!</p>
+      <button class="btn" id="start-btn">START</button>
+      <p class="instructions">
+        Match <strong>circuit pads</strong> in pairs.<br>
+        Miss too many & the board overheats!<br>
+        Clear all pads to level up.
+      </p>
+      <div class="keys">
+        <span class="key">TAP</span>
+        <span class="key">CLICK</span>
+      </div>
+    </div>
+  </div>
 
-<canvas id="canvas"></canvas>
+  <div class="overlay" id="game-over-screen">
+    <div class="panel">
+      <h2>💀 GAME OVER</h2>
+      <p class="high-score" id="new-best" style="display:none">🎉 NEW BEST!</p>
+      <p>Score</p>
+      <div class="score-big" id="final-score">0</div>
+      <p class="high-score">Best: <span id="high-score">0</span></p>
+      <button class="btn" id="restart-btn">RETRY</button>
+    </div>
+  </div>
+</div>
 
 <script>
-// === GAME ENGINE ===
+(() => {
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -137,24 +281,48 @@ let animFrame;
 let lastTime = 0;
 let rippleEffect = null;
 let highScore = parseInt(localStorage.getItem('hss_high') || '0');
+let matchParticles = [];
+let connectionLine = null;
+let screenFlash = document.getElementById('flash');
+
+// DOM elements
+const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
+const heatBar = document.getElementById('heat-bar');
+const bestHudEl = document.getElementById('best-hud');
+const finalScoreEl = document.getElementById('final-score');
+const highScoreEl = document.getElementById('high-score');
+const newBestEl = document.getElementById('new-best');
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const hud = document.getElementById('hud');
+
+bestHudEl.textContent = highScore;
 
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
   const minDim = Math.min(W, H);
-  PAD_SIZE = Math.floor(minDim * 0.14);
+  PAD_SIZE = Math.floor(minDim * 0.15);
   ROWS = Math.max(3, Math.floor(H / PAD_SIZE) - 1);
   COLS = Math.max(4, Math.floor(W / PAD_SIZE));
+  // Ensure even number for pairs
+  if ((ROWS * COLS) % 2 !== 0) {
+    if (ROWS > 3) ROWS--;
+    else if (COLS > 4) COLS--;
+  }
   if (gameRunning) buildBoard();
 }
 
 function padColor(idx) {
-  const colors = ['#00ff88','#ff6b35','#00d4ff','#ff00aa','#ffee00','#aa00ff','#ff4466','#44ff88'];
+  const colors = ['#00ff88','#ff6b35','#00d4ff','#ff00aa','#ffee00','#aa00ff','#ff4466','#44ffaa'];
   return colors[idx % colors.length];
 }
 
 function buildBoard() {
   pads = [];
+  matchParticles = [];
+  connectionLine = null;
   const total = ROWS * COLS;
   const pairs = Math.floor(total / 2);
   let values = [];
@@ -177,6 +345,7 @@ function buildBoard() {
           matched: false,
           pulse: Math.random() * Math.PI * 2,
           overheat: false,
+          scale: 1,
         });
       }
     }
@@ -184,118 +353,223 @@ function buildBoard() {
 }
 
 function drawPCBBackground() {
-  // circuit board bg
-  ctx.fillStyle = '#0d1a0d';
+  // Dark green PCB background
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H));
+  grad.addColorStop(0, '#0d1a0d');
+  grad.addColorStop(1, '#061006');
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
-  // grid lines
-  ctx.strokeStyle = 'rgba(0,255,136,0.06)';
+  
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0,255,136,0.04)';
   ctx.lineWidth = 1;
-  const grid = PAD_SIZE;
+  const grid = PAD_SIZE * 0.5;
   for (let x = 0; x < W; x += grid) {
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
   }
   for (let y = 0; y < H; y += grid) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
   }
-  // traces
-  ctx.strokeStyle = 'rgba(0,200,100,0.1)';
+  
+  // Circuit traces
+  ctx.strokeStyle = 'rgba(0,200,100,0.08)';
   ctx.lineWidth = 2;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
+    const startX = Math.random() * W;
+    const startY = Math.random() * H;
     ctx.beginPath();
-    ctx.moveTo(Math.random() * W, Math.random() * H);
-    ctx.bezierCurveTo(Math.random() * W, Math.random() * H, Math.random() * W, Math.random() * H, Math.random() * W, Math.random() * H);
+    ctx.moveTo(startX, startY);
+    ctx.bezierCurveTo(
+      startX + (Math.random() - 0.5) * 200, startY + (Math.random() - 0.5) * 200,
+      startX + (Math.random() - 0.5) * 200, startY + (Math.random() - 0.5) * 200,
+      Math.random() * W, Math.random() * H
+    );
     ctx.stroke();
   }
+  
+  // Corner mounting holes
+  const holeOffset = 30;
+  ctx.fillStyle = '#1a2a1a';
+  [[holeOffset, holeOffset], [W-holeOffset, holeOffset], [holeOffset, H-holeOffset], [W-holeOffset, H-holeOffset]].forEach(([x, y]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
 }
 
 function drawPad(p, t) {
   if (p.matched) return;
-  const pulse = Math.sin(p.pulse + t * 2) * 0.2 + 0.8;
+  
+  const pulse = Math.sin(p.pulse + t * 2.5) * 0.15 + 0.85;
   const col = padColor(p.val);
-  const sz = PAD_SIZE * 0.38 * pulse;
+  const sz = PAD_SIZE * 0.35 * pulse * p.scale;
   const sel = selected === p;
-
-  // glow
-  ctx.shadowBlur = sel ? 20 : 8;
-  ctx.shadowColor = col;
-
-  // outer ring
+  
+  // Overheat warning glow
+  if (p.overheat) {
+    const heatPulse = 0.5 + Math.sin(t * 12) * 0.5;
+    ctx.shadowBlur = 30;
+    ctx.shadowColor = `rgba(255,50,0,${heatPulse})`;
+  } else {
+    ctx.shadowBlur = sel ? 25 : 10;
+    ctx.shadowColor = col;
+  }
+  
+  // Outer ring
   ctx.strokeStyle = col;
   ctx.lineWidth = sel ? 3 : 2;
   ctx.beginPath();
   ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
   ctx.stroke();
-
-  // inner dot
-  ctx.fillStyle = col;
-  ctx.globalAlpha = 0.4 + pulse * 0.3;
+  
+  // Inner fill
+  const innerGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, sz);
+  innerGrad.addColorStop(0, col);
+  innerGrad.addColorStop(0.5, col + '66');
+  innerGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = innerGrad;
+  ctx.globalAlpha = 0.3 + pulse * 0.2;
   ctx.beginPath();
-  ctx.arc(p.x, p.y, sz * 0.4, 0, Math.PI * 2);
+  ctx.arc(p.x, p.y, sz * 0.8, 0, Math.PI * 2);
   ctx.fill();
   ctx.globalAlpha = 1;
-
-  // selection ring
+  
+  // Center dot
+  ctx.fillStyle = col;
+  ctx.globalAlpha = 0.6 + pulse * 0.4;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, sz * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  
+  // Selection indicator
   if (sel) {
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, sz + 6, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, sz + 10, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-  }
-
-  // overheat flash
-  if (p.overheat) {
-    ctx.fillStyle = `rgba(255,50,0,${0.3 + Math.sin(t * 15) * 0.3})`;
+    
+    // Animated selection glow
+    ctx.strokeStyle = `rgba(255,255,255,${0.3 + Math.sin(t * 8) * 0.2})`;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, sz + 8, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, sz + 15, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  
+  // Overheat flash overlay
+  if (p.overheat) {
+    ctx.fillStyle = `rgba(255,50,0,${0.4 + Math.sin(t * 15) * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, sz + 12, 0, Math.PI * 2);
     ctx.fill();
   }
-
+  
   ctx.shadowBlur = 0;
+}
+
+function drawConnectionLine() {
+  if (!connectionLine) return;
+  const { x1, y1, x2, y2, alpha, color } = connectionLine;
+  
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.globalAlpha = alpha;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = color;
+  
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  
+  connectionLine.alpha -= 0.03;
+  connectionLine.x2 += (connectionLine.targetX - connectionLine.x2) * 0.2;
+  connectionLine.y2 += (connectionLine.targetY - connectionLine.y2) * 0.2;
+  
+  if (connectionLine.alpha <= 0) connectionLine = null;
 }
 
 function drawRipple() {
   if (!rippleEffect) return;
-  const { x, y, r, alpha } = rippleEffect;
-  ctx.strokeStyle = `rgba(0,255,136,${alpha})`;
+  const { x, y, r, alpha, color } = rippleEffect;
+  ctx.strokeStyle = color || '#00ff88';
   ctx.lineWidth = 2;
+  ctx.globalAlpha = alpha;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.stroke();
-  rippleEffect.r += 2;
-  rippleEffect.alpha -= 0.02;
+  ctx.globalAlpha = 1;
+  rippleEffect.r += 3;
+  rippleEffect.alpha -= 0.025;
   if (rippleEffect.alpha <= 0) rippleEffect = null;
 }
 
-function drawHeatBar() {
-  if (heat <= 0) return;
-  const bw = 120, bh = 8;
-  const bx = W / 2 - bw / 2, by = 12;
-  ctx.fillStyle = '#222';
-  ctx.fillRect(bx, by, bw, bh);
-  const hue = Math.max(0, 120 - heat * 1.2);
-  ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-  ctx.fillRect(bx, by, bw * (heat / 100), bh);
-  ctx.strokeStyle = '#444';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(bx, by, bw, bh);
+function drawMatchParticles() {
+  for (let i = matchParticles.length - 1; i >= 0; i--) {
+    const p = matchParticles[i];
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1;
+    p.alpha -= 0.02;
+    p.r *= 0.98;
+    
+    if (p.alpha <= 0) matchParticles.splice(i, 1);
+  }
+}
+
+function spawnMatchParticles(x, y, color) {
+  for (let i = 0; i < 12; i++) {
+    const angle = (Math.PI * 2 / 12) * i + Math.random() * 0.5;
+    const speed = 2 + Math.random() * 4;
+    matchParticles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 3 + Math.random() * 4,
+      color,
+      alpha: 1
+    });
+  }
 }
 
 function draw(timestamp) {
-  const dt = (timestamp - lastTime) / 1000;
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
   lastTime = timestamp;
   const t = timestamp / 1000;
 
   drawPCBBackground();
-
-  pads.forEach(p => drawPad(p, t));
+  
+  // Draw connection line first (behind pads)
+  drawConnectionLine();
+  
+  pads.forEach(p => {
+    // Animate scale back to 1
+    p.scale += (1 - p.scale) * 0.1;
+    drawPad(p, t);
+  });
+  
   drawRipple();
-  drawHeatBar();
+  drawMatchParticles();
 
-  // Update pulse
-  pads.forEach(p => p.pulse += dt);
+  // Update pulse animation
+  pads.forEach(p => p.pulse += dt * 1.5);
 
   animFrame = requestAnimationFrame(draw);
 }
@@ -313,62 +587,107 @@ function getPadAt(x, y) {
 function handleTap(x, y) {
   if (!gameRunning) return;
   const pad = getPadAt(x, y);
-  if (!pad) return;
+  if (!pad) {
+    // Deselect if tapping empty space
+    selected = null;
+    return;
+  }
 
   if (!selected) {
     selected = pad;
-    rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 0.8 };
+    rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 0.8, color: padColor(pad.val) };
   } else {
-    if (selected === pad) { selected = null; return; }
+    if (selected === pad) { 
+      selected = null; 
+      return; 
+    }
     if (selected.val === pad.val) {
       // Match!
+      const color = padColor(pad.val);
+      spawnMatchParticles(pad.x, pad.y, color);
+      spawnMatchParticles(selected.x, selected.y, color);
+      
+      connectionLine = {
+        x1: selected.x, y1: selected.y,
+        x2: selected.x, y2: selected.y,
+        targetX: pad.x, targetY: pad.y,
+        alpha: 1, color
+      };
+      
       selected.matched = true;
       pad.matched = true;
       score += 10 * level;
       misses = 0;
-      heat = Math.max(0, heat - 5);
-      rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 1.0 };
+      heat = Math.max(0, heat - 8);
+      rippleEffect = { x: pad.x, y: pad.y, r: 5, alpha: 1, color };
       selected = null;
-      document.getElementById('score').textContent = score;
+      scoreEl.textContent = score;
+      updateHeatBar();
       checkLevelUp();
     } else {
-      // Wrong!
+      // Wrong match - flash and heat up
       selected.overheat = true;
       pad.overheat = true;
-      setTimeout(() => { selected.overheat = false; pad.overheat = false; }, 400);
+      screenFlash.classList.add('on');
+      setTimeout(() => {
+        selected.overheat = false;
+        pad.overheat = false;
+        screenFlash.classList.remove('on');
+      }, 200);
       selected = null;
       misses++;
-      heat = Math.min(100, heat + 8 * level);
+      heat = Math.min(100, heat + 10 * level);
+      updateHeatBar();
       if (heat >= 100) endGame();
     }
   }
-  document.getElementById('heat').textContent = Math.floor(heat);
+}
+
+function updateHeatBar() {
+  heatBar.style.width = heat + '%';
+  document.getElementById('heat-label').textContent = `🔥 ${Math.floor(heat)}%`;
 }
 
 function checkLevelUp() {
   const remaining = pads.filter(p => !p.matched).length;
   if (remaining === 0) {
     level++;
-    document.getElementById('level').textContent = level;
-    heat = Math.max(0, heat - 20);
+    levelEl.textContent = level;
+    heat = Math.max(0, heat - 25);
+    updateHeatBar();
+    
+    // Flash effect for level up
+    screenFlash.style.background = 'rgba(0,255,136,0.3)';
+    screenFlash.classList.add('on');
+    setTimeout(() => {
+      screenFlash.classList.remove('on');
+      screenFlash.style.background = 'rgba(255,100,0,0.3)';
+    }, 300);
+    
     setTimeout(() => {
       buildBoard();
       selected = null;
-    }, 300);
+    }, 400);
   }
 }
 
 function endGame() {
   gameRunning = false;
   cancelAnimationFrame(animFrame);
-  if (score > highScore) {
+  
+  const isNewBest = score > highScore;
+  if (isNewBest) {
     highScore = score;
     localStorage.setItem('hss_high', highScore);
+    bestHudEl.textContent = highScore;
   }
-  document.getElementById('final-score').textContent = score;
-  document.getElementById('high-score').textContent = highScore;
-  document.getElementById('game-over-screen').style.display = 'flex';
-  document.getElementById('hud').style.display = 'none';
+  
+  finalScoreEl.textContent = score;
+  highScoreEl.textContent = highScore;
+  newBestEl.style.display = isNewBest ? 'block' : 'none';
+  
+  hud.style.display = 'none';
+  gameOverScreen.classList.add('active');
 }
 
 function startGame() {
@@ -378,12 +697,15 @@ function startGame() {
   misses = 0;
   selected = null;
   gameRunning = true;
-  document.getElementById('score').textContent = '0';
-  document.getElementById('level').textContent = '1';
-  document.getElementById('heat').textContent = '0';
-  document.getElementById('start-screen').style.display = 'none';
-  document.getElementById('game-over-screen').style.display = 'none';
-  document.getElementById('hud').style.display = 'flex';
+  
+  scoreEl.textContent = '0';
+  levelEl.textContent = '1';
+  updateHeatBar();
+  
+  startScreen.classList.remove('active');
+  gameOverScreen.classList.remove('active');
+  hud.style.display = 'flex';
+  
   resize();
   lastTime = performance.now();
   animFrame = requestAnimationFrame(draw);
@@ -404,9 +726,20 @@ canvas.addEventListener('touchstart', e => {
 
 document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', startGame);
+
+// Keyboard support
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') {
+    if (startScreen.classList.contains('active') || gameOverScreen.classList.contains('active')) {
+      e.preventDefault();
+      startGame();
+    }
+  }
+});
+
 window.addEventListener('resize', resize);
 
-// grain overlay
+// Grain overlay
 (function addGrain() {
   const grain = document.createElement('canvas');
   grain.width = 128; grain.height = 128;
@@ -415,10 +748,10 @@ window.addEventListener('resize', resize);
   for (let i = 0; i < id.data.length; i += 4) {
     const v = Math.random() * 30;
     id.data[i] = id.data[i+1] = id.data[i+2] = v;
-    id.data[i+3] = 25;
+    id.data[i+3] = 20;
   }
   gctx.putImageData(id, 0, 0);
-  grain.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:.04;z-index:99;mix-blend-mode:overlay;';
+  grain.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;opacity:.035;z-index:99;mix-blend-mode:overlay;';
   document.body.appendChild(grain);
   function animateGrain() {
     gctx.putImageData(id, Math.random() * 64, Math.random() * 64);
@@ -429,6 +762,7 @@ window.addEventListener('resize', resize);
 
 resize();
 draw(0);
+})();
 </script>
 </body>
 </html>

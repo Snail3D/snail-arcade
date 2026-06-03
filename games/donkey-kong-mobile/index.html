@@ -131,7 +131,10 @@
         canvas.width = GAME_WIDTH;
         canvas.height = GAME_HEIGHT;
 
-        let score = 0;
+        // localStorage key: 'donkey-kong-best'
+let bestScore = parseInt(localStorage.getItem('donkey-kong-best') || '0');
+
+let score = 0;
         let gameOver = false;
         let difficultyMultiplier = 1.0;
         let screenShake = 0;
@@ -432,6 +435,10 @@
                 const dy = (player.y + player.height/2) - b.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist < player.width/2 + b.radius) {
+                    if (score > bestScore) {
+                        bestScore = score;
+                        localStorage.setItem('donkey-kong-best', bestScore);
+                    }
                     gameOver = true;
                     screenShake = 20;
                     playSound('death');
@@ -532,6 +539,12 @@
                 ctx.textAlign = 'center';
                 ctx.font = '24px Orbitron';
                 ctx.fillText('GAME OVER', GAME_WIDTH/2, GAME_HEIGHT/2);
+                ctx.fillStyle = '#ffcc00';
+                ctx.font = '16px Orbitron';
+                ctx.fillText('SCORE: ' + score, GAME_WIDTH/2, GAME_HEIGHT/2 + 40);
+                ctx.fillStyle = '#888';
+                ctx.font = '14px Orbitron';
+                ctx.fillText('BEST: ' + bestScore, GAME_WIDTH/2, GAME_HEIGHT/2 + 65);
             }
             ctx.restore();
         }

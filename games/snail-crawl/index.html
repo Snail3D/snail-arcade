@@ -77,6 +77,9 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
+// localStorage key: 'snail-crawl-best'
+let bestScore = parseInt(localStorage.getItem('snail-crawl-best') || '0');
+
 // ─── Game State ─────────────────────────────────────────────────
 let state = 'menu'; // menu | playing | gameover
 let score = 0, lives = 3, distance = 0;
@@ -475,9 +478,13 @@ function gameOver() {
   state = 'gameover';
   overlay.innerHTML = '';
   overlay.classList.remove('hidden');
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('snail-crawl-best', bestScore);
+  }
   overlay.innerHTML = `
     <h1>GAME OVER</h1>
-    <p class="subtitle">Score: ${score} · Distance: ${Math.floor(distance)}m</p>
+    <p class="subtitle">Score: ${score} · Distance: ${Math.floor(distance)}m · Best: ${bestScore}</p>
     <button id="startBtn">RETRY</button>
   `;
   document.getElementById('startBtn').addEventListener('click', startGame);

@@ -396,6 +396,20 @@
     showSlide(next);
   }
 
+  // Touch support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', function(e) {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) changeSlide(1);
+      else changeSlide(-1);
+    }
+  }, { passive: true });
+
   // Keyboard navigation
   document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);

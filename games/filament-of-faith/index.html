@@ -74,6 +74,9 @@ const VERSES = [
 // === GAME STATE ===
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+// localStorage key: 'filament-of-faith-best'
+let bestScore = parseInt(localStorage.getItem('filament-of-faith-best') || '0');
+
 let W, H;
 let gameState = 'menu';
 let frame = 0;
@@ -344,6 +347,10 @@ function endGame() {
   gameState = 'over';
   gameOverTimer = 0;
   showMessage('PRINT FAILED\nLayer ' + layer, '#ff00ff');
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('filament-of-faith-best', bestScore);
+  }
 }
 
 // === RENDER ===
@@ -568,9 +575,12 @@ function render() {
       ctx.shadowColor = '#00f0ff';
       ctx.font = `${clamp(14, W/20, 28)}px Share Tech Mono`;
       ctx.fillText(`Layer ${layer} reached — Score: ${score}`, W/2, H/2 + 10);
+      ctx.fillStyle = '#ffcc00';
+      ctx.font = `${clamp(12, W/28, 20)}px Share Tech Mono`;
+      ctx.fillText(`Best: ${bestScore}`, W/2, H/2 + 40);
       ctx.font = `${clamp(12, W/28, 20)}px Share Tech Mono`;
       ctx.fillStyle = 'rgba(255,0,255,0.7)';
-      ctx.fillText('Tap or press SPACE to restart', W/2, H/2 + 60);
+      ctx.fillText('Tap or press SPACE to restart', W/2, H/2 + 70);
       ctx.shadowBlur = 0;
       if ((touchActive || keys[' ']) && gameOverTimer > 90) startGame();
     }

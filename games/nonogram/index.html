@@ -133,6 +133,11 @@
             font-size: 1.5em;
             height: 1.5em;
         }
+        #best-time {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #3c6382;
+        }
         
         .lang-btn {
             background-color: #7f8c8d;
@@ -154,6 +159,7 @@
     </div>
 
     <div id="message"></div>
+    <div id="best-time">Best Time: —</div>
 
     <div class="controls">
         <button id="new-game-int" onclick="initGame()">لعبة جديدة</button>
@@ -165,6 +171,21 @@
         let solution = [];
         let currentGrid = [];
         let currentLang = 'ar';
+        let solveStartTime = 0;
+
+        const BEST_TIME_KEY = 'nonogram-best-time';
+        function getBestTime() { return parseInt(localStorage.getItem(BEST_TIME_KEY) || '0'); }
+        function saveBestTime(time) {
+            if (time > 0 && (getBestTime() === 0 || time < getBestTime())) {
+                localStorage.setItem(BEST_TIME_KEY, time.toString());
+                document.getElementById('best-time').textContent = 'Best Time: ' + time + 's';
+            }
+        }
+        // Initialize best time display
+        (function() {
+            const best = getBestTime();
+            if (best > 0) document.getElementById('best-time').textContent = 'Best Time: ' + best + 's';
+        })();
 
         const translations = {
             ar: {
@@ -245,6 +266,7 @@
             solution = generateRandomGrid(SIZE);
             currentGrid = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
             document.getElementById('message').innerText = '';
+            solveStartTime = Date.now();
             renderClues();
             renderGrid();
         }
@@ -291,6 +313,7 @@
                     cell.dataset.r = r;
                     cell.dataset.c = c;
                     cell.addEventListener('click', () => toggleCell(r, c, 'fill'));
+                    cell.addEventListener('touchstart', (e) => { e.preventDefault(); toggleCell(r, c, 'fill'); }, { passive: false });
                     cell.addEventListener('contextmenu', (e) => {
                         e.preventDefault();
                         toggleCell(r, c, 'cross');
@@ -329,7 +352,9 @@
                     if (currentGrid[r][c] !== solution[r][c]) return;
                 }
             }
+            const timeTaken = Math.round((Date.now() - solveStartTime) / 1000);
             document.getElementById('message').innerText = translations[currentLang].winMsg;
+            saveBestTime(timeTaken);
         }
 
         initGame();

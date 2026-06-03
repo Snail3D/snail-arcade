@@ -67,6 +67,10 @@
   .gen-btn { width: 100%; appearance: none; background: transparent; border: 1px solid var(--cyan); color: var(--cyan); font-family: inherit; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 700; padding: 12px 16px; border-radius: 8px; cursor: pointer; transition: all 0.25s; }
   .gen-btn:hover { background: var(--cyan); color: var(--bg); box-shadow: 0 0 18px rgba(0,240,255,0.2); }
   .gen-btn:active { transform: scale(0.98); }
+  .gen-btn:hover, .gen-btn:active { background: var(--cyan); color: var(--bg); box-shadow: 0 0 18px rgba(0,240,255,0.2); }
+
+  /* Touch-friendly buttons */
+  .gen-btn, .copy-btn, .opt-chip { -webkit-tap-highlight-color: transparent; }
 
   /* History */
   .hist { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -173,8 +177,11 @@
 
   slider.addEventListener('input',()=>{ lengthVal.textContent=slider.value; });
   genBtn.addEventListener('click',generate);
+  genBtn.addEventListener('touchstart',(e)=>{e.preventDefault();generate();},{passive:false});
   copyBtn.addEventListener('click',copy);
+  copyBtn.addEventListener('touchstart',(e)=>{e.preventDefault();copy();},{passive:false});
   clearHist.addEventListener('click',()=>{ hist=[]; renderHist(); });
+  clearHist.addEventListener('touchstart',(e)=>{e.preventDefault();hist=[];renderHist();},{passive:false});
 
   document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT') return; if(e.key==='g'||e.key==='G') generate(); if(e.key==='c'||e.key==='C') copy(); });
 

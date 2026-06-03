@@ -290,6 +290,9 @@ try {
 // ── Device detection ──────────────────────────────────────────────────────────
 const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
 dbg('script start, isMobile=' + isMobile + ' viewport=' + window.innerWidth + 'x' + window.innerHeight);
+// localStorage key: 'snail-hugger-best'
+let bestHugs = parseInt(localStorage.getItem('snail-hugger-best') || '0');
+
 let camera, scene, renderer;
 let gameStarted = false, gameWon = false, hugCount = 0;
 let nearestSnail = null;
@@ -676,7 +679,11 @@ function tryHug() {
   if (!nearestSnail || nearestSnail.userData.hugged) return;
   nearestSnail.userData.hugged = true;
   hugCount++;
-  document.getElementById('hug-count').textContent = hugCount;
+  if (hugCount > bestHugs) {
+    bestHugs = hugCount;
+    localStorage.setItem('snail-hugger-best', bestHugs);
+  }
+  document.getElementById('hug-count').textContent = hugCount + (hugCount >= bestHugs ? ' ★' : '');
   spawnHeartBurst();
 
   const snail = nearestSnail;
@@ -707,6 +714,7 @@ function spawnHeartBurst() {
 
 function showWin() {
   gameWon = true;
+  document.getElementById('win-screen').querySelector('p').innerHTML = `You hugged ALL the snails! The Snail Kingdom is filled with love! 💖<br>Best: ${bestHugs} hugs`;
   document.getElementById('win-screen').style.display = 'flex';
 }
 

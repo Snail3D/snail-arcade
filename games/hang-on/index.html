@@ -1,219 +1,783 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hang-On 1985 Clone</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; touch-action: none; user-select: none; }
-        canvas { display: block; }
-        #ui { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 14px; text-shadow: 2px 2px #000; z-index: 10; }
-        #controls { 
-            position: absolute; 
-            bottom: 20px; 
-            left: 0; 
-            width: 100%; 
-            display: flex; 
-            justify-content: space-around; 
-            z-index: 10;
-        }
-        .btn { 
-            width: 60px; 
-            height: 60px; 
-            background: rgba(255, 255, 255, 0.3); 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 24px; 
-            color: white; 
-            border: 2px solid rgba(255,255,255,0.5);
-            cursor: pointer;
-        }
-        .btn:active { background: rgba(255, 255, 255, 0.6); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Hang-On — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw; height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  }
+  #hud {
+    position: absolute;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 32px;
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    pointer-events: none; z-index: 5;
+    letter-spacing: 1px;
+  }
+  #hud span { white-space: nowrap; }
+  #hud .label { color: #aaa; font-size: 12px; }
+  #hud .value { color: #fff; }
+  #best {
+    position: absolute;
+    top: 56px; left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 14px;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none; z-index: 5;
+    display: none;
+  }
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .panel {
+    background: rgba(0,0,0,0.82);
+    border: 3px solid #00e5ff;
+    border-radius: 16px;
+    padding: 32px 44px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 40px rgba(0,229,255,0.35), inset 0 0 20px rgba(0,229,255,0.05);
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  .panel h1 {
+    font-size: 44px;
+    color: #00e5ff;
+    margin-bottom: 8px;
+    text-shadow: 0 0 25px rgba(0,229,255,0.6);
+    letter-spacing: 3px;
+  }
+  .panel h2 {
+    font-size: 30px;
+    color: #ff5252;
+    margin-bottom: 10px;
+    text-shadow: 0 0 15px rgba(255,82,82,0.5);
+  }
+  .panel p {
+    font-size: 15px;
+    color: #bbb;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 64px;
+    color: #ffeb3b;
+    margin: 14px 0;
+    text-shadow: 0 0 20px rgba(255,235,59,0.5);
+  }
+  .panel .hint {
+    font-size: 13px;
+    color: #777;
+    margin-top: 16px;
+  }
+  .panel .keys {
+    display: flex; gap: 10px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #1a1a1a;
+    border: 2px solid #444;
+    border-radius: 6px;
+    padding: 5px 11px;
+    font-size: 12px;
+    color: #fff;
+  }
+  #start, #gameover { display: none; }
+  #start.active, #gameover.active { display: flex; }
+
+  /* Touch controls */
+  #touch-controls {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 35%;
+    display: flex; z-index: 6;
+    pointer-events: auto;
+  }
+  .touch-zone {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.15);
+    font-size: 48px;
+    transition: background 0.1s;
+  }
+  .touch-zone:active { background: rgba(255,255,255,0.1); }
+  .touch-zone.gas { color: rgba(0,255,136,0.25); border-top: 2px solid rgba(0,255,136,0.2); }
+  .touch-zone.gas:active { background: rgba(0,255,136,0.15); }
+  .touch-zone.left { border-right: 1px solid rgba(255,255,255,0.05); }
+  .touch-zone.right { border-left: 1px solid rgba(255,255,255,0.05); }
+</style>
 </head>
 <body>
-    <div id="ui">
-        SPEED: <span id="speed">0</span> KM/H<br>
-        SCORE: <span id="score">0</span><br>
-        TIME: <span id="timer">60</span>s
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <span><span class="label">SPEED</span><br><span class="value" id="speed">0</span> <span class="label">KM/H</span></span>
+    <span><span class="label">SCORE</span><br><span class="value" id="score">0</span></span>
+    <span><span class="label">TIME</span><br><span class="value" id="timer">60</span>s</span>
+  </div>
+  <div id="best">BEST: <span id="best-val">0</span></div>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <h1>HANG-ON</h1>
+      <p>Dodge traffic and survive 60 seconds!</p>
+      <p>Steer left/right &mdash; hold GAS to accelerate</p>
+      <div class="keys">
+        <span class="key">&#9664; &#9654; STEER</span>
+        <span class="key">&#9650; GAS</span>
+        <span class="key">&#9660; BRAKE</span>
+      </div>
+      <p class="hint">Tap left/right to steer &bull; Tap center to GAS</p>
     </div>
-    <div id="controls">
-        <div class="btn" id="btn-left">◀</div>
-        <div class="btn" id="btn-up">▲</div>
-        <div class="btn" id="btn-down">▼</div>
-        <div class="btn" id="btn-right">▶</div>
+  </div>
+
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2>TIME'S UP!</h2>
+      <p>Score</p>
+      <div class="score-big" id="final-score">0</div>
+      <p id="best-line">Best: <span id="final-best">0</span></p>
+      <p class="hint">Tap or press SPACE to retry</p>
     </div>
-    <canvas id="gameCanvas"></canvas>
+  </div>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const speedEl = document.getElementById('speed');
-        const scoreEl = document.getElementById('score');
-        const timerEl = document.getElementById('timer');
+  <div id="touch-controls">
+    <div class="touch-zone left" id="tz-left">&#9664;</div>
+    <div class="touch-zone gas" id="tz-gas">&#9650;</div>
+    <div class="touch-zone right" id="tz-right">&#9654;</div>
+  </div>
+</div>
 
-        const FPS = 60;
-        const SEGMENT_LENGTH = 200;
-        const RENDER_DISTANCE = 60;
-        const ROAD_WIDTH = 2000;
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
 
-        let segments = [];
-        let playerX = 0;
-        let playerZ = 0;
-        let speed = 0;
-        let score = 0;
-        let timer = 60;
-        let lastTime = Date.now();
-        let keys = {};
+  // --- Internal game resolution (pixel buffer) ---
+  const GAME_W = 480;
+  const GAME_H = 640;
 
-        class Segment {
-            constructor(index, curve) {
-                this.index = index;
-                this.curve = curve;
-                this.color = Math.floor(index / 4) % 2 ? '#333' : '#444';
-                this.grassColor = Math.floor(index / 4) % 2 ? '#0a4a0a' : '#0d5a0d';
-            }
+  // --- Responsive sizing ---
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- UI refs ---
+  const speedEl  = document.getElementById('speed');
+  const scoreEl  = document.getElementById('score');
+  const timerEl  = document.getElementById('timer');
+  const bestEl   = document.getElementById('best-val');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const finalScore = document.getElementById('final-score');
+  const finalBest  = document.getElementById('final-best');
+  const bestLine   = document.getElementById('best-line');
+  const wrap       = document.getElementById('wrap');
+
+  // --- Game states ---
+  const STATE_READY  = 0;
+  const STATE_PLAY   = 1;
+  const STATE_DEAD   = 2;
+  let state = STATE_READY;
+
+  // --- Road constants ---
+  const SEG_LEN   = 200;      // segment length in world units
+  const ROAD_W    = 2200;    // road width (world units)
+  const CAM_H     = 1000;    // camera height
+  const CAM_D     = 0.84;    // camera depth (FOV factor)
+  const DRAW_DIST = 100;     // segments to draw ahead
+  const LANES     = 3;
+
+  // --- Colors ---
+  const SKY_TOP   = '#1a8fc8';
+  const SKY_BOT   = '#5bc8e8';
+  const HORIZ_COLOR = '#3a7a20';
+
+  // --- Game variables ---
+  let segments = [];
+  let playerX  = 0;          // -1 to 1 (road-relative)
+  let playerZ  = 0;          // world Z position
+  let speed    = 0;          // current speed
+  let maxSpeed = 1800;       // top speed
+  let accel    = 800;        // acceleration
+  let decel    = 1200;       // braking
+  let decelF   = 0.95;       // friction
+  let score    = 0;
+  let timer    = 60;         // countdown seconds
+  let pos      = 0;         // position in segments (float)
+  let posZ     = 0;          // accumulated road curve offset
+  let curveAccum = 0;        // road curve accumulator for camera
+  let traffic  = [];
+  let rumbleW  = 0;          // rumble strip visual width
+  let rumbleT = 0;           // rumble timer
+  let best    = parseInt(localStorage.getItem('hang-on-best') || '0', 10);
+  bestEl.textContent = best;
+  if (best > 0) document.getElementById('best').style.display = 'block';
+
+  // --- Input ---
+  const keys = { left: false, right: false, up: false, down: false };
+  let touchGas = false;
+
+  // --- Road generation ---
+  function buildRoad() {
+    segments = [];
+    // Layout: flat -> curves -> flat -> etc.
+    // Each section is a series of segments with same curve
+    const layout = [
+      { count: 30, curve: 0   },
+      { count: 40, curve: 4  },
+      { count: 20, curve: 0  },
+      { count: 50, curve: -5 },
+      { count: 20, curve: 0  },
+      { count: 45, curve: 6  },
+      { count: 25, curve: 0  },
+      { count: 55, curve: -4 },
+      { count: 20, curve: 0  },
+      { count: 40, curve: 3  },
+      { count: 30, curve: 0  },
+    ];
+    let idx = 0;
+    for (const sec of layout) {
+      for (let i = 0; i < sec.count; i++) {
+        const isCrv = (idx + i) % 2 === 0;
+        const grassCol = (Math.floor((idx + i) / 2)) % 2 === 0
+          ? ['#1a5c0e','#1e7010'] : ['#175408','#1b5c0c'];
+        const roadCol = isCrv ? '#2a2a2a' : '#333';
+        const rumbleCol = isCrv ? '#c0392b' : '#fff';
+        segments.push({
+          index: idx + i,
+          curve: sec.curve,
+          isCrv,
+          grassCol: grassCol[0],
+          grassCol2: grassCol[1],
+          roadCol,
+          rumbleCol,
+          roadMark: i % 8 < 4,  // dashed center line
+        });
+      }
+      idx += sec.count;
+    }
+  }
+
+  // --- Traffic spawning ---
+  function spawnTraffic() {
+    // Place 6-8 cars at various Z positions
+    traffic = [];
+    const baseZ = playerZ + 3000;
+    const count = 6 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const lane = Math.floor(Math.random() * LANES) - 1; // -1, 0, 1
+      traffic.push({
+        z: baseZ + i * 500 + Math.random() * 200,
+        x: lane * (0.55 + Math.random() * 0.2),
+        speed: 200 + Math.random() * 400,
+        color: ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c'][Math.floor(Math.random()*5)],
+        w: 200, h: 350,
+      });
+    }
+  }
+
+  // --- Input setup ---
+  function setupInput() {
+    // Keyboard
+    window.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft'  || e.key === 'a') keys.left = true;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+      if (e.key === 'ArrowUp'    || e.key === 'w') keys.up = true;
+      if (e.key === 'ArrowDown'  || e.key === 's') keys.down = true;
+      if (e.key === ' ' && (state === STATE_READY || state === STATE_DEAD)) startGame();
+      if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+    });
+    window.addEventListener('keyup', e => {
+      if (e.key === 'ArrowLeft'  || e.key === 'a') keys.left = false;
+      if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+      if (e.key === 'ArrowUp'    || e.key === 'w') keys.up = false;
+      if (e.key === 'ArrowDown'  || e.key === 's') keys.down = false;
+    });
+
+    // Touch - left zone
+    const tzLeft  = document.getElementById('tz-left');
+    const tzRight = document.getElementById('tz-right');
+    const tzGas   = document.getElementById('tz-gas');
+
+    function addTouch(el, key, isGas) {
+      el.addEventListener('touchstart', e => { e.preventDefault(); if (isGas) touchGas = true; else keys[key] = true; }, { passive: false });
+      el.addEventListener('touchend',   e => { e.preventDefault(); if (isGas) touchGas = false; else keys[key] = false; }, { passive: false });
+      el.addEventListener('touchcancel',e => { e.preventDefault(); if (isGas) touchGas = false; else keys[key] = false; }, { passive: false });
+      el.addEventListener('mousedown',  () => { if (isGas) touchGas = true; else keys[key] = true; });
+      el.addEventListener('mouseup',    () => { if (isGas) touchGas = false; else keys[key] = false; });
+      el.addEventListener('mouseleave',() => { if (isGas) touchGas = false; else keys[key] = false; });
+    }
+    addTouch(tzLeft,  'left',  false);
+    addTouch(tzRight, 'right', false);
+    addTouch(tzGas,   'up',    true);
+
+    // Tap anywhere on overlay to start
+    startScreen.addEventListener('click', () => { if (state === STATE_READY) startGame(); });
+    startScreen.addEventListener('touchend', e => { e.preventDefault(); if (state === STATE_READY) startGame(); }, { passive: false });
+    gameoverScreen.addEventListener('click', () => { if (state === STATE_DEAD) startGame(); });
+    gameoverScreen.addEventListener('touchend', e => { e.preventDefault(); if (state === STATE_DEAD) startGame(); }, { passive: false });
+  }
+
+  // --- Game control ---
+  function startGame() {
+    state = STATE_PLAY;
+    playerX = 0;
+    playerZ = 0;
+    speed   = 0;
+    score   = 0;
+    timer   = 60;
+    pos     = 0;
+    posZ    = 0;
+    curveAccum = 0;
+    buildRoad();
+    spawnTraffic();
+    startScreen.classList.remove('active');
+    gameoverScreen.classList.remove('active');
+  }
+
+  function endGame() {
+    state = STATE_DEAD;
+    if (score > best) {
+      best = Math.floor(score);
+      localStorage.setItem('hang-on-best', best);
+      bestEl.textContent = best;
+      document.getElementById('best').style.display = 'block';
+      bestLine.innerHTML = 'NEW BEST! <span id="final-best">' + best + '</span>';
+    } else {
+      bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
+    }
+    finalScore.textContent = Math.floor(score);
+    gameoverScreen.classList.add('active');
+  }
+
+  // --- Update ---
+  let lastTime = 0;
+  function update(dt) {
+    if (state !== STATE_PLAY) return;
+
+    // Gas / brake
+    if (keys.up || touchGas) {
+      speed += accel * dt;
+    } else {
+      speed -= decel * dt;
+    }
+    if (keys.down) {
+      speed -= decel * 1.5 * dt;
+    }
+
+    // Friction
+    speed *= decelF;
+    speed = Math.max(0, Math.min(maxSpeed, speed));
+
+    // Steering
+    const steerRate = 0.0025 * (speed / maxSpeed + 0.3);
+    if (keys.left)  playerX -= steerRate;
+    if (keys.right) playerX += steerRate;
+
+    // Road curve pushes player
+    const segIdx = Math.floor(pos) % segments.length;
+    const seg = segments[segIdx];
+    if (seg) {
+      playerX -= seg.curve * 0.0009 * (speed / maxSpeed);
+    }
+
+    // Clamp player to road
+    const maxX = 1.4;
+    if (playerX < -maxX) { playerX = -maxX; }
+    if (playerX >  maxX) { playerX =  maxX; }
+
+    // Move forward
+    const move = speed * dt;
+    pos    += move / SEG_LEN;
+    playerZ += move;
+    posZ    += move * seg.curve * 0.01;
+
+    // Score from distance
+    score += move * 0.01;
+
+    // Timer
+    timer -= dt;
+    if (timer <= 0) { timer = 0; endGame(); return; }
+
+    // Move and check traffic
+    for (const car of traffic) {
+      car.z -= (speed - car.speed) * dt;
+      // Collision
+      const dx = Math.abs(car.x - playerX);
+      const dz = car.z - playerZ;
+      if (dx < 0.35 && dz > -200 && dz < 300) {
+        speed *= 0.3;
+        // Push away
+        if (car.x > playerX) playerX -= 0.1;
+        else playerX += 0.1;
+      }
+    }
+
+    // Respawn traffic that passed
+    const minZ = playerZ - 500;
+    traffic = traffic.filter(c => c.z > minZ);
+    if (traffic.length < 6) {
+      const lastZ = traffic.length ? Math.max(...traffic.map(c => c.z)) : playerZ;
+      const lane = Math.floor(Math.random() * LANES) - 1;
+      traffic.push({
+        z: lastZ + 400 + Math.random() * 400,
+        x: lane * (0.55 + Math.random() * 0.2),
+        speed: 200 + Math.random() * 400,
+        color: ['#e74c3c','#3498db','#f1c40f','#9b59b6','#1abc9c'][Math.floor(Math.random()*5)],
+        w: 200, h: 350,
+      });
+    }
+
+    // UI
+    speedEl.textContent  = Math.floor(speed / 10);
+    scoreEl.textContent  = Math.floor(score);
+    timerEl.textContent  = Math.max(0, Math.ceil(timer));
+
+    // Rumble strip visual
+    rumbleT += dt;
+    rumbleW = (Math.sin(rumbleT * 12) * 0.5 + 0.5) * 8;
+  }
+
+  // --- Projection helpers ---
+  function project(wx, wy, wz, cameraX, cameraZ, cameraA) {
+    // Translate relative to camera
+    const dx = wx - cameraX;
+    const dz = wz - cameraZ;
+    // Rotate by camera angle (curve)
+    const cosA = Math.cos(cameraA);
+    const sinA = Math.sin(cameraA);
+    const rx = dx * cosA - dz * sinA;
+    const rz = dx * sinA + dz * cosA;
+    if (rz <= 1) return null;
+    const scale = CAM_D / rz;
+    const sx = GAME_W / 2 + scale * rx * GAME_W / 2;
+    const sy = GAME_H / 2 - scale * (wy - CAM_H) * GAME_H / 2;
+    return { x: sx, y: sy, scale };
+  }
+
+  // --- Draw ---
+  function drawBackground() {
+    // Sky gradient
+    const sky = ctx.createLinearGradient(0, 0, 0, GAME_H * 0.5);
+    sky.addColorStop(0, SKY_TOP);
+    sky.addColorStop(1, SKY_BOT);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, GAME_W, GAME_H * 0.5);
+
+    // Sun
+    ctx.fillStyle = '#fff5a0';
+    ctx.beginPath();
+    ctx.arc(GAME_W - 80, 90, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath();
+    ctx.arc(GAME_W - 80, 90, 26, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hills (simple sine waves)
+    ctx.fillStyle = '#2d6a2d';
+    ctx.beginPath();
+    ctx.moveTo(0, GAME_H * 0.45);
+    for (let x = 0; x <= GAME_W; x += 4) {
+      const h = Math.sin(x * 0.012) * 30 + Math.sin(x * 0.025) * 15 + 40;
+      ctx.lineTo(x, GAME_H * 0.45 - h);
+    }
+    ctx.lineTo(GAME_W, GAME_H * 0.45);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#3d8a3d';
+    ctx.beginPath();
+    ctx.moveTo(0, GAME_H * 0.45);
+    for (let x = 0; x <= GAME_W; x += 4) {
+      const h = Math.sin(x * 0.018 + 1) * 20 + Math.sin(x * 0.04) * 10 + 20;
+      ctx.lineTo(x, GAME_H * 0.45 - h);
+    }
+    ctx.lineTo(GAME_W, GAME_H * 0.45);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawGround() {
+    // Grass
+    ctx.fillStyle = '#1e6b0e';
+    ctx.fillRect(0, GAME_H * 0.45, GAME_W, GAME_H * 0.55);
+  }
+
+  function drawRoad() {
+    const baseSeg = Math.floor(pos) % segments.length;
+    const camZ = playerZ;
+    const camA = curveAccum; // accumulated curve for camera shake
+
+    let prevRumble = { x: 0, y: 0, w: 0, scale: 0 };
+
+    for (let n = DRAW_DIST; n > 0; n--) {
+      const segIdx = (baseSeg + n) % segments.length;
+      const seg = segments[segIdx];
+      const segZ = segIdx * SEG_LEN - (pos % SEG_LEN) * SEG_LEN;
+
+      // Skip behind camera
+      if (segZ < -SEG_LEN) continue;
+
+      const worldZ = segIdx * SEG_LEN;
+      const p = project(playerX * ROAD_W, 0, worldZ, playerX * ROAD_W, camZ, camA);
+      if (!p || p.y < GAME_H * 0.42 || p.y > GAME_H) continue;
+
+      // Grass
+      const nextSeg = segments[(segIdx + 1) % segments.length];
+      const roadHalfW = ROAD_W * p.scale;
+
+      // Left grass, right grass
+      const leftEdge  = p.x - roadHalfW;
+      const rightEdge = p.x + roadHalfW;
+      const grassW   = leftEdge;
+      const grassW2  = GAME_W - rightEdge;
+      const segH     = (prevRumble.y - p.y) || 1;
+
+      ctx.fillStyle = (Math.floor(segIdx / 2) % 2 === 0) ? '#1a5c0a' : '#1e6810';
+      if (grassW > 0) ctx.fillRect(0, p.y, grassW, segH);
+      if (grassW2 > 0) ctx.fillRect(rightEdge, p.y, grassW2, segH);
+
+      // Road surface
+      ctx.fillStyle = seg.roadCol;
+      ctx.fillRect(leftEdge, p.y, roadHalfW * 2, segH);
+
+      // Rumble strips
+      const rumbleHalfW = roadHalfW + 40 * p.scale;
+      ctx.fillStyle = seg.isCrv ? '#c0392b' : '#e0e0e0';
+      ctx.fillRect(leftEdge - 30 * p.scale, p.y, 30 * p.scale, segH);
+      ctx.fillRect(rightEdge, p.y, 30 * p.scale, segH);
+
+      // Road edge lines
+      ctx.fillStyle = seg.isCrv ? '#fff' : '#888';
+      ctx.fillRect(leftEdge, p.y, 8 * p.scale, segH);
+      ctx.fillRect(rightEdge - 8 * p.scale, p.y, 8 * p.scale, segH);
+
+      // Center dashed line
+      if (seg.roadMark) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(p.x - 4 * p.scale, p.y, 8 * p.scale, segH);
+      }
+
+      // Lane markers (dashed)
+      if (seg.roadMark) {
+        const laneW = roadHalfW / LANES;
+        ctx.fillStyle = 'rgba(255,255,255,0.4)';
+        for (let l = 1; l < LANES; l++) {
+          const lx = p.x - roadHalfW + laneW * l;
+          ctx.fillRect(lx - 3 * p.scale, p.y, 6 * p.scale, segH);
         }
+      }
 
-        function initRoad() {
-            segments = [];
-            for (let i = 0; i < 500; i++) {
-                let curve = 0;
-                if (i > 50 && i < 150) curve = 2;
-                if (i > 200 && i < 300) curve = -3;
-                if (i > 350 && i < 450) curve = 1.5;
-                segments.push(new Segment(i, curve));
-            }
-        }
+      prevRumble = p;
+    }
+  }
 
-        function setupControls() {
-            const setupBtn = (id, key) => {
-                const btn = document.getElementById(id);
-                if (!btn) return;
-                const setKey = (val) => { keys[key] = val; };
-                btn.addEventListener('touchstart', (e) => { e.preventDefault(); setKey(true); }, { passive: false });
-                btn.addEventListener('touchend', (e) => { e.preventDefault(); setKey(false); }, { passive: false });
-                btn.addEventListener('mousedown', () => setKey(true));
-                btn.addEventListener('mouseup', () => setKey(false));
-                btn.addEventListener('mouseleave', () => setKey(false));
-            };
+  function drawTraffic() {
+    // Sort traffic by Z (far to near)
+    const sorted = [...traffic].sort((a, b) => b.z - a.z);
+    const camZ = playerZ;
+    const camA = curveAccum;
 
-            setupBtn('btn-left', 'ArrowLeft');
-            setupBtn('btn-up', 'ArrowUp');
-            setupBtn('btn-down', 'ArrowDown');
-            setupBtn('btn-right', 'ArrowRight');
+    for (const car of sorted) {
+      const dz = car.z - camZ;
+      if (dz < -100 || dz > 8000) continue;
 
-            window.addEventListener('keydown', (e) => { keys[e.key] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); });
-            window.addEventListener('keyup', (e) => { keys[e.key] = false; });
-        }
+      const p = project(car.x * ROAD_W, 0, car.z, playerX * ROAD_W, camZ, camA);
+      if (!p) continue;
 
-        function update(dt) {
-            if (timer <= 0) {
-                speed = 0;
-                return;
-            }
+      const carW = car.w * p.scale;
+      const carH = car.h * p.scale;
 
-            if (keys['ArrowUp'] || keys['w']) speed += 200 * dt;
-            if (keys['ArrowDown'] || keys['s']) speed -= 150 * dt;
-            if (keys['ArrowLeft'] || keys['a']) playerX -= (0.05 * speed / 2000) + 0.01;
-            if (keys['ArrowRight'] || keys['d']) playerX += (0.05 * speed / 2000) + 0.01;
+      // Simple car body
+      ctx.fillStyle = car.color;
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(p.x - carW / 2 + carW * 0.05, p.y - carH * 0.05, carW, carH * 0.2);
+      // Body
+      ctx.fillStyle = car.color;
+      ctx.fillRect(p.x - carW / 2, p.y - carH, carW, carH);
+      // Windshield
+      ctx.fillStyle = '#1a3a5c';
+      ctx.fillRect(p.x - carW * 0.35, p.y - carH * 0.95, carW * 0.7, carH * 0.25);
+      // Highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(p.x - carW / 2, p.y - carH * 0.95, carW, carH * 0.1);
+    }
+  }
 
-            speed *= 0.98;
-            if (speed < 0) speed = 0;
-            if (speed > 2000) speed = 2000;
+  function drawPlayer() {
+    const px = GAME_W / 2;
+    const py = GAME_H - 120;
+    const lean = (keys.left ? -0.12 : 0) + (keys.right ? 0.12 : 0);
 
-            playerZ += speed * dt;
-            score += speed * dt * 0.1;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(lean);
 
-            let currentSegIdx = Math.floor(playerZ / SEGMENT_LENGTH) % segments.length;
-            let currentSeg = segments[currentSegIdx];
-            if (currentSeg) playerX -= currentSeg.curve * (speed / 5000);
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 25, 38, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-            if (playerX < -1.5) playerX = -1.5;
-            if (playerX > 1.5) playerX = 1.5;
+    // Bike body
+    ctx.fillStyle = '#222';
+    ctx.fillRect(-12, -50, 24, 55);
 
-            timer -= dt;
+    // Wheels
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(-14, -45, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 14, -45, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-14,  10, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 14,  10, 14, 0, Math.PI * 2); ctx.fill();
 
-            speedEl.textContent = Math.floor(speed / 10);
-            scoreEl.textContent = Math.floor(score);
-            timerEl.textContent = Math.max(0, Math.floor(timer));
-        }
+    // Wheel rims
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(-14, -45, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc( 14, -45, 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-14,  10, 9, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc( 14,  10, 9, 0, Math.PI * 2); ctx.stroke();
 
-        function draw() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            const w = canvas.width;
-            const h = canvas.height;
-            const horizon = h * 0.45;
+    // Rider body
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.ellipse(0, -30, 14, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-            ctx.fillStyle = '#87CEEB';
-            ctx.fillRect(0, 0, w, horizon);
+    // Helmet
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.arc(0, -58, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffeaa7';
+    ctx.beginPath();
+    ctx.arc(0, -58, 10, 0, Math.PI * 2);
+    ctx.fill();
 
-            ctx.fillStyle = '#556b2f';
-            ctx.beginPath();
-            ctx.moveTo(0, horizon);
-            ctx.lineTo(w * 0.2, horizon - 50);
-            ctx.lineTo(w * 0.4, horizon);
-            ctx.lineTo(w * 0.7, horizon - 80);
-            ctx.lineTo(w, horizon);
-            ctx.fill();
+    // Handlebar
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-22, -48);
+    ctx.lineTo(22, -48);
+    ctx.stroke();
 
-            ctx.fillStyle = '#0d5a0d';
-            ctx.fillRect(0, horizon, w, h - horizon);
+    ctx.restore();
+  }
 
-            let startIdx = Math.floor(playerZ / SEGMENT_LENGTH);
+  function drawSpeedLines() {
+    if (speed < maxSpeed * 0.4) return;
+    const intensity = (speed - maxSpeed * 0.4) / (maxSpeed * 0.6);
+    ctx.strokeStyle = `rgba(255,255,255,${intensity * 0.15})`;
+    ctx.lineWidth = 1;
+    const count = Math.floor(intensity * 15);
+    for (let i = 0; i < count; i++) {
+      const x = Math.random() * GAME_W;
+      const y = GAME_H * 0.45 + Math.random() * GAME_H * 0.55;
+      const len = 20 + Math.random() * 40;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - len * 0.3, y - len);
+      ctx.stroke();
+    }
+  }
 
-            for (let i = startIdx + RENDER_DISTANCE; i > startIdx; i--) {
-                if (i >= segments.length || i < 0) continue;
-                let seg = segments[i];
-                let baseZ = i * SEGMENT_LENGTH - playerZ;
-                if (baseZ <= 0) continue;
+  function draw() {
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, GAME_W, GAME_H);
 
-                let scale = 300 / baseZ;
-                if (scale < 0 || scale > 1) continue;
+    // Update canvas buffer size
+    canvas.width  = GAME_W;
+    canvas.height = GAME_H;
 
-                let y = horizon + (h - horizon) * (1 - scale);
-                let roadWidth = ROAD_WIDTH * scale;
-                let centerX = w / 2 + (playerX * roadWidth / 2);
+    drawBackground();
+    drawGround();
+    drawRoad();
+    drawTraffic();
+    drawPlayer();
+    drawSpeedLines();
 
-                ctx.fillStyle = seg.grassColor;
-                ctx.fillRect(0, y, centerX - roadWidth / 2, y + 20);
-                ctx.fillRect(centerX + roadWidth / 2, y, w - (centerX + roadWidth / 2), y + 20);
+    // Camera shake from curves
+    curveAccum += (segments[Math.floor(pos) % segments.length]?.curve || 0) * 0.0003;
+  }
 
-                ctx.fillStyle = seg.color;
-                ctx.fillRect(centerX - roadWidth / 2, y, roadWidth, y + 20);
+  // --- Main loop ---
+  function loop(ts) {
+    const dt = Math.min((ts - lastTime) / 1000, 0.05);
+    lastTime = ts;
 
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(centerX - roadWidth / 2, y + 10, roadWidth, 2);
-            }
+    if (state === STATE_READY) {
+      // Show title screen with animated background
+      canvas.width = GAME_W; canvas.height = GAME_H;
+      drawBackground();
+      drawGround();
+      // Fake road animation on title
+      const fakePos = ts * 0.0005;
+      pos = fakePos;
+      curveAccum = 0;
+      drawRoad();
+    }
 
-            ctx.fillStyle = '#ff0000';
-            ctx.save();
-            ctx.translate(w / 2, h - 80);
-            let lean = 0;
-            if (keys['ArrowLeft'] || keys['a']) lean = -0.2;
-            if (keys['ArrowRight'] || keys['d']) lean = 0.2;
-            ctx.rotate(lean);
-            ctx.fillRect(-10, -40, 20, 40);
-            ctx.restore();
-        }
+    update(dt);
+    draw();
 
-        function loop() {
-            const now = Date.now();
-            const dt = Math.min((now - lastTime) / 1000, 0.05);
-            lastTime = now;
+    requestAnimationFrame(loop);
+  }
 
-            update(dt);
-            draw();
-            requestAnimationFrame(loop);
-        }
-
-        initRoad();
-        setupControls();
-        loop();
-    </script>
+  // --- Init ---
+  buildRoad();
+  spawnTraffic();
+  setupInput();
+  startScreen.classList.add('active');
+  requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
+})();
+</script>
 </body>
 </html>

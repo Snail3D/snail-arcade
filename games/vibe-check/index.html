@@ -152,7 +152,7 @@ const finalScoreEl = document.getElementById('final-score');
 const highScoreEl = document.getElementById('high-score');
 
 let W, H;
-let score = 0, highScore = 0, vibe = 100;
+let score = 0, highScore = parseInt(localStorage.getItem('vibe-check-best') || '0', 10), vibe = 100;
 let running = false, dead = false;
 let frame = 0;
 let keys = {};
@@ -512,7 +512,7 @@ function gameLoop() {
 function die() {
   dead = true;
   running = false;
-  if (score > highScore) highScore = score;
+  if (score > highScore) { highScore = score; localStorage.setItem('vibe-check-best', highScore); }
   finalScoreEl.textContent = `SCORE: ${score}`;
   highScoreEl.textContent = `HIGH: ${highScore}`;
   gameOverScreen.style.display = 'flex';

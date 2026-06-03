@@ -1,240 +1,877 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Snail Rescue Mission</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #1a301a; font-family: sans-serif; touch-action: none; }
-        canvas { display: block; background: #2d5a27; margin: 0 auto; }
-        #ui { position: absolute; top: 10px; width: 100%; text-align: center; color: #fff; pointer-events: none; text-shadow: 1px 1px 3px #000; z-index: 5; }
-        #overlay { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.8); display: none; flex-direction: column;
-            justify-content: center; align-items: center; color: white; text-align: center;
-            z-index: 10;
-        }
-        .btn { 
-            padding: 15px 30px; font-size: 1.5rem; cursor: pointer; 
-            background: #4caf50; border: none; color: white; border-radius: 30px;
-            margin-top: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            pointer-events: auto;
-        }
-        h1 { margin: 0; font-size: 1.8rem; }
-        p { margin: 5px 0; opacity: 0.8; }
-    </scale>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Rescue Mission — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a1a0a;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 60px rgba(0,0,0,0.6);
+  }
+  #hud {
+    position: absolute;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    letter-spacing: 1px;
+  }
+  #babies-hud {
+    position: absolute;
+    top: 48px; left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 14px;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .panel {
+    background: rgba(0,0,0,0.82);
+    border: 3px solid #00ff88;
+    border-radius: 16px;
+    padding: 28px 36px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 30px rgba(0,255,136,0.3);
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  .panel h1 {
+    font-size: 36px;
+    color: #00ff88;
+    margin-bottom: 10px;
+    text-shadow: 0 0 20px rgba(0,255,136,0.5);
+  }
+  .panel h2 {
+    font-size: 28px;
+    color: #ff5252;
+    margin-bottom: 10px;
+  }
+  .panel h2.win { color: #ffeb3b; }
+  .panel p {
+    font-size: 15px;
+    color: #ccc;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 52px;
+    color: #ffeb3b;
+    margin: 10px 0;
+    text-shadow: 0 0 15px rgba(255,235,59,0.5);
+  }
+  .panel .hint {
+    font-size: 13px;
+    color: #888;
+    margin-top: 14px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #1a1a1a;
+    border: 2px solid #444;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .high-score {
+    color: #ffeb3b;
+    font-size: 14px;
+    margin-top: 6px;
+  }
+  #start, #gameover { display: none; }
+  #start.active, #gameover.active { display: flex; }
+  #new-best {
+    color: #00ff88;
+    font-size: 16px;
+    font-weight: bold;
+    margin-top: 8px;
+    display: none;
+  }
 </style>
 </head>
-<body >
-    <div id="ui">
-        <h1 id="rescue-ui">Babies: 0 / 3</h1>
-        <p>Rescue the babies before the salt catches you!</p>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud"></div>
+  <div id="babies-hud"></div>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <h1>🐌 Snail Rescue</h1>
+      <p>Rescue all the baby snails before the salt wall catches you!</p>
+      <p>Drag to move. Touch, click, or use keys.</p>
+      <div class="keys">
+        <span class="key">DRAG</span>
+        <span class="key">TOUCH</span>
+        <span class="key">ARROWS</span>
+      </div>
+      <p class="hint">Collect all babies, then reach the lettuce to escape!</p>
+      <p class="high-score" id="start-best"></p>
     </div>
-    <div id="overlay">
-        <h1 id="status-text">GAME OVER</h1>
-        <p id="score-text"></p>
-        <button class="btn" onclick="resetGame()">Try Again</button>
+  </div>
+
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2 id="go-title">💀 SALTED!</h2>
+      <p id="go-reason"></p>
+      <div class="score-big" id="go-score">0</div>
+      <p id="new-best"></p>
+      <p class="high-score" id="go-best"></p>
+      <p class="hint">Tap or press SPACE to retry</p>
     </div>
-    <canvas id="gameCanvas"></canvas>
+  </div>
+</div>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const overlay = document.getElementById('overlay');
-        const statusText = document.getElementById('status-text');
-        const scoreText = document.getElementById('score-text');
-        const rescueUI = document.getElementById('rescue-ui');
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap');
+  const hud = document.getElementById('hud');
+  const babiesHud = document.getElementById('babies-hud');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const goTitle = document.getElementById('go-title');
+  const goReason = document.getElementById('go-reason');
+  const goScore = document.getElementById('go-score');
+  const goBest = document.getElementById('go-best');
+  const goNewBest = document.getElementById('new-best');
+  const startBest = document.getElementById('start-best');
 
-        let width, height, gameRunning, snail, lettuce, saltLineX, saltSpeed, obstacles, particles, babies;
-        let babiesToRescue = 3;
-        let babiesRescued = 0;
+  // Game dimensions (internal pixel buffer)
+  const GAME_W = 400;
+  const GAME_H = 600;
+  const GROUND_Y = GAME_H - 50;
+  let scale = 1;
 
-        function resize() {
-            width = window.innerWidth;
-            height = window.innerHeight;
-            canvas.width = width;
-            canvas.height = height;
-        }
+  // Responsive sizing
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    scale = Math.min(vw / GAME_W, vh / GAME_H);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
 
-        window.addEventListener('resize', resize);
-        resize();
+  // --- State machine ---
+  const STATE_START = 0;
+  const STATE_PLAYING = 1;
+  const STATE_DEAD = 2;
+  let state = STATE_START;
 
-        let isDragging = false;
-        let lastX = 0;
-        let lastY = 0;
+  // --- High score ---
+  let highScore = parseInt(localStorage.getItem('snail-rescue-best') || '0', 10);
+  function saveHigh(score) {
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('snail-rescue-best', highScore);
+      return true;
+    }
+    return false;
+  }
+  function showHighScore() {
+    if (highScore > 0) {
+      startBest.textContent = 'Best: ' + highScore;
+      goBest.textContent = 'Best: ' + highScore;
+    }
+  }
+  showHighScore();
 
-        canvas.addEventListener('pointerdown', e => {
-            isDragging = true;
-            lastX = e.clientX;
-            lastlastY = e.clientY; // Wait, I'll fix this properly below
-            lastY = e.clientY;
-            canvas.setPointerCapture(e.pointerId);
-        });
+  // --- Game objects ---
+  let snail, lettuce, saltLineX, saltSpeed;
+  let obstacles = [];
+  let babies = [];
+  let particles = [];
+  let clouds = [];
+  let grassBlades = [];
+  let babiesToRescue = 3;
+  let babiesRescued = 0;
+  let frameCount = 0;
 
-        canvas.addEventListener('pointermove', e => {
-            if (isDragging && gameRunning) {
-                const dx = e.clientX - lastX;
-                const dy = e.clientY - lastY;
-                snail.x += dx;
-                snail.y += dy;
-                snail.x = Math.max(snail.radius, Math.min(width - snail.radius, snail.x));
-                snail.y = Math.max(snail.radius, Math.min(height - snail.radius, snail.y));
-                lastX = e.clientX;
-                lastY = e.clientY;
-            }
-        });
+  // Arrow key state
+  const keys = { left: false, right: false, up: false, down: false };
 
-        canvas.addEventListener('pointerup', () => isDragging = false);
-        canvas.addEventListener('pointercancel', () => isDragging = false);
+  // Touch/drag state
+  let isDragging = false;
+  let dragX = 0, dragY = 0;
+  let lastDragX = 0, lastDragY = 0;
 
-        function resetGame() {
-            babiesRescued = 0;
-            babiesToRescue = 3;
-            updateRescueUI();
-            
-            snail = { x: 50, y: height/2, radius: 18, color: '#e0e0e0' };
-            lettuce = { x: width - 60, y: height/2, radius: 25, color: '#4caf50' };
-            saltLineX = -50;
-            saltSpeed = 0.6;
-            obstacles = [];
-            particles = [];
-            babies = [];
-            gameRunning = true;
-            overlay.style.display = 'none';
-            
-            for(let i=0; i<6; i++) {
-                obstacles.push({
-                    x: Math.random() * (width - 300) + 150,
-                    y: Math.random() * (height - 100) + 50,
-                    radius: 15,
-                    color: '#3e2723'
-                });
-            }
+  // --- Init ---
+  function initGame() {
+    snail = { x: 60, y: GAME_H / 2, r: 16, vy: 0 };
+    lettuce = { x: GAME_W - 60, y: GAME_H / 2, r: 20 };
+    saltLineX = -60;
+    saltSpeed = 1.2;
+    obstacles = [];
+    babies = [];
+    particles = [];
+    babiesRescued = 0;
+    frameCount = 0;
 
-            for(let i=0; i<babiesToRescue; i++) {
-                babies.push({
-                    x: Math.random() * (width - 300) + 150,
-                    y: Math.random() * (height - 100) + 50,
-                    radius: 10,
-                    color: '#fff'
-                });
-            }
+    // Clouds
+    clouds = [];
+    for (let i = 0; i < 6; i++) {
+      clouds.push({
+        x: Math.random() * GAME_W,
+        y: 30 + Math.random() * 120,
+        w: 50 + Math.random() * 70,
+        speed: 0.2 + Math.random() * 0.3,
+      });
+    }
 
-            requestAnimationFrame(gameLoop);
-        }
+    // Grass
+    grassBlades = [];
+    for (let i = 0; i < 60; i++) {
+      grassBlades.push({
+        x: Math.random() * GAME_W,
+        h: 6 + Math.random() * 10,
+      });
+    }
 
-        function updateRescueUI() {
-            rescueUI.innerText = `Babies: ${babiesRescued} / ${babiesToRescue}`;
-        }
+    // Obstacles (rocks/pellets) — avoid center-right (lettuce zone)
+    for (let i = 0; i < 7; i++) {
+      spawnObstacle();
+    }
 
-        function endGame(text, win) {
-            gameRunning = false;
-            statusText.innerText = text;
-            statusText.style.color = win ? "#4caf50" : "#ff5252";
-            scoreText.innerText = win ? "Mission Accomplished!" : "The salt caught you...";
-            overlay.style.display = 'flex';
-        }
+    // Babies — scattered, avoid lettuce area
+    for (let i = 0; i < babiesToRescue; i++) {
+      spawnBaby();
+    }
+  }
 
-        function update() {
-            if (!gameRunning) return;
+  function spawnObstacle() {
+    let x, y, tries = 0;
+    do {
+      x = 100 + Math.random() * (GAME_W - 220);
+      y = 60 + Math.random() * (GROUND_Y - 120);
+      tries++;
+    } while (tries < 20 && Math.hypot(x - lettuce.x, y - lettuce.y) < 80);
+    obstacles.push({
+      x, y,
+      r: 12 + Math.random() * 8,
+      shade: Math.random(),
+    });
+  }
 
-            saltLineX += saltSpeed;
-            saltSpeed += 0.0002;
+  function spawnBaby() {
+    let x, y, tries = 0;
+    do {
+      x = 80 + Math.random() * (GAME_W - 200);
+      y = 60 + Math.random() * (GROUND_Y - 130);
+      tries++;
+    } while (tries < 30 && (
+      Math.hypot(x - lettuce.x, y - lettuce.y) < 90 ||
+      obstacles.some(o => Math.hypot(x - o.x, y - o.y) < 40)
+    ));
+    babies.push({ x, y, r: 10, eyeBlink: 0, bobOffset: Math.random() * Math.PI * 2 });
+  }
 
-            if (Math.random() < 0.3) {
-                particles.push({
-                    x: saltLineX,
-                    y: Math.random() * height,
-                    size: Math.random() * 4,
-                    life: 1,
-                    vx: Math.random() * 2 + 1
-                });
-            }
+  // --- Screens ---
+  function showStart() {
+    state = STATE_START;
+    startScreen.classList.add('active');
+    gameoverScreen.classList.remove('active');
+    goNewBest.style.display = 'none';
+    showHighScore();
+  }
 
-            for(let i = particles.length-1; i>=0; i--) {
-                particles[i].x += particles[i].vx;
-                particles[i].life -= 0.02;
-                if(particles[i].life <= 0) particles.splice(i, 1);
-            }
+  function showGameOver(reason, won) {
+    state = STATE_DEAD;
+    startScreen.classList.remove('active');
+    gameoverScreen.classList.add('active');
+    goTitle.textContent = won ? '🏆 ESCAPED!' : '💀 SALTED!';
+    goTitle.className = won ? 'win' : '';
+    goReason.textContent = reason;
+    goScore.textContent = babiesRescued + '/' + babiesToRescue;
+    const isNew = saveHigh(babiesRescued);
+    if (isNew) {
+      goNewBest.textContent = '✨ NEW BEST!';
+      goNewBest.style.display = 'block';
+    } else {
+      goNewBest.style.display = 'none';
+    }
+    goBest.textContent = 'Best: ' + highScore;
+  }
 
-            if (snail.x < saltLineX) endGame("SALTED!", false);
+  // --- Controls ---
+  function screenToGame(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) / scale,
+      y: (clientY - rect.top) / scale,
+    };
+  }
 
-            for(let i = babies.length - 1; i >= 0; i--) {
-                const b = babies[i];
-                if (Math.hypot(snail.x - b.x, snail.y - b.y) < snail.radius + b.radius) {
-                    babies.splice(i, 1);
-                    babiesRescued++;
-                    updateRescueUI();
-                }
-            }
+  canvas.addEventListener('pointerdown', e => {
+    if (state === STATE_DEAD) { startGame(); return; }
+    if (state === STATE_START) { startGame(); return; }
+    isDragging = true;
+    const pos = screenToGame(e.clientX, e.clientY);
+    dragX = pos.x; dragY = pos.y;
+    lastDragX = pos.x; lastDragY = pos.y;
+    canvas.setPointerCapture(e.pointerId);
+  });
 
-            if (Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y) < snail.radius + lettuce.radius) {
-                if (babiesRescued >= babiesToRescue) {
-                    endGame("EXTRA🥬 ESCAPED!", true);
-                }
-            }
+  canvas.addEventListener('pointermove', e => {
+    if (!isDragging || state !== STATE_PLAYING) return;
+    const pos = screenToGame(e.clientX, e.clientY);
+    dragX = pos.x; dragY = pos.y;
+  });
 
-            obstacles.forEach(obs => {
-                if (Math.hypot(snail.x - obs.x, snail.y - obs.y) < snail.radius + obs.radius) {
-                    endGame("HIT A PELLET!", false);
-                }
-            });
-        }
+  canvas.addEventListener('pointerup', () => { isDragging = false; });
+  canvas.addEventListener('pointercancel', () => { isDragging = false; });
 
-        function draw() {
-            ctx.clearRect(0, 0, width, height);
-            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-            for(let i=0; i<width; i+=50) {
-                ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,height); ctx.stroke();
-            }
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-            ctx.fillRect(0, 0, saltLineX, height);
-            ctx.strokeStyle = 'white';
-            ctx.lineWidth = 4;
-            ctx.beginPath(); ctx.moveTo(saltLineX, 0); ctx.lineTo(saltLineX, height); ctx.stroke();
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
+    if (e.key === 'ArrowDown' || e.key === 's') keys.down = true;
+    if (e.key === ' ' && state !== STATE_PLAYING) startGame();
+  });
 
-            ctx.fillStyle = 'white';
-            particles.forEach(p => {
-                ctx.globalAlpha = p.life;
-                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-            });
-            ctx.globalAlpha = 1;
+  document.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
+    if (e.key === 'ArrowDown' || e.key === 's') keys.down = false;
+  });
 
-            obstacles.forEach(obs => {
-                ctx.fillStyle = obs.color;
-                ctx.beginPath(); ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
-            });
+  // Retry on tap during game over / start
+  wrap.addEventListener('click', e => {
+    if (state !== STATE_PLAYING) startGame();
+  });
+  wrap.addEventListener('touchend', e => {
+    if (state !== STATE_PLAYING) { e.preventDefault(); startGame(); }
+  }, { passive: false });
 
-            babies.forEach(b => {
-                ctx.fillStyle = b.color;
-                ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-                ctx.fillStyle = '#000';
-                ctx.beginPath(); ctx.arc(b.x + 3, b.y - 2, 2, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(b.x + 3, b.y + 2, 2, 0, Math.PI*2); ctx.fill();
-            });
+  function startGame() {
+    initGame();
+    state = STATE_PLAYING;
+    startScreen.classList.remove('active');
+    gameoverScreen.classList.remove('active');
+  }
 
-            ctx.fillStyle = lettuce.color;
-            ctx.beginPath(); ctx.arc(lettuce.x, lettuce.y, lettuce.radius, 0, Math.PI*2); ctx.fill();
-            ctx.strokeStyle = '#1b5e20'; ctx.lineWidth = 3; ctx.stroke();
+  // --- Update ---
+  function update() {
+    if (state !== STATE_PLAYING) return;
+    frameCount++;
 
-            ctx.fillStyle = snail.color;
-            ctx.beginPath(); ctx.arc(snail.x, snail.y, snail.radius, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#8d6e63';
-            ctx.beginPath(); ctx.arc(snail.x - 5, snail.y - 5, snail.radius * 0.8, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#000';
-            ctx.beginPath(); ctx.arc(snail.x + 8, snail.y - 5, 3, 0, Math.PI*2); ctx.fill();
-            ctx.beginPath(); ctx.arc(snail.x + 8, snail.y + 5, 3, 0, Math.PI*2); ctx.fill();
-        }
+    // --- Salt wall ---
+    saltLineX += saltSpeed;
+    saltSpeed += 0.0003;
+    const MAX_SALT_SPEED = 4;
+    saltSpeed = Math.min(saltSpeed, MAX_SALT_SPEED);
 
-        function gameLoop() {
-            update();
-            draw();
-            if (gameRunning) requestAnimationFrame(gameLoop);
-        }
+    // Salt particles
+    if (Math.random() < 0.5) {
+      particles.push({
+        x: saltLineX + Math.random() * 30,
+        y: Math.random() * GROUND_Y,
+        size: 1.5 + Math.random() * 3,
+        life: 1,
+        vx: 0.8 + Math.random() * 1.5,
+        vy: -0.5 + Math.random(),
+      });
+    }
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.025;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
 
-        resetGame();
-    </script>
+    // --- Snail movement ---
+    const SPEED = 4.5;
+
+    if (isDragging) {
+      const dx = dragX - lastDragX;
+      const dy = dragY - lastDragY;
+      snail.x += dx * 1.5;
+      snail.y += dy * 1.5;
+      lastDragX = dragX;
+      lastDragY = dragY;
+    }
+
+    if (keys.left) snail.x -= SPEED;
+    if (keys.right) snail.x += SPEED;
+    if (keys.up) snail.y -= SPEED;
+    if (keys.down) snail.y += SPEED;
+
+    // Clamp to play area
+    snail.x = Math.max(snail.r, Math.min(GAME_W - snail.r, snail.x));
+    snail.y = Math.max(snail.r, Math.min(GROUND_Y - snail.r, snail.y));
+
+    // Smooth velocity for animation
+    if (!isDragging) {
+      if (keys.left) snail.vy = -SPEED;
+      else if (keys.right) snail.vy = SPEED;
+      else snail.vy *= 0.85;
+    } else {
+      snail.vy = 0;
+    }
+
+    // --- Baby snail eye blink ---
+    for (const b of babies) {
+      if (Math.random() < 0.005) b.eyeBlink = 8;
+      if (b.eyeBlink > 0) b.eyeBlink--;
+    }
+
+    // --- Check death by salt ---
+    if (snail.x - snail.r < saltLineX) {
+      showGameOver('The salt caught you!', false);
+      return;
+    }
+
+    // --- Check baby collection ---
+    for (let i = babies.length - 1; i >= 0; i--) {
+      const b = babies[i];
+      if (Math.hypot(snail.x - b.x, snail.y - b.y) < snail.r + b.r + 4) {
+        babies.splice(i, 1);
+        babiesRescued++;
+      }
+    }
+
+    // --- Check lettuce (goal) ---
+    if (Math.hypot(snail.x - lettuce.x, snail.y - lettuce.y) < snail.r + lettuce.r + 4) {
+      if (babiesRescued >= babiesToRescue) {
+        showGameOver('All babies rescued!', true);
+      }
+    }
+
+    // --- Check obstacle collision ---
+    for (const obs of obstacles) {
+      if (Math.hypot(snail.x - obs.x, snail.y - obs.y) < snail.r + obs.r - 2) {
+        showGameOver('Hit a salt pellet!', false);
+        return;
+      }
+    }
+
+    // --- Check fall off bottom ---
+    if (snail.y + snail.r > GROUND_Y) {
+      showGameOver('Fell off the garden!', false);
+      return;
+    }
+  }
+
+  // --- Draw ---
+  function drawBackground() {
+    // Sky
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    skyGrad.addColorStop(0, '#1a3a1a');
+    skyGrad.addColorStop(0.4, '#2d5a27');
+    skyGrad.addColorStop(1, '#4a8a3a');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, GAME_W, GROUND_Y);
+
+    // Ground
+    const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_H);
+    groundGrad.addColorStop(0, '#5a3a1a');
+    groundGrad.addColorStop(0.3, '#3a2510');
+    groundGrad.addColorStop(1, '#1a1008');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, GROUND_Y, GAME_W, GAME_H - GROUND_Y);
+
+    // Grass strip
+    ctx.fillStyle = '#4a8a29';
+    ctx.fillRect(0, GROUND_Y, GAME_W, 6);
+    ctx.fillStyle = '#6ab840';
+    ctx.fillRect(0, GROUND_Y, GAME_W, 3);
+
+    // Grass blades
+    ctx.fillStyle = '#3a7a1c';
+    const t = frameCount * 0.3;
+    for (const g of grassBlades) {
+      const sway = Math.sin(t + g.x * 0.05) * 2;
+      ctx.beginPath();
+      ctx.moveTo(g.x, GROUND_Y);
+      ctx.lineTo(g.x + sway, GROUND_Y - g.h);
+      ctx.lineTo(g.x + 3 + sway, GROUND_Y);
+      ctx.fill();
+    }
+
+    // Clouds
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    for (const c of clouds) {
+      c.x -= c.speed;
+      if (c.x + c.w < 0) c.x = GAME_W + 20;
+      drawCloud(c.x, c.y, c.w);
+    }
+  }
+
+  function drawCloud(x, y, w) {
+    const h = w * 0.45;
+    ctx.beginPath();
+    ctx.arc(x, y, h * 0.55, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.3, y - h * 0.15, h * 0.65, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.6, y, h * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSaltWall() {
+    // Danger zone fill
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.15)';
+    ctx.fillRect(0, 0, saltLineX, GAME_H);
+
+    // Salt line gradient
+    const grad = ctx.createLinearGradient(saltLineX - 20, 0, saltLineX + 10, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+    grad.addColorStop(1, 'rgba(255,200,200,0.6)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(saltLineX - 20, 0, 40, GAME_H);
+
+    // Main salt line
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(saltLineX, 0);
+    ctx.lineTo(saltLineX, GAME_H);
+    ctx.stroke();
+
+    // Salt crystals / particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life * 0.8;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Warning shimmer ahead of salt
+    for (let i = 0; i < 3; i++) {
+      const sx = saltLineX + 15 + i * 12;
+      ctx.strokeStyle = `rgba(255,100,100,${0.3 - i * 0.08})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx, 0);
+      ctx.lineTo(sx, GAME_H);
+      ctx.stroke();
+    }
+  }
+
+  function drawObstacles() {
+    for (const obs of obstacles) {
+      // Rock shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(obs.x + 3, obs.y + 3, obs.r, obs.r * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rock body
+      const rockGrad = ctx.createRadialGradient(obs.x - 3, obs.y - 3, 1, obs.x, obs.y, obs.r);
+      rockGrad.addColorStop(0, '#9e8e80');
+      rockGrad.addColorStop(0.6, '#6e5a4a');
+      rockGrad.addColorStop(1, '#3e2a1a');
+      ctx.fillStyle = rockGrad;
+      ctx.beginPath();
+      ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rock highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(obs.x - obs.r * 0.3, obs.y - obs.r * 0.3, obs.r * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Rock outline
+      ctx.strokeStyle = '#2a1a0a';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  function drawBaby(b) {
+    const bob = Math.sin(frameCount * 0.08 + b.bobOffset) * 2;
+    const x = b.x;
+    const y = b.y + bob;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x, b.y + b.r + 2, b.r * 0.8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = '#e8e8d8';
+    ctx.beginPath();
+    ctx.arc(x, y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Shell
+    ctx.fillStyle = '#c8a87a';
+    ctx.beginPath();
+    ctx.arc(x + 2, y - 1, b.r * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#8a6040';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Eyes
+    if (b.eyeBlink > 0) {
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y - 3);
+      ctx.lineTo(x - 1, y - 3);
+      ctx.moveTo(x + 1, y - 3);
+      ctx.lineTo(x + 4, y - 3);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(x - 3, y - 3, 2.5, 0, Math.PI * 2);
+      ctx.arc(x + 3, y - 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.arc(x - 3, y - 3, 1.2, 0, Math.PI * 2);
+      ctx.arc(x + 3, y - 3, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Antennae
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - b.r + 1);
+    ctx.lineTo(x - 5, y - b.r - 5);
+    ctx.moveTo(x + 3, y - b.r + 1);
+    ctx.lineTo(x + 5, y - b.r - 5);
+    ctx.stroke();
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath();
+    ctx.arc(x - 5, y - b.r - 5, 1.5, 0, Math.PI * 2);
+    ctx.arc(x + 5, y - b.r - 5, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawLettuce() {
+    const x = lettuce.x;
+    const y = lettuce.y;
+    const r = lettuce.r;
+    const pulse = Math.sin(frameCount * 0.06) * 2;
+
+    // Glow
+    ctx.fillStyle = 'rgba(100, 255, 100, 0.15)';
+    ctx.beginPath();
+    ctx.arc(x, y, r + 14 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Leaf base
+    ctx.fillStyle = '#4caf50';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Leaf veins / detail
+    ctx.strokeStyle = '#2e7d32';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Leaf shape overlays
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 + frameCount * 0.01;
+      const lx = x + Math.cos(angle) * r * 0.5;
+      const ly = y + Math.sin(angle) * r * 0.5;
+      ctx.fillStyle = '#66bb6a';
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 6, 4, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Outline
+    ctx.strokeStyle = '#1b5e20';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(x - 5, y - 5, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSnail() {
+    const x = snail.x;
+    const y = snail.y;
+    const r = snail.r;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + r + 4, r * 1.1, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Foot (body)
+    ctx.fillStyle = '#b8d4a0';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 4, r + 3, r - 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell
+    const shellGrad = ctx.createRadialGradient(x - 3, y - 4, 1, x, y, r);
+    shellGrad.addColorStop(0, '#ff9a56');
+    shellGrad.addColorStop(0.5, '#e87a3a');
+    shellGrad.addColorStop(1, '#a04020');
+    ctx.fillStyle = shellGrad;
+    ctx.beginPath();
+    ctx.arc(x + 2, y - 3, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell spiral
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x + 2, y - 3, r - 4, 0.3, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + 2, y - 3, r - 9, 0.5, Math.PI * 1.8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + 2, y - 3, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Shell highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(x - 3, y - 8, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = '#c8e6a0';
+    ctx.beginPath();
+    ctx.ellipse(x - r - 3, y + 1, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x - r - 5, y - 1, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(x - r - 5, y - 1, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antennae
+    ctx.strokeStyle = '#5a8a3a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - r - 3, y - 3);
+    ctx.lineTo(x - r - 9, y - 13);
+    ctx.stroke();
+    ctx.fillStyle = '#5a8a3a';
+    ctx.beginPath();
+    ctx.arc(x - r - 9, y - 13, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - r + 2, y - 3);
+    ctx.lineTo(x - r + 4, y - 11);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x - r + 4, y - 11, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(x - r - 7, y + 2, 2, 0, Math.PI);
+    ctx.stroke();
+  }
+
+  function drawHUD() {
+    if (state === STATE_PLAYING) {
+      hud.textContent = 'ESCAPE!';
+      babiesHud.textContent = '🐣 ' + babiesRescued + ' / ' + babiesToRescue + ' babies';
+    } else {
+      hud.textContent = '';
+      babiesHud.textContent = '';
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, GAME_W, GAME_H);
+
+    drawBackground();
+    drawSaltWall();
+    drawObstacles();
+
+    for (const b of babies) drawBaby(b);
+    drawLettuce();
+    drawSnail();
+    drawHUD();
+  }
+
+  // --- Game loop ---
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  showStart();
+  initGame();
+  loop();
+})();
+</script>
 </body>
 </html>

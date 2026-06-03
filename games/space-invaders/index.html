@@ -119,7 +119,10 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        let score = 0;
+        // localStorage key: 'space-invaders-best'
+let bestScore = parseInt(localStorage.getItem('space-invaders-best') || '0');
+
+let score = 0;
         let lives = 3;
         let gameActive = true;
         let keys = {};
@@ -221,9 +224,13 @@
 
         function endGame(win) {
             gameActive = false;
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('space-invaders-best', bestScore);
+            }
             statusTextEl.innerText = win ? "MISSION ACCOMPLISHED" : "GAME OVER";
             statusTextEl.style.color = win ? "#0f0" : "#f00";
-            finalScoreEl.innerText = `Final Score: ${score}`;
+            finalScoreEl.innerText = `Final Score: ${score} (Best: ${bestScore})`;
             gameOverEl.style.display = 'flex';
         }
 

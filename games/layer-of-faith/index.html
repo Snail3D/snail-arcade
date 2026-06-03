@@ -179,6 +179,9 @@ const PRINT_OBJECTS = ['ROOK', 'CALIPER', 'GEAR', 'HEX NUT', 'BRACKET', 'HOUSING
 const PRINT_COLORS = ['#00f0ff', '#ff00aa', '#aaff00', '#ff8800', '#aa44ff'];
 
 // ─── State ───
+// localStorage key: 'layer-of-faith-best'
+let bestScore = parseInt(localStorage.getItem('layer-of-faith-best') || '0');
+
 let W, H;
 let gameState = 'menu'; // menu, playing, gameover
 let score = 0;
@@ -268,6 +271,11 @@ function endGame() {
   const ov = document.getElementById('overlay');
   ov.querySelector('h1').textContent = 'PRINT FAILED';
   ov.querySelector('.sub').textContent = `SCORE: ${score}`;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('layer-of-faith-best', bestScore);
+  }
+  ov.querySelector('.sub').innerHTML += `<br><span style="color:#ffcc00">Best: ${bestScore}</span>`;
   ov.querySelector('p').textContent = `Prints completed: ${completedPrints}. ${printObj} never made it. Keep building, layer by layer.`;
   ov.querySelector('.btn').textContent = 'TRY AGAIN';
   ov.classList.remove('hidden');

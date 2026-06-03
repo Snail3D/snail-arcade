@@ -1,26 +1,416 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snail Snake</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Snake — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  #wrap {
+    position: relative; width: 100vw; height: 100vh; height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #4a7c44;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    border-radius: 8px;
+  }
+  #hud {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 20px; z-index: 5; pointer-events: none;
+  }
+  .hud-item {
+    background: rgba(0,0,0,0.7); border: 2px solid #00ff88;
+    border-radius: 8px; padding: 6px 14px;
+    color: #fff; font-size: 16px; font-weight: bold;
+  }
+  .hud-item span { color: #ffeb3b; }
+  .overlay {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+  }
+  .overlay.active { display: flex; }
+  .panel {
+    background: rgba(0,0,0,0.85); border: 3px solid #00ff88;
+    border-radius: 16px; padding: 24px 32px; text-align: center;
+    color: #fff; box-shadow: 0 0 30px rgba(0,255,136,0.4);
+  }
+  .panel h1 { font-size: 36px; color: #00ff88; margin-bottom: 8px; }
+  .panel h2 { font-size: 26px; color: #ff5252; margin-bottom: 8px; }
+  .panel p { font-size: 14px; color: #aaa; margin: 6px 0; }
+  .panel .score-big { font-size: 48px; color: #ffeb3b; margin: 8px 0; }
+  .panel .hint { font-size: 12px; color: #666; margin-top: 10px; }
+  .keys { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  .key {
+    display: inline-block; background: #222; border: 1px solid #555;
+    border-radius: 4px; padding: 4px 8px; font-size: 11px; color: #fff;
+  }
+  .flash { position: absolute; inset: 0; background: rgba(255,255,255,0.6); opacity: 0; pointer-events: none; z-index: 8; transition: opacity 0.1s; }
+  .flash.on { opacity: 1; }
+</style>
 </head>
 <body>
-    <div id="game-container">
-        <h1>🐌 Snail Snake</h1>
-        <div id="score">Lettuce Eaten: 0</div>
-        <canvas id="gameCanvas" width="400" height="400"></canvas>
-        <div id="controls">
-            <p>Use Arrow Keys to move!</p>
-            <button id="resetBtn">Start New Garden</button>
-        </div>
-        <div id="game-over" class="hidden">
-            <h2>Game Over!</h2>
-            <p id="final-score"></p>
-            <button onclick="location.reload()">Try Again</button>
-        </div>
+<div id="wrap">
+  <canvas id="game" width="400" height="400"></canvas>
+  <div id="hud">
+    <div class="hud-item">🥬 <span id="score">0</span></div>
+    <div class="hud-item">🏆 <span id="best">0</span></div>
+  </div>
+  <div class="flash" id="flash"></div>
+  <div class="overlay active" id="start">
+    <div class="panel">
+      <h1>🐌 Snail Snake</h1>
+      <p>Eat the lettuce, avoid the salt!</p>
+      <div class="keys">
+        <span class="key">↑↓←→</span>
+        <span class="key">WASD</span>
+        <span class="key">SWIPE</span>
+      </div>
+      <p class="hint">Tap or press SPACE to start</p>
     </div>
-    <script src="script.js"></script>
+  </div>
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2>💀 Game Over</h2>
+      <p>Lettuce eaten</p>
+      <div class="score-big" id="final-score">0</div>
+      <p>Best: <span id="final-best">0</span></p>
+      <p class="hint">Tap or press SPACE to retry</p>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const finalScoreEl = document.getElementById('final-score');
+  const finalBestEl = document.getElementById('final-best');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const flash = document.getElementById('flash');
+
+  const SIZE = 400;
+  const COLS = 20;
+  const CELL = SIZE / COLS;
+  const BASE_SPEED = 140;
+  const MIN_SPEED = 55;
+  const SPEED_STEP = 3;
+
+  let dx = 0, dy = 0, nextDx = 0, nextDy = 0;
+  let snail = [];
+  let items = [];
+  let score = 0;
+  let best = parseInt(localStorage.getItem('snail-snake-best') || '0', 10);
+  let gameSpeed = BASE_SPEED;
+  let state = 'ready';
+  let animTime = 0;
+  let goTimeout = null;
+
+  bestEl.textContent = best;
+
+  function setOverlay(name) {
+    startScreen.classList.toggle('active', name === 'start');
+    gameoverScreen.classList.toggle('active', name === 'gameover');
+  }
+
+  function resize() {
+    const s = Math.min(window.innerWidth, window.innerHeight) - 20;
+    const clamped = Math.max(280, Math.min(s, SIZE));
+    canvas.style.width = clamped + 'px';
+    canvas.style.height = clamped + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function reset() {
+    if (goTimeout) { clearTimeout(goTimeout); goTimeout = null; }
+    dx = 1; dy = 0; nextDx = 1; nextDy = 0;
+    snail = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+    items = [];
+    score = 0;
+    gameSpeed = BASE_SPEED;
+    scoreEl.textContent = '0';
+    state = 'ready';
+    setOverlay('start');
+    spawnLettuce();
+  }
+
+  function spawnLettuce() {
+    let pos, tries = 0;
+    do {
+      pos = { x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*COLS), type: 'lettuce' };
+      tries++;
+    } while (tries < 100 && (snail.some(s => s.x===pos.x && s.y===pos.y) || items.some(i => i.x===pos.x && i.y===pos.y)));
+    items.push(pos);
+    if (Math.random() < 0.4 + score * 0.02) spawnSalt();
+  }
+
+  function spawnSalt() {
+    let pos, tries = 0;
+    do {
+      pos = { x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*COLS), type: 'salt' };
+      tries++;
+      // Don't spawn salt on or adjacent to the snail's head (fairness)
+      const head = snail[0];
+      const tooClose = snail.some(s => Math.abs(s.x - pos.x) <= 1 && Math.abs(s.y - pos.y) <= 1);
+    } while (tries < 100 && (snail.some(s => s.x===pos.x && s.y===pos.y) || items.some(i => i.x===pos.x && i.y===pos.y) || (snail.length > 0 && Math.abs(snail[0].x - pos.x) <= 1 && Math.abs(snail[0].y - pos.y) <= 1)));
+    items.push(pos);
+  }
+
+  function step() {
+    dx = nextDx; dy = nextDy;
+    const head = { x: snail[0].x + dx, y: snail[0].y + dy };
+    if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= COLS) return die();
+    if (snail.some(s => s.x === head.x && s.y === head.y)) return die();
+    const eaten = items.findIndex(i => i.x === head.x && i.y === head.y);
+    if (eaten >= 0) {
+      const item = items[eaten];
+      items.splice(eaten, 1);
+      if (item.type === 'salt') return die();
+      if (item.type === 'lettuce') {
+        score++;
+        scoreEl.textContent = score;
+        gameSpeed = Math.max(MIN_SPEED, gameSpeed - SPEED_STEP);
+        spawnLettuce();
+      }
+    } else {
+      snail.pop();
+    }
+    snail.unshift(head);
+  }
+
+  function die() {
+    if (state !== 'playing') return;
+    state = 'dead';
+    if (score > best) {
+      best = score;
+      localStorage.setItem('snail-snake-best', best);
+      bestEl.textContent = best;
+    }
+    flash.classList.add('on');
+    setTimeout(() => flash.classList.remove('on'), 120);
+    goTimeout = setTimeout(() => {
+      goTimeout = null;
+      if (state !== 'dead') return;
+      finalScoreEl.textContent = score;
+      finalBestEl.textContent = best;
+      setOverlay('gameover');
+    }, 500);
+  }
+
+  function setDir(nx, ny) {
+    if (state !== 'playing') return;
+    if (nx === -dx && ny === -dy) return;
+    if (nx === 0 && ny === 0) return;
+    nextDx = nx; nextDy = ny;
+  }
+
+  function start() {
+    if (state === 'ready') {
+      state = 'playing';
+      setOverlay(null);
+      lastStep = performance.now();
+    } else if (state === 'dead') {
+      reset();
+    }
+  }
+
+  document.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (state === 'ready' || state === 'dead') {
+      if (k === ' ' || k === 'enter') { e.preventDefault(); start(); return; }
+    }
+    if (k === 'arrowup' || k === 'w') { e.preventDefault(); setDir(0, -1); }
+    if (k === 'arrowdown' || k === 's') { e.preventDefault(); setDir(0, 1); }
+    if (k === 'arrowleft' || k === 'a') { e.preventDefault(); setDir(-1, 0); }
+    if (k === 'arrowright' || k === 'd') { e.preventDefault(); setDir(1, 0); }
+  });
+
+  let touchStart = null;
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+    if (state === 'ready' || state === 'dead') start();
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx2 = t.clientX - touchStart.x;
+    const dy2 = t.clientY - touchStart.y;
+    if (Math.abs(dx2) < 20 && Math.abs(dy2) < 20) return;
+    if (Math.abs(dx2) > Math.abs(dy2)) {
+      setDir(dx2 > 0 ? 1 : -1, 0);
+    } else {
+      setDir(0, dy2 > 0 ? 1 : -1);
+    }
+    touchStart = null;
+  }, { passive: false });
+  canvas.addEventListener('mousedown', () => {
+    if (state === 'ready' || state === 'dead') start();
+  });
+  startScreen.addEventListener('click', start);
+  gameoverScreen.addEventListener('click', start);
+
+  function drawSnailPart(x, y, isHead, t) {
+    const px = x * CELL;
+    const py = y * CELL;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(px + CELL/2, py + CELL/2 + 2, CELL/2 - 1, CELL/2 - 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const bodyGrad = ctx.createRadialGradient(px + CELL/2, py + CELL/2, 1, px + CELL/2, py + CELL/2, CELL/2);
+    bodyGrad.addColorStop(0, '#d4e8a0');
+    bodyGrad.addColorStop(1, '#8bc34a');
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.ellipse(px + CELL/2, py + CELL/2 + 2, CELL/2 - 2, CELL/2 - 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (isHead) {
+      const shellGrad = ctx.createRadialGradient(px + CELL/2 - 1, py + CELL/2 - 1, 1, px + CELL/2, py + CELL/2, CELL/2 - 2);
+      shellGrad.addColorStop(0, '#ffb74d');
+      shellGrad.addColorStop(0.5, '#e87a3a');
+      shellGrad.addColorStop(1, '#a04020');
+      ctx.fillStyle = shellGrad;
+      ctx.beginPath();
+      ctx.arc(px + CELL/2, py + CELL/2, CELL/2 - 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.arc(px + CELL/2, py + CELL/2, CELL/2 - 6, 0, Math.PI * 1.5);
+      ctx.stroke();
+      const eyeOffX = dx * 2;
+      const eyeOffY = dy * 2;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(px + CELL/2 - 3 + eyeOffX, py + CELL/2 - 3 + eyeOffY, 1.8, 0, Math.PI * 2);
+      ctx.arc(px + CELL/2 + 3 + eyeOffX, py + CELL/2 - 3 + eyeOffY, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(px + CELL/2 - 3 + eyeOffX, py + CELL/2 - 3 + eyeOffY, 0.9, 0, Math.PI * 2);
+      ctx.arc(px + CELL/2 + 3 + eyeOffX, py + CELL/2 - 3 + eyeOffY, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+      const bob = Math.sin(t / 150) * 1;
+      ctx.fillStyle = '#5a8a3a';
+      ctx.fillRect(px + CELL/2 - 1, py + 2 + bob, 1.5, 4);
+      ctx.fillRect(px + CELL/2 + 1, py + 2 + bob, 1.5, 4);
+    }
+  }
+
+  function drawLettuce(x, y, t) {
+    const px = x * CELL + CELL/2;
+    const py = y * CELL + CELL/2;
+    const pulse = 1 + Math.sin(t / 200 + x + y) * 0.08;
+    ctx.fillStyle = '#2e7d32';
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 + t / 1000;
+      const lx = px + Math.cos(angle) * 5 * pulse;
+      const ly = py + Math.sin(angle) * 5 * pulse;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 4 * pulse, 2.5 * pulse, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#66bb6a';
+    ctx.beginPath();
+    ctx.arc(px, py, 3 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath();
+    ctx.arc(px - 2, py - 2, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSalt(x, y, t) {
+    const px = x * CELL + CELL/2;
+    const py = y * CELL + CELL/2;
+    const glow = 0.3 + Math.sin(t / 150) * 0.2;
+    ctx.fillStyle = `rgba(255, 100, 100, ${glow})`;
+    ctx.beginPath();
+    ctx.arc(px, py, CELL/2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#eceff1';
+    ctx.beginPath();
+    ctx.arc(px, py + 1, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#b0bec5';
+    ctx.fillRect(px - 4, py - 2, 2, 2);
+    ctx.fillRect(px + 1, py - 3, 2, 2);
+    ctx.fillRect(px + 2, py + 1, 2, 2);
+    ctx.fillRect(px - 3, py + 2, 2, 2);
+    ctx.fillStyle = '#ff1744';
+    ctx.font = `${CELL * 0.6}px serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('☠', px, py + CELL * 0.25);
+  }
+
+  function drawGrid(t) {
+    const grad = ctx.createLinearGradient(0, 0, 0, SIZE);
+    grad.addColorStop(0, '#5a8f4a');
+    grad.addColorStop(1, '#3d6b35');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let i = 0; i < COLS; i++) {
+      for (let j = 0; j < COLS; j++) {
+        if ((i + j) % 2 === 0) {
+          ctx.fillRect(i * CELL, j * CELL, CELL, CELL);
+        }
+      }
+    }
+    ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
+    for (let i = 0; i < 30; i++) {
+      const gx = (i * 37 + Math.floor(t / 50) * 3) % SIZE;
+      const gy = (i * 53 + Math.floor(t / 70) * 2) % SIZE;
+      ctx.fillRect(gx, gy, 2, 4);
+    }
+  }
+
+  function drawBorder() {
+    ctx.strokeStyle = '#2d5a27';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, SIZE - 4, SIZE - 4);
+  }
+
+  let lastStep = 0;
+  function loop(t) {
+    animTime = t;
+    if (state === 'playing' && t - lastStep > gameSpeed) {
+      step();
+      lastStep = t;
+    }
+    // Always render (works for ready, playing, and dead states)
+    drawGrid(t);
+    for (const item of items) {
+      if (item.type === 'lettuce') drawLettuce(item.x, item.y, t);
+      else drawSalt(item.x, item.y, t);
+    }
+    for (let i = snail.length - 1; i >= 0; i--) {
+      drawSnailPart(snail[i].x, snail[i].y, i === 0, t);
+    }
+    drawBorder();
+    requestAnimationFrame(loop);
+  }
+
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
 </body>
 </html>

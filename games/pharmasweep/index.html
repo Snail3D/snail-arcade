@@ -1,306 +1,615 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PharmaSweep</title>
-    <style>
-        :root {
-            --bg-color: #f0f4f8;
-            --cell-color: #ffffff;
-            --cell-revealed: #e2e8f0;
-            --text-control: #2d3748;
-            --error-color: #e53e3e;
-            --safe-color: #38a169;
-            --border-color: #cbd5e0;
-            --primary-blue: #3182ce;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            color: var(--text-control);
-            touch-action: manipulation;
-        }
-
-        h1 { margin: 10px 0 5px 0; color: #2c5282; font-size: 1.5rem; }
-        p { margin: 0 0 15px 0; font-size: 0 %= 0.85rem; color: #4a5568; text-align: center; padding: 0 10px; }
-
-        #controls {
-            margin-bottom: 15px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .control-btn {
-            padding: 10px 15px;
-            border-radius: 8px;
-            border: 2px solid var(--border-color);
-            background: white;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 0.9rem;
-        }
-
-        .control-btn.active {
-            background: var(--primary-blue);
-            color: white;
-            border-color: var(--primary-blue);
-        }
-
-        #game-container {
-            background: white;
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            border: 2px solid var(--border-color);
-        }
-
-        #grid {
-            display: grid;
-            grid-template-columns: repeat(10, 32px);
-            grid-template-rows: repeat(10, 30px);
-            gap: 4px;
-        }
-
-        .cell {
-            width: 32px;
-            height: 30px;
-            background-color: var(--cell-color);
-            border: 1px solid var(--border-color);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            cursor: pointer;
-            user-select: none;
-            border-radius: 4px;
-            transition: background 0.1s;
-            font-size: 0.9rem;
-        }
-
-        .cell:active { background-color: #edf2f7; }
-
-        .cell.revealed {
-            background-color: var(--cell-revealed);
-            cursor: default;
-        }
-
-        .cell.error {
-            background-color: var(--error-color);
-            color: white;
-        }
-
-        .cell.flagged {
-            background-color: #fff5f5;
-        }
-
-        .cell.flagged::after {
-            content: '⚠️';
-            font-size: 14px;
-        }
-
-        .cell.revealed-num-1 { color: #3182ce; }
-        .cell.revealed-num-2 { color: #38a169; }
-        .cell.revealed-num-3 { color: #e53e3e; }
-        .cell.revealed-num-4 { color: #805ad5; }
-
-        #status {
-            margin-top: 15px;
-            font-size: 1.1rem;
-            font-weight: bold;
-            height: 1.5rem;
-        }
-
-        #reset-btn {
-            margin-top: 15px;
-            padding: 10px 25px;
-            background-color: var(--primary-blue);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>PharmaSweep — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0b1e3d;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  }
+  #hud {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 22px;
+    font-weight: bold;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    display: flex;
+    gap: 24px;
+    letter-spacing: 1px;
+  }
+  #hud span { opacity: 0.9; }
+  #best-badge {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 13px;
+    text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .overlay.active { display: flex; }
+  .panel {
+    background: rgba(5, 20, 50, 0.92);
+    border: 2px solid #00d4ff;
+    border-radius: 16px;
+    padding: 28px 36px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.25), inset 0 0 20px rgba(0, 212, 255, 0.05);
+    max-width: 90%;
+    pointer-events: auto;
+    width: 320px;
+  }
+  .panel h1 {
+    font-size: 36px;
+    color: #00d4ff;
+    margin-bottom: 8px;
+    text-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+    letter-spacing: 2px;
+  }
+  .panel h2 {
+    font-size: 24px;
+    color: #ff5252;
+    margin-bottom: 10px;
+  }
+  .panel h2.win { color: #69f0ae; }
+  .panel p {
+    font-size: 14px;
+    color: #a0b4c8;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 52px;
+    color: #ffeb3b;
+    margin: 10px 0;
+    text-shadow: 0 0 12px rgba(255, 235, 59, 0.4);
+  }
+  .panel .hint {
+    font-size: 12px;
+    color: #5a6a7a;
+    margin-top: 14px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #0d2240;
+    border: 1px solid #1a3a60;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 11px;
+    color: #7a9ab8;
+  }
+  .pill-icon { font-size: 40px; margin: 8px 0; }
+  #gameover .panel { border-color: #ff5252; box-shadow: 0 0 30px rgba(255, 82, 82, 0.3); }
+  #win-screen .panel { border-color: #69f0ae; box-shadow: 0 0 30px rgba(105, 240, 174, 0.3); }
+  #win-screen h2 { color: #69f0ae; }
+  .flash {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .flash.on { opacity: 1; }
+  #flash-error { background: rgba(255, 50, 50, 0.55); }
+  #flash-win  { background: rgba(105, 240, 174, 0.45); }
+</style>
 </head>
 <body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud">
+    <span>💊 <span id="score-val">0</span></span>
+    <span>⏱ <span id="time-val">0</span></span>
+  </div>
+  <div id="best-badge">🏆 BEST: <span id="best-val">0</span></div>
+  <div class="flash" id="flash-error"></div>
+  <div class="flash" id="flash-win"></div>
 
-    <h1>PharmaSweep 💊</h1>
-    <p>Identify medication errors (⚠️) to clear the ward.</p>
-
-    <div id="controls">
-        <button id="mode-reveal" class="control-btn active" onclick="setMode('reveal')">Reveal 💊</button>
-        <button id="mode-flag" class="control-wrap control-btn" onclick="setMode('flag')">Flag ⚠️</button>
+  <!-- Start Screen -->
+  <div class="overlay active" id="start">
+    <div class="panel">
+      <div class="pill-icon">💊</div>
+      <h1>PHARMASWEEP</h1>
+      <p>You're the ward pharmacist on night shift.</p>
+      <p>Reveal cells to find all <strong style="color:#ff5252">⚠️ Critical Errors</strong> hidden in the medication chart.</p>
+      <p>One wrong click triggers a <strong style="color:#ff5252">Critical Incident</strong>.</p>
+      <div class="keys">
+        <span class="key">TAP</span>
+        <span class="key">CLICK</span>
+        <span class="key">SPACE</span>
+      </div>
+      <p class="hint">Hold to flag a cell as dangerous</p>
     </div>
+  </div>
 
-    <div id="game-container">
-        <div id="grid"></div>
+  <!-- Game Over Screen -->
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2>💀 CRITICAL INCIDENT</h2>
+      <p>You clicked a hidden error!</p>
+      <p>Time</p>
+      <div class="score-big" id="final-time">0s</div>
+      <p>Cells cleared: <span id="final-cleared">0</span></p>
+      <p class="hint">Tap or press SPACE to retry</p>
     </div>
+  </div>
 
-    <div id="status"></div>
-    <button id="reset-btn" onclick="initGame()">New Shift (Reset)</button>
+  <!-- Win Screen -->
+  <div class="overlay" id="win-screen">
+    <div class="panel">
+      <h2 class="win">✅ SHIFT COMPLETE</h2>
+      <p>All medications verified safe!</p>
+      <p>Your time</p>
+      <div class="score-big" id="win-time">0s</div>
+      <p id="new-record" style="color:#ffeb3b;display:none">🎉 New Record!</p>
+      <p class="hint">Tap or press SPACE to play again</p>
+    </div>
+  </div>
+</div>
 
-    <script>
-        const gridSize = 10;
-        const errorCount = 15;
-        let grid = [];
-        let revealedCount = 0;
-        let gameOver = false;
-        let currentMode = 'reveal';
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score-val');
+  const timeEl = document.getElementById('time-val');
+  const bestBadge = document.getElementById('best-badge');
+  const bestVal = document.getElementById('best-val');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const winScreen = document.getElementById('win-screen');
+  const finalTime = document.getElementById('final-time');
+  const finalCleared = document.getElementById('final-cleared');
+  const winTime = document.getElementById('win-time');
+  const newRecord = document.getElementById('new-record');
+  const flashError = document.getElementById('flash-error');
+  const flashWin = document.getElementById('flash-win');
+  const wrap = document.getElementById('wrap');
 
-        const gridElement = document.getElementById('grid');
-        const statusElement = document.getElementById('status');
-        const modeRevealBtn = document.getElementById('mode-reveal');
-        const modeFlagBtn = document.getElementById('mode-flag');
+  // ── Grid constants ──────────────────────────────────────
+  const COLS = 10;
+  const ROWS = 10;
+  const ERROR_COUNT = 15;
 
-        function setMode(mode) {
-            currentMode = mode;
-            if (mode === 'reveal') {
-                modeRevealBtn.classList.add('active');
-                modeFlagBtn.classList.remove('active');
-            } else {
-                modeFlagBtn.classList.add('active');
-                modeRevealBtn.classList.remove('active');
+  // ── Internal game resolution ────────────────────────────
+  const GAME_W = 400;
+  const GAME_H = 560;
+
+  // ── Cell dimensions (computed after padding) ───────────
+  let PAD = 20;
+  let CELL_W, CELL_H, GRID_W, GRID_H, GRID_X, GRID_Y;
+
+  function recalc() {
+    PAD = Math.max(20, Math.floor(GAME_W * 0.045));
+    CELL_W = Math.floor((GAME_W - PAD * 2) / COLS);
+    CELL_H = Math.floor((GAME_H - PAD - 60) / ROWS); // 60 for HUD gap
+    GRID_W = CELL_W * COLS;
+    GRID_H = CELL_H * ROWS;
+    GRID_X = (GAME_W - GRID_W) / 2;
+    GRID_Y = PAD + 50;
+  }
+  recalc();
+
+  // ── Responsive canvas sizing ────────────────────────────
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ── Game state ───────────────────────────────────────────
+  const STATE_READY  = 0;
+  const STATE_PLAY   = 1;
+  const STATE_DEAD   = 2;
+  const STATE_WIN    = 3;
+  let state = STATE_READY;
+
+  // ── Grid data ────────────────────────────────────────────
+  let grid = [];       // grid[row][col] = cell object
+  let revealedCount = 0;
+  let flagCount = 0;
+  let startTime = 0;
+  let elapsed = 0;
+  let best = parseInt(localStorage.getItem('pharmasweep-best') || '0', 10);
+  if (best > 0) {
+    bestVal.textContent = best + 's';
+    bestBadge.style.display = 'block';
+  }
+
+  // ── Touch / hold state ───────────────────────────────────
+  let touchHoldTimer = null;
+  let touchHoldCell = null;
+  let isHolding = false;
+  const HOLD_MS = 500; // ms to trigger flag
+
+  // ── Cell object ──────────────────────────────────────────
+  function makeCell(r, c) {
+    return { r, c, isError: false, isRevealed: false, isFlagged: false, neighbors: 0 };
+  }
+
+  // ── Init / reset ─────────────────────────────────────────
+  function initGame() {
+    grid = [];
+    revealedCount = 0;
+    flagCount = 0;
+    elapsed = 0;
+    startTime = 0;
+    touchHoldCell = null;
+    isHolding = false;
+    clearTimeout(touchHoldTimer);
+    scoreEl.textContent = '0';
+    timeEl.textContent = '0';
+    recalc();
+
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        grid[r][c] = makeCell(r, c);
+      }
+    }
+
+    // Place errors
+    let placed = 0;
+    while (placed < ERROR_COUNT) {
+      const r = Math.floor(Math.random() * ROWS);
+      const c = Math.floor(Math.random() * COLS);
+      if (!grid[r][c].isError) {
+        grid[r][c].isError = true;
+        placed++;
+      }
+    }
+
+    // Count neighbors
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!grid[r][c].isError) {
+          let n = 0;
+          for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+              const nr = r + dr, nc = c + dc;
+              if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc].isError) n++;
             }
+          }
+          grid[r][c].neighbors = n;
         }
+      }
+    }
+  }
 
-        function initGame() {
-            grid = [];
-            revealedCount = 0;
-            gameOver = false;
-            statusElement.innerText = '';
-            gridElement.innerHTML = '';
-            setMode('reveal');
-            
-            for (let r = 0; r < gridSize; r++) {
-                grid[r] = [];
-                for (let c = 0; c < gridSize; c++) {
-                    grid[r][c] = {
-                        r, c,
-                        isError: false,
-                        isRevealed: false,
-                        isFlagged: false,
-                        errorNeighbors: 0
-                    };
-                }
-            }
+  // ── Reveal cell ─────────────────────────────────────────
+  function revealCell(r, c) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    const cell = grid[r][c];
+    if (cell.isRevealed || cell.isFlagged) return;
 
-            let placed = 0;
-            while (placed < errorCount) {
-                let r = Math.floor(Math.random() * gridSize);
-                let c = Math.floor(Math.random() * gridSize);
-                if (!grid[r][c].isError) {
-                    grid[r][c].isError = true;
-                    placed++;
-                }
-            }
+    cell.isRevealed = true;
+    revealedCount++;
+    scoreEl.textContent = revealedCount;
 
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    if (!grid[r][c].isError) {
-                        let count = 0;
-                        for (let dr = -1; dr <= 1; dr++) {
-                            for (let dc = -1; dc <= 1; dc++) {
-                                let nr = r + dr;
-                                let nc = c + dc;
-                                if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
-                                    if (grid[nr][nc].isError) count++;
-                                }
-                            }
-                        }
-                        grid[r][c].errorNeighbors = count;
-                    }
-                }
-            }
+    if (cell.isError) {
+      // Game over
+      triggerFlash(flashError);
+      state = STATE_DEAD;
+      elapsed = Math.floor((Date.now() - startTime) / 1000);
+      finalTime.textContent = elapsed + 's';
+      finalCleared.textContent = revealedCount;
+      setTimeout(() => { gameoverScreen.classList.add('active'); }, 300);
+      return;
+    }
 
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    const cellDiv = document.createElement('div');
-                    cellDiv.classList.add('cell');
-                    cellDiv.id = `cell-${r}-${c}`;
-                    cellDiv.dataset.r = r;
-                    cellDiv.dataset.c = c;
-                    
-                    cellDiv.addEventListener('click', () => handleInteraction(r, c));
-                    
-                    gridElement.appendChild(cellDiv);
-                    grid[r][c].element = cellDiv;
-                }
-            }
+    if (cell.neighbors === 0) {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          revealCell(r + dr, c + dc);
         }
+      }
+    }
 
-        function handleInteraction(r, c) {
-            if (gameOver || grid[r][c].isRevealed) return;
+    if (revealedCount === ROWS * COLS - ERROR_COUNT) {
+      triggerFlash(flashWin);
+      state = STATE_WIN;
+      elapsed = Math.floor((Date.now() - startTime) / 1000);
+      winTime.textContent = elapsed + 's';
 
-            if (currentMode === 'flag') {
-                toggleFlag(r, c);
-            } else {
-                revealCell(r, c);
-            }
-        }
+      const isNew = elapsed < best || best === 0;
+      if (isNew && elapsed > 0) {
+        best = elapsed;
+        localStorage.setItem('pharmasweep-best', best);
+        bestVal.textContent = best + 's';
+        bestBadge.style.display = 'block';
+        newRecord.style.display = 'block';
+      } else {
+        newRecord.style.display = 'none';
+      }
+      setTimeout(() => { winScreen.classList.add('active'); }, 300);
+    }
+  }
 
-        function toggleFlag(r, c) {
-            if (gameOver || grid[r][c].isRevealed) return;
-            grid[r][c].isFlagged = !grid[r][c].isFlagged;
-            grid[r][c].element.classList.toggle('flagged');
-        }
+  // ── Flag toggle ─────────────────────────────────────────
+  function toggleFlag(r, c) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return;
+    const cell = grid[r][c];
+    if (cell.isRevealed) return;
+    cell.isFlagged = !cell.isFlagged;
+    flagCount += cell.isFlagged ? 1 : -1;
+  }
 
-        function revealCell(r, c) {
-            if (gameOver || grid[r][c].isRevealed || grid[r][c].isFlagged) return;
+  // ── Flash effect ─────────────────────────────────────────
+  function triggerFlash(el) {
+    el.classList.add('on');
+    setTimeout(() => el.classList.remove('on'), 200);
+  }
 
-            const cell = grid[r][c];
-            cell.isRevealed = true;
-            cell.element.classList.add('revealed');
-            revealedCount++;
+  // ── Input helpers ────────────────────────────────────────
+  function screenToGrid(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = GAME_W / rect.width;
+    const scaleY = GAME_H / rect.height;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+    const c = Math.floor((x - GRID_X) / CELL_W);
+    const r = Math.floor((y - GRID_Y) / CELL_H);
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS) return { r, c };
+    return null;
+  }
 
-            if (cell.isError) {
-                endGame(false);
-                return;
-            }
+  function handlePress(clientX, clientY) {
+    if (state === STATE_READY) {
+      startScreen.classList.remove('active');
+      state = STATE_PLAY;
+      startTime = Date.now();
+      return;
+    }
+    if (state === STATE_DEAD || state === STATE_WIN) {
+      gameoverScreen.classList.remove('active');
+      winScreen.classList.remove('active');
+      initGame();
+      state = STATE_PLAY;
+      startTime = Date.now();
+      return;
+    }
+    const cell = screenToGrid(clientX, clientY);
+    if (!cell) return;
+    revealCell(cell.r, cell.c);
+  }
 
-            if (cell.errorNeighbors > 0) {
-                cell.element.innerText = cell.errorNeighbors;
-                cell.element.classList.add(`revealed-num-${cell.errorNeighbors}`);
-            } else {
-                for (let dr = -1; dr <= 1; dr++) {
-                    for (let dc = -1; dc <= 1; dc++) {
-                        let nr = r + dr;
-                        let nc = c + dc;
-                        if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
-                            revealCell(nr, nc);
-                        }
-                    }
-                }
-            }
+  function startHold(clientX, clientY) {
+    clearTimeout(touchHoldTimer);
+    const cell = screenToGrid(clientX, clientY);
+    if (!cell) return;
+    touchHoldCell = cell;
+    isHolding = false;
+    touchHoldTimer = setTimeout(() => {
+      if (state === STATE_PLAY && touchHoldCell) {
+        toggleFlag(touchHoldCell.r, touchHoldCell.c);
+        isHolding = true;
+      }
+    }, HOLD_MS);
+  }
 
-            if (revealedCount === (gridSize * gridSize) - errorCount) {
-                endGame(true);
-            }
-        }
+  function cancelHold() {
+    clearTimeout(touchHoldTimer);
+    touchHoldCell = null;
+    isHolding = false;
+  }
 
-        function endGame(win) {
-            gameOver = true;
-            statusElement.innerText = win ? "✅ Shift Complete! All clear!" : "❌ Error Found! Critical Incident!";
-            statusElement.style.color = win ? "var(--safe-color)" : "var(--error-color)";
+  // ── Mouse ────────────────────────────────────────────────
+  canvas.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    handlePress(e.clientX, e.clientY);
+  });
 
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    if (grid[r][c].isError) {
-                        grid[r][c].element.classList.add('error');
-                        grid[r][c].element.innerText = '⚠️';
-                    }
-                }
-            }
-        }
+  // ── Touch ────────────────────────────────────────────────
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    startHold(t.clientX, t.clientY);
+  }, { passive: false });
 
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (!isHolding) {
+      const t = e.changedTouches[0];
+      handlePress(t.clientX, t.clientY);
+    }
+    cancelHold();
+  }, { passive: false });
+
+  canvas.addEventListener('touchcancel', e => { e.preventDefault(); cancelHold(); }, { passive: false });
+
+  // ── Keyboard ─────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (state === STATE_READY) {
+        startScreen.classList.remove('active');
+        state = STATE_PLAY;
+        startTime = Date.now();
+      } else if (state === STATE_DEAD || state === STATE_WIN) {
+        gameoverScreen.classList.remove('active');
+        winScreen.classList.remove('active');
         initGame();
-    </script>
+        state = STATE_PLAY;
+        startTime = Date.now();
+      }
+    }
+  });
+
+  // ── Drawing ─────────────────────────────────────────────
+  function drawBg() {
+    ctx.fillStyle = '#0b1e3d';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+  }
+
+  function drawGrid() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x = GRID_X + c * CELL_W;
+        const y = GRID_Y + r * CELL_H;
+        const cell = grid[r][c];
+
+        // Cell background
+        if (cell.isRevealed) {
+          ctx.fillStyle = '#e8edf3';
+        } else if (cell.isFlagged) {
+          ctx.fillStyle = '#fff3cd';
+        } else {
+          // Gradient for unrevealed
+          const grad = ctx.createLinearGradient(x, y, x, y + CELL_H);
+          grad.addColorStop(0, '#1e3a6e');
+          grad.addColorStop(1, '#152a52');
+          ctx.fillStyle = grad;
+        }
+        ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+
+        // Border
+        ctx.strokeStyle = '#0a1830';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+
+        if (!cell.isRevealed) {
+          // Subtle shine on unrevealed
+          ctx.fillStyle = 'rgba(255,255,255,0.04)';
+          ctx.fillRect(x + 2, y + 2, CELL_W - 4, 3);
+        }
+
+        if (cell.isRevealed && !cell.isError) {
+          if (cell.neighbors > 0) {
+            ctx.fillStyle = numColor(cell.neighbors);
+            ctx.font = `bold ${Math.floor(CELL_W * 0.55)}px 'Courier New', monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(cell.neighbors, x + CELL_W / 2, y + CELL_H / 2 + 1);
+          }
+        }
+
+        if (cell.isFlagged && !cell.isRevealed) {
+          // Draw flag icon
+          ctx.fillStyle = '#ff5252';
+          ctx.font = `${Math.floor(CELL_W * 0.5)}px serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚠', x + CELL_W / 2, y + CELL_H / 2 + 1);
+        }
+
+        if (cell.isRevealed && cell.isError) {
+          // Error cell
+          const grad = ctx.createLinearGradient(x, y, x + CELL_W, y + CELL_H);
+          grad.addColorStop(0, '#ff5252');
+          grad.addColorStop(1, '#c62828');
+          ctx.fillStyle = grad;
+          ctx.fillRect(x + 1, y + 1, CELL_W - 2, CELL_H - 2);
+
+          ctx.fillStyle = '#fff';
+          ctx.font = `${Math.floor(CELL_W * 0.55)}px serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚠', x + CELL_W / 2, y + CELL_H / 2 + 1);
+        }
+      }
+    }
+  }
+
+  function numColor(n) {
+    switch (n) {
+      case 1: return '#1565c0';
+      case 2: return '#2e7d32';
+      case 3: return '#c62828';
+      case 4: return '#6a1b9a';
+      case 5: return '#bf360c';
+      case 6: return '#00838f';
+      case 7: return '#212121';
+      case 8: return '#37474f';
+      default: return '#555';
+    }
+  }
+
+  function drawTitle() {
+    ctx.fillStyle = 'rgba(0, 212, 255, 0.15)';
+    ctx.font = `bold 13px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('PHARMASWEEP  💊', GAME_W / 2, 10);
+  }
+
+  // ── Game loop ────────────────────────────────────────────
+  let lastTime = 0;
+  function loop(ts) {
+    const dt = ts - lastTime;
+    lastTime = ts;
+
+    // Update timer
+    if (state === STATE_PLAY) {
+      const secs = Math.floor((Date.now() - startTime) / 1000);
+      timeEl.textContent = secs + 's';
+    }
+
+    drawBg();
+    drawTitle();
+    drawGrid();
+
+    requestAnimationFrame(loop);
+  }
+
+  // ── Boot ─────────────────────────────────────────────────
+  initGame();
+  requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
+})();
+</script>
 </body>
 </html>

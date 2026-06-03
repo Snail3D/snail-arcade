@@ -84,6 +84,7 @@
     <div id="score">YOU: 0 | AI: 0</div>
     <canvas id="game"></canvas>
     <div id="startMsg">TAP TO START</div>
+    <div id="bestScore"></div>
     <div id="touchHint">↑↓ SWIPE: LEFT | ←→ SWIPE: BOTTOM</div>
     <div id="instructions">DESKTOP: Arrow keys | MOBILE: Swipe on edges</div>
   </div>
@@ -111,6 +112,9 @@
       ball: '#fff',
       glow: '#0ff'
     };
+
+    // localStorage key: 'neon-pong-best'
+    let bestScore = parseInt(localStorage.getItem('neon-pong-best') || '0');
 
     let gameState = 'waiting';
     let playerScore = 0;
@@ -330,6 +334,10 @@
 
       if (scored) {
         scoreDisplay.textContent = `YOU: ${playerScore} | AI: ${aiScore}`;
+        if (playerScore > bestScore) {
+            bestScore = playerScore;
+            localStorage.setItem('neon-pong-best', bestScore);
+        }
         spawnParticles(W/2, H/2, scorer === 'player' ? COLORS.player : COLORS.ai, 30);
         setTimeout(() => resetBall(scorer === 'player' ? 1 : -1), 500);
       }

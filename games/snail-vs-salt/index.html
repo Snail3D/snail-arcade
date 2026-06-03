@@ -120,6 +120,9 @@ const CONFIG = {
   difficultyInterval: 25000,
 };
 
+// localStorage key: 'snail-vs-salt-best'
+let bestScore = parseInt(localStorage.getItem('snail-vs-salt-best') || '0');
+
 // ─── CANVAS SETUP ────────────────────────────────────────
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -472,6 +475,10 @@ function activatePowerup(type) {
 
 function die(reason) {
   gameRunning = false;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('snail-vs-salt-best', bestScore);
+  }
   sfxDie();
   emitParticles(snail.x, snail.y, 40, '#e63946', 5);
   emitParticles(snail.x, snail.y, 20, '#ffd166', 3);
@@ -480,6 +487,7 @@ function die(reason) {
   endSub.textContent = reason === 'SALTED'
     ? 'The crust claims another.'
     : 'A pellet got you. The salt never stops.';
+  endSub.innerHTML += `<br><span style="color:#ffcc00">Best: ${bestScore}</span>`;
   overlay.classList.add('show');
 }
 

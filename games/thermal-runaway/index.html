@@ -125,6 +125,7 @@ let money = 50;
 let lives = 10;
 let layer = 1;
 let score = 0;
+let best = parseInt(localStorage.getItem('thermal-runaway-best') || '0', 10);
 let enemies = [];
 let towers = [];
 let projectiles = [];
@@ -541,6 +542,9 @@ function drawVictory() {
   ctx.fillStyle = '#ffaa00';
   ctx.font = '16px Courier New';
   ctx.fillText(`Final Score: ${score}`, W/2, H/2 + 10);
+  if (score > best) { best = score; localStorage.setItem('thermal-runaway-best', best); }
+  ctx.fillStyle = '#ffeb3b';
+  ctx.fillText(`Best: ${best}`, W/2, H/2 + 35);
   ctx.fillStyle = '#888';
   ctx.font = '12px Courier New';
   ctx.fillText('Reload to play again', W/2, H/2 + 36);

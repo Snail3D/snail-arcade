@@ -104,7 +104,7 @@
         .digit-6 { color: teal; }
         .digit-7 { color: black; }
         .digit-8 { color: gray; }
-    </style>
+        #best-time { margin-top: 8px; text-align: center; font-size: 12px; color: #006060; }
 </head>
 <body>
     <div id="game-container">
@@ -117,6 +117,7 @@
             <button id="mode-btn">MODE: REVEAL</button>
         </div>
         <div id="grid"></div>
+        <div id="best-time">Best Time: —</div>
     </div>
 
     <script>
@@ -133,6 +134,14 @@
         let seconds = 0;
         let gameActive = true;
         let isFlagMode = false;
+
+        const BEST_TIME_KEY = 'minesweeper-nt-best-time';
+        let bestTime = parseInt(localStorage.getItem(BEST_TIME_KEY) || '999');
+        if (bestTime === 999) bestTime = 0;
+        (function() {
+            const best = parseInt(localStorage.getItem(BEST_TIME_KEY) || '0');
+            document.getElementById('best-time').textContent = best > 0 ? 'Best Time: ' + best + 's' : 'Best Time: —';
+        })();
 
         const gridElement = document.getElementById('grid');
         const timerElement = document.getElementById('timer');
@@ -176,7 +185,12 @@
                     cell.dataset.row = r;
                     cell.dataset.col = c;
                     cell.addEventListener('click', () => handleCellClick(r, c));
+                    cell.addEventListener('touchstart', (e) => { e.preventDefault(); handleCellClick(r, c); }, { passive: false });
                     cell.addEventListener('contextmenu', (e) => {
+                        e.preventDefault();
+                        toggleFlag(r, c);
+                    });
+                    cell.addEventListener('touchend', (e) => {
                         e.preventDefault();
                         toggleFlag(r, c);
                     });
@@ -293,7 +307,14 @@
             gameActive = false;
             clearInterval(timerInterval);
             resetBtn.textContent = won ? "😎" : "😵";
-            
+
+            // Save best time
+            if (won && seconds < bestTime) {
+                bestTime = seconds;
+                localStorage.setItem(BEST_TIME_KEY, bestTime.toString());
+                document.getElementById('best-time').textContent = 'Best Time: ' + bestTime + 's';
+            }
+
             // Show all mines
             minesSet.forEach(key => {
                 const [r, c] = key.split(',').map(Number);
