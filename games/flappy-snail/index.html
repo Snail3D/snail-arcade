@@ -125,7 +125,7 @@
     color: #fff;
   }
   #start, #gameover { display: none; }
-  .show #start, .show #gameover { display: flex; }
+  #start.active, #gameover.active { display: flex; }
   .flash {
     position: absolute;
     inset: 0;
@@ -139,7 +139,7 @@
 </style>
 </head>
 <body>
-<div id="wrap" class="show">
+<div id="wrap">
   <canvas id="game" width="400" height="600"></canvas>
   <div id="hud"></div>
   <div id="best">BEST: <span id="best-val">0</span></div>
@@ -224,9 +224,16 @@
   const pipes = [];
   const PIPE_W = 60;
   const PIPE_GAP = 150;
-  const PIPE_SPEED = 2.4;
+  const BASE_PIPE_SPEED = 3.2;        // faster base speed
+  const MAX_PIPE_SPEED = 5.5;         // cap
+  const SPEED_RAMP_PER_SCORE = 0.08;  // how much each point speeds things up
   const PIPE_SPACING = 220; // distance between pipe pairs
   let pipeTimer = 0;
+
+  // Current effective pipe speed (scales with score)
+  function currentSpeed() {
+    return Math.min(MAX_PIPE_SPEED, BASE_PIPE_SPEED + score * SPEED_RAMP_PER_SCORE);
+  }
 
   // Scroll offset for parallax ground
   let groundScroll = 0;
@@ -529,12 +536,19 @@
     }
   }
 
+  // --- Overlay visibility (single source of truth) ---
+  // Only one overlay visible at a time. Pass null to hide all.
+  function setOverlay(name) {
+    startScreen.classList.toggle('active', name === 'start');
+    gameoverScreen.classList.toggle('active', name === 'gameover');
+  }
+
   // --- Logic ---
 
   function flap() {
     if (state === STATE_READY) {
       state = STATE_PLAYING;
-      wrap.classList.remove('show');
+      setOverlay(null);
       snail.vy = FLAP;
       snail.flapFrame = 8;
       return;
@@ -565,8 +579,14 @@
   }
 
   let deathTime = 0;
+  let gameoverTimeout = null;
 
   function reset() {
+    // Cancel any pending gameover popup
+    if (gameoverTimeout) {
+      clearTimeout(gameoverTimeout);
+      gameoverTimeout = null;
+    }
     snail.x = 100;
     snail.y = GAME_H / 2;
     snail.vy = 0;
@@ -579,9 +599,7 @@
     state = STATE_READY;
     hud.textContent = '';
     bestEl.parentElement.style.display = best > 0 ? 'block' : 'none';
-    wrap.classList.add('show');
-    gameoverScreen.style.display = 'none';
-    startScreen.style.display = 'flex';
+    setOverlay('start');
   }
 
   function die() {
@@ -612,8 +630,11 @@
       });
     }
 
-    // Show game over after a moment
-    setTimeout(() => {
+    // Show game over after a moment (cancellable if player restarts)
+    gameoverTimeout = setTimeout(() => {
+      gameoverTimeout = null;
+      // Double-check we're still dead (player didn't already restart)
+      if (state !== STATE_DEAD) return;
       finalScore.textContent = score;
       finalBest.textContent = best;
       if (score === best && score > 0) {
@@ -621,8 +642,7 @@
       } else {
         bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
       }
-      gameoverScreen.style.display = 'flex';
-      startScreen.style.display = 'none';
+      setOverlay('gameover');
     }, 600);
   }
 
@@ -644,15 +664,16 @@
     snail.rotation += (targetRot - snail.rotation) * 0.15;
 
     // Move pipes
+    const spd = currentSpeed();
     for (let i = pipes.length - 1; i >= 0; i--) {
-      pipes[i].x -= PIPE_SPEED;
+      pipes[i].x -= spd;
       if (pipes[i].x + PIPE_W < 0) {
         pipes.splice(i, 1);
       }
     }
 
     // Spawn pipes
-    pipeTimer += PIPE_SPEED;
+    pipeTimer += spd;
     if (pipeTimer >= PIPE_SPACING) {
       pipeTimer = 0;
       spawnPipe();
@@ -668,7 +689,7 @@
     }
 
     // Ground scroll
-    groundScroll += PIPE_SPEED;
+    groundScroll += spd;
 
     // Collision: ground
     if (snail.y + snail.r >= GROUND_Y) {
@@ -771,6 +792,7 @@
   gameoverScreen.addEventListener('touchstart', onInput, { passive: false });
 
   // Start
+  setOverlay('start');
   requestAnimationFrame(loop);
 })();
 </script>
