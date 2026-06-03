@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Flappy Snail — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a0a;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: linear-gradient(180deg, #87ceeb 0%, #98d8e8 60%, #b4e4f5 100%);
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  }
+  #hud {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 48px;
+    font-weight: bold;
+    text-shadow: 3px 3px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    letter-spacing: 2px;
+  }
+  #best {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffeb3b;
+    font-size: 18px;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .panel {
+    background: rgba(0,0,0,0.75);
+    border: 3px solid #00ff88;
+    border-radius: 16px;
+    padding: 28px 36px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 0 30px rgba(0,255,136,0.4);
+    max-width: 90%;
+    pointer-events: auto;
+  }
+  .panel h1 {
+    font-size: 42px;
+    color: #00ff88;
+    margin-bottom: 12px;
+    text-shadow: 0 0 20px rgba(0,255,136,0.5);
+  }
+  .panel h2 {
+    font-size: 28px;
+    color: #ff5252;
+    margin-bottom: 12px;
+  }
+  .panel p {
+    font-size: 16px;
+    color: #ccc;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .panel .score-big {
+    font-size: 56px;
+    color: #ffeb3b;
+    margin: 12px 0;
+    text-shadow: 0 0 15px rgba(255,235,59,0.5);
+  }
+  .panel .hint {
+    font-size: 14px;
+    color: #888;
+    margin-top: 14px;
+  }
+  .panel .keys {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .key {
+    display: inline-block;
+    background: #222;
+    border: 2px solid #555;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #fff;
+  }
+  #start, #gameover { display: none; }
+  .show #start, .show #gameover { display: flex; }
+  .flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.7);
+    z-index: 8;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .flash.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="wrap" class="show">
+  <canvas id="game" width="400" height="600"></canvas>
+  <div id="hud"></div>
+  <div id="best">BEST: <span id="best-val">0</span></div>
+  <div class="flash" id="flash"></div>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <h1>🐌 Flappy Snail</h1>
+      <p>Help Sheldon the Snail fly through the garden!</p>
+      <p>Tap, click, or press <strong>SPACE</strong> to flap.</p>
+      <div class="keys">
+        <span class="key">SPACE</span>
+        <span class="key">CLICK</span>
+        <span class="key">TAP</span>
+      </div>
+      <p class="hint">Avoid the pipes. Don't touch the ground.</p>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameover">
+    <div class="panel">
+      <h2>💀 Game Over</h2>
+      <p>Score</p>
+      <div class="score-big" id="final-score">0</div>
+      <p id="best-line">Best: <span id="final-best">0</span></p>
+      <p class="hint">Press SPACE or tap to retry</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const hud = document.getElementById('hud');
+  const bestEl = document.getElementById('best-val');
+  const finalScore = document.getElementById('final-score');
+  const finalBest = document.getElementById('final-best');
+  const bestLine = document.getElementById('best-line');
+  const startScreen = document.getElementById('start');
+  const gameoverScreen = document.getElementById('gameover');
+  const wrap = document.getElementById('wrap');
+  const flash = document.getElementById('flash');
+
+  // Sizing: maintain 2:3 aspect ratio, fit viewport
+  const GAME_W = 400;
+  const GAME_H = 600;
+  function resize() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H);
+    const w = Math.floor(GAME_W * scale);
+    const h = Math.floor(GAME_H * scale);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    // Internal pixel buffer stays at GAME_W x GAME_H (crisp pixel-art look)
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Game state
+  const STATE_READY = 0;
+  const STATE_PLAYING = 1;
+  const STATE_DEAD = 2;
+  let state = STATE_READY;
+
+  // Snail (bird) physics
+  const snail = {
+    x: 100,
+    y: GAME_H / 2,
+    r: 16,
+    vy: 0,
+    rotation: 0,
+    flapFrame: 0,
+  };
+  const GRAVITY = 0.45;
+  const FLAP = -7.5;
+  const MAX_FALL = 10;
+  const GROUND_Y = GAME_H - 60;
+
+  // Pipes
+  const pipes = [];
+  const PIPE_W = 60;
+  const PIPE_GAP = 150;
+  const PIPE_SPEED = 2.4;
+  const PIPE_SPACING = 220; // distance between pipe pairs
+  let pipeTimer = 0;
+
+  // Scroll offset for parallax ground
+  let groundScroll = 0;
+
+  // Score
+  let score = 0;
+  let best = parseInt(localStorage.getItem('flappy-snail-best') || '0', 10);
+  bestEl.textContent = best;
+  if (best > 0) bestEl.parentElement.style.display = 'block';
+
+  // Particles
+  const particles = [];
+
+  // Background clouds
+  const clouds = [];
+  for (let i = 0; i < 5; i++) {
+    clouds.push({
+      x: Math.random() * GAME_W,
+      y: 50 + Math.random() * 150,
+      w: 60 + Math.random() * 80,
+      speed: 0.3 + Math.random() * 0.4,
+    });
+  }
+
+  // Bushes in background
+  const bushes = [];
+  for (let i = 0; i < 8; i++) {
+    bushes.push({
+      x: i * 80,
+      y: GROUND_Y - 10,
+      w: 40 + Math.random() * 30,
+    });
+  }
+
+  // --- Drawing helpers ---
+
+  function drawBackground() {
+    // Sky gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+    grad.addColorStop(0, '#87ceeb');
+    grad.addColorStop(0.6, '#b4e4f5');
+    grad.addColorStop(1, '#d4f0e8');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Sun
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath();
+    ctx.arc(GAME_W - 70, 70, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff5b3';
+    ctx.beginPath();
+    ctx.arc(GAME_W - 70, 70, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clouds
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (const c of clouds) {
+      const x = ((c.x - groundScroll * c.speed) % (GAME_W + 100)) - 50;
+      drawCloud(x, c.y, c.w);
+    }
+  }
+
+  function drawCloud(x, y, w) {
+    const h = w * 0.5;
+    ctx.beginPath();
+    ctx.arc(x, y, h * 0.6, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.3, y - h * 0.2, h * 0.7, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.6, y, h * 0.6, 0, Math.PI * 2);
+    ctx.arc(x + w * 0.3, y + h * 0.1, h * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawPipes() {
+    for (const p of pipes) {
+      // Top pipe
+      const topH = p.gapY;
+      drawPipe(p.x, 0, PIPE_W, topH, true);
+      // Bottom pipe
+      const botY = p.gapY + PIPE_GAP;
+      const botH = GROUND_Y - botY;
+      drawPipe(p.x, botY, PIPE_W, botH, false);
+    }
+  }
+
+  function drawPipe(x, y, w, h, isTop) {
+    // Main pipe body
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, '#4a8f29');
+    grad.addColorStop(0.3, '#7bc95c');
+    grad.addColorStop(0.7, '#7bc95c');
+    grad.addColorStop(1, '#3a6f1c');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, w, h);
+
+    // Pipe edge shading
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(x + w - 6, y, 6, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x + 4, y, 4, h);
+
+    // Cap (the wider lip at the open end)
+    const capH = 22;
+    const capW = w + 8;
+    const capX = x - 4;
+    const capY = isTop ? y + h - capH : y;
+
+    const capGrad = ctx.createLinearGradient(capX, 0, capX + capW, 0);
+    capGrad.addColorStop(0, '#3a6f1c');
+    capGrad.addColorStop(0.3, '#5fb03d');
+    capGrad.addColorStop(0.7, '#5fb03d');
+    capGrad.addColorStop(1, '#2a5f0c');
+    ctx.fillStyle = capGrad;
+    ctx.fillRect(capX, capY, capW, capH);
+
+    // Cap edge
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(capX, capY + capH - 3, capW, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(capX + 2, capY + 1, capW - 4, 2);
+
+    // Small leaf details
+    ctx.fillStyle = '#3a6f1c';
+    if (isTop) {
+      ctx.beginPath();
+      ctx.ellipse(x + w/2, y + 4, 8, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(x + w/2, y + h - 4, 8, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawGround() {
+    // Ground strip
+    const grad = ctx.createLinearGradient(0, GROUND_Y, 0, GAME_H);
+    grad.addColorStop(0, '#8b6f3a');
+    grad.addColorStop(0.1, '#6b5028');
+    grad.addColorStop(1, '#3a2a12');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, GROUND_Y, GAME_W, GAME_H - GROUND_Y);
+
+    // Grass on top of ground
+    ctx.fillStyle = '#4a8f29';
+    ctx.fillRect(0, GROUND_Y, GAME_W, 6);
+    ctx.fillStyle = '#7bc95c';
+    ctx.fillRect(0, GROUND_Y, GAME_W, 3);
+
+    // Grass blades
+    ctx.fillStyle = '#3a7f1c';
+    const offset = groundScroll % 20;
+    for (let x = -offset; x < GAME_W; x += 20) {
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x + 4, GROUND_Y - 8);
+      ctx.lineTo(x + 8, GROUND_Y);
+      ctx.fill();
+    }
+
+    // Ground texture dots
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    const dotOffset = (groundScroll * 0.8) % 30;
+    for (let x = -dotOffset; x < GAME_W; x += 30) {
+      for (let y = GROUND_Y + 15; y < GAME_H; y += 30) {
+        ctx.fillRect(x, y, 3, 3);
+      }
+    }
+  }
+
+  function drawSnail() {
+    const x = snail.x;
+    const y = snail.y;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(snail.rotation);
+
+    // Flap animation
+    snail.flapFrame = Math.max(0, snail.flapFrame - 1);
+
+    // Shadow on ground
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(0, snail.r + 4, snail.r * 1.1, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body (the foot/underside)
+    ctx.fillStyle = '#a8d68c';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, snail.r + 2, snail.r - 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell (the big spiral)
+    const shellGrad = ctx.createRadialGradient(-2, -2, 1, 0, 0, snail.r);
+    shellGrad.addColorStop(0, '#ff9a56');
+    shellGrad.addColorStop(0.5, '#e87a3a');
+    shellGrad.addColorStop(1, '#a04020');
+    ctx.fillStyle = shellGrad;
+    ctx.beginPath();
+    ctx.arc(2, -2, snail.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shell spiral
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(2, -2, snail.r - 4, 0.3, Math.PI * 1.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(2, -2, snail.r - 9, 0.5, Math.PI * 1.8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(2, -2, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Shell highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(-3, -6, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = '#c8e6a0';
+    ctx.beginPath();
+    ctx.ellipse(-snail.r - 2, 2, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(-snail.r - 4, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-snail.r - 4, 0, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antennae
+    ctx.strokeStyle = '#5a8a3a';
+    ctx.lineWidth = 1.5;
+    // Top antenna
+    ctx.beginPath();
+    ctx.moveTo(-snail.r - 3, -2);
+    ctx.lineTo(-snail.r - 8, -12);
+    ctx.stroke();
+    ctx.fillStyle = '#5a8a3a';
+    ctx.beginPath();
+    ctx.arc(-snail.r - 8, -12, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Side antenna
+    ctx.beginPath();
+    ctx.moveTo(-snail.r + 2, -2);
+    ctx.lineTo(-snail.r + 4, -10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-snail.r + 4, -10, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mouth (small smile)
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(-snail.r - 6, 3, 2, 0, Math.PI);
+    ctx.stroke();
+
+    // Trail slime dots (when flapping)
+    if (snail.flapFrame > 0) {
+      ctx.fillStyle = 'rgba(180,230,150,0.6)';
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(snail.r + i * 4 + Math.random() * 2, Math.random() * 4 - 2, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.life;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBushes() {
+    for (const b of bushes) {
+      const x = ((b.x - groundScroll * 0.5) % (GAME_W + 80)) - 40;
+      ctx.fillStyle = '#3a7a25';
+      ctx.beginPath();
+      ctx.arc(x, b.y, b.w * 0.4, 0, Math.PI * 2);
+      ctx.arc(x - b.w * 0.2, b.y + 3, b.w * 0.3, 0, Math.PI * 2);
+      ctx.arc(x + b.w * 0.25, b.y + 3, b.w * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // --- Logic ---
+
+  function flap() {
+    if (state === STATE_READY) {
+      state = STATE_PLAYING;
+      wrap.classList.remove('show');
+      snail.vy = FLAP;
+      snail.flapFrame = 8;
+      return;
+    }
+    if (state === STATE_PLAYING) {
+      snail.vy = FLAP;
+      snail.flapFrame = 8;
+      // Small flap particles
+      for (let i = 0; i < 3; i++) {
+        particles.push({
+          x: snail.x + snail.r,
+          y: snail.y,
+          vx: -1 - Math.random(),
+          vy: 1 + Math.random() * 2,
+          r: 1.5 + Math.random(),
+          life: 1,
+          color: '#c8e6a0',
+        });
+      }
+      return;
+    }
+    if (state === STATE_DEAD) {
+      // Brief delay before restart
+      if (Date.now() - deathTime > 800) {
+        reset();
+      }
+    }
+  }
+
+  let deathTime = 0;
+
+  function reset() {
+    snail.x = 100;
+    snail.y = GAME_H / 2;
+    snail.vy = 0;
+    snail.rotation = 0;
+    pipes.length = 0;
+    particles.length = 0;
+    score = 0;
+    pipeTimer = 0;
+    groundScroll = 0;
+    state = STATE_READY;
+    hud.textContent = '';
+    bestEl.parentElement.style.display = best > 0 ? 'block' : 'none';
+    wrap.classList.add('show');
+    gameoverScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+  }
+
+  function die() {
+    if (state !== STATE_PLAYING) return;
+    state = STATE_DEAD;
+    deathTime = Date.now();
+    snail.vy = -5; // little hop
+    flash.classList.add('on');
+    setTimeout(() => flash.classList.remove('on'), 100);
+
+    // Save best
+    if (score > best) {
+      best = score;
+      localStorage.setItem('flappy-snail-best', best);
+    }
+    bestEl.textContent = best;
+
+    // Death particles
+    for (let i = 0; i < 20; i++) {
+      particles.push({
+        x: snail.x,
+        y: snail.y,
+        vx: (Math.random() - 0.5) * 6,
+        vy: (Math.random() - 0.5) * 6 - 2,
+        r: 2 + Math.random() * 2,
+        life: 1,
+        color: ['#ff9a56', '#a04020', '#c8e6a0'][Math.floor(Math.random() * 3)],
+      });
+    }
+
+    // Show game over after a moment
+    setTimeout(() => {
+      finalScore.textContent = score;
+      finalBest.textContent = best;
+      if (score === best && score > 0) {
+        bestLine.innerHTML = '🏆 NEW BEST! 🏆';
+      } else {
+        bestLine.innerHTML = 'Best: <span id="final-best">' + best + '</span>';
+      }
+      gameoverScreen.style.display = 'flex';
+      startScreen.style.display = 'none';
+    }, 600);
+  }
+
+  function spawnPipe() {
+    const minY = 80;
+    const maxY = GROUND_Y - PIPE_GAP - 80;
+    const gapY = minY + Math.random() * (maxY - minY);
+    pipes.push({ x: GAME_W + 20, gapY, scored: false });
+  }
+
+  function updatePlaying(dt) {
+    // Physics
+    snail.vy += GRAVITY;
+    if (snail.vy > MAX_FALL) snail.vy = MAX_FALL;
+    snail.y += snail.vy;
+
+    // Rotation based on velocity
+    const targetRot = Math.max(-0.5, Math.min(1.2, snail.vy * 0.08));
+    snail.rotation += (targetRot - snail.rotation) * 0.15;
+
+    // Move pipes
+    for (let i = pipes.length - 1; i >= 0; i--) {
+      pipes[i].x -= PIPE_SPEED;
+      if (pipes[i].x + PIPE_W < 0) {
+        pipes.splice(i, 1);
+      }
+    }
+
+    // Spawn pipes
+    pipeTimer += PIPE_SPEED;
+    if (pipeTimer >= PIPE_SPACING) {
+      pipeTimer = 0;
+      spawnPipe();
+    }
+
+    // Scoring
+    for (const p of pipes) {
+      if (!p.scored && p.x + PIPE_W < snail.x - snail.r) {
+        p.scored = true;
+        score++;
+        hud.textContent = score;
+      }
+    }
+
+    // Ground scroll
+    groundScroll += PIPE_SPEED;
+
+    // Collision: ground
+    if (snail.y + snail.r >= GROUND_Y) {
+      snail.y = GROUND_Y - snail.r;
+      die();
+    }
+    // Collision: ceiling
+    if (snail.y - snail.r < 0) {
+      snail.y = snail.r;
+      snail.vy = 0;
+    }
+    // Collision: pipes
+    for (const p of pipes) {
+      if (circleVsRect(snail.x, snail.y, snail.r - 2, p.x, 0, PIPE_W, p.gapY) ||
+          circleVsRect(snail.x, snail.y, snail.r - 2, p.x, p.gapY + PIPE_GAP, PIPE_W, GROUND_Y - p.gapY - PIPE_GAP)) {
+        die();
+        break;
+      }
+    }
+  }
+
+  function circleVsRect(cx, cy, cr, rx, ry, rw, rh) {
+    const closestX = Math.max(rx, Math.min(cx, rx + rw));
+    const closestY = Math.max(ry, Math.min(cy, ry + rh));
+    const dx = cx - closestX;
+    const dy = cy - closestY;
+    return (dx * dx + dy * dy) < cr * cr;
+  }
+
+  function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.2;
+      p.life -= 0.03;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function updateDead() {
+    // Snail falls to ground
+    snail.vy += GRAVITY;
+    snail.y += snail.vy;
+    if (snail.y + snail.r > GROUND_Y) {
+      snail.y = GROUND_Y - snail.r;
+      snail.vy = 0;
+    }
+    snail.rotation += (1.2 - snail.rotation) * 0.1;
+  }
+
+  // --- Main loop ---
+  let lastTime = 0;
+  function loop(t) {
+    const dt = Math.min(33, t - lastTime || 16);
+    lastTime = t;
+
+    if (state === STATE_PLAYING) {
+      updatePlaying(dt);
+    } else if (state === STATE_DEAD) {
+      updateDead();
+    } else {
+      // Ready state: gentle bobbing
+      snail.y = GAME_H / 2 + Math.sin(t / 300) * 8;
+      snail.rotation = Math.sin(t / 400) * 0.1;
+      groundScroll += 1.2;
+    }
+    updateParticles();
+
+    // Render
+    drawBackground();
+    drawBushes();
+    drawPipes();
+    drawGround();
+    drawParticles();
+    drawSnail();
+
+    requestAnimationFrame(loop);
+  }
+
+  // --- Input ---
+  function onInput(e) {
+    e.preventDefault();
+    flap();
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+      e.preventDefault();
+      flap();
+    }
+  });
+
+  canvas.addEventListener('mousedown', onInput);
+  canvas.addEventListener('touchstart', onInput, { passive: false });
+  // Also catch touches on overlays
+  startScreen.addEventListener('mousedown', onInput);
+  startScreen.addEventListener('touchstart', onInput, { passive: false });
+  gameoverScreen.addEventListener('mousedown', onInput);
+  gameoverScreen.addEventListener('touchstart', onInput, { passive: false });
+
+  // Start
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
