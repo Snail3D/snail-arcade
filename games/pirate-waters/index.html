@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pirate Waters — Naval Combat</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a1628}
+canvas{display:block;position:absolute;top:0;left:0}
+
+/* HUD */
+#hud{
+  position:fixed;top:12px;left:12px;z-index:10;
+  color:#f5d89a;font-family:'Palatino Linotype',Palatino,'Book Antiqua',serif;
+  text-shadow:1px 1px 3px #000,0 0 8px #0006;
+  pointer-events:none;user-select:none;
+}
+.hud-panel{
+  background:linear-gradient(135deg,#1a0f0055,#2a1a0077);
+  border:1px solid #c8a05088;
+  border-radius:8px;padding:10px 14px;margin-bottom:8px;
+  backdrop-filter:blur(4px);
+}
+.hud-label{font-size:10px;letter-spacing:2px;color:#c8a050;text-transform:uppercase;margin-bottom:2px}
+.hud-value{font-size:20px;font-weight:bold}
+.hud-bar{width:120px;height:8px;background:#2a1a0066;border-radius:4px;margin-top:4px}
+.hud-fill{height:100%;border-radius:4px;transition:width 0.3s}
+#health-fill{background:linear-gradient(90deg,#c0392b,#e74c3c)}
+#sail-fill{background:linear-gradient(90deg,#2980b9,#3498db)}
+
+/* Compass */
+#compass{
+  position:fixed;top:12px;right:12px;z-index:10;
+  width:70px;height:70px;pointer-events:none;
+}
+#compass svg{border-radius:50%;border:2px solid #c8a05088;background:#1a0f0055;backdrop-filter:blur(4px)}
+
+/* Minimap */
+#minimap{
+  position:fixed;bottom:12px;right:12px;z-index:10;
+  width:180px;height:180px;pointer-events:none;
+  border:2px solid #c8a05088;border-radius:8px;
+  background:#0a162855;overflow:hidden;
+}
+#minimapCanvas{width:100%;height:100%}
+
+/* Gold */
+#gold-display{
+  position:fixed;top:12px;left:50%;transform:translateX(-50%);
+  z-index:10;color:#f5d89a;font-family:serif;font-size:22px;
+  text-shadow:1px 1px 3px #000,0 0 10px #c8a05066;
+  pointer-events:none;letter-spacing:1px;
+}
+
+/* Controls hint */
+#controls{
+  position:fixed;bottom:12px;left:12px;z-index:10;
+  color:#c8a05099;font-size:11px;font-family:serif;
+  text-shadow:1px 1px 3px #000;pointer-events:none;line-height:1.8;
+}
+
+/* Combat overlay */
+#combat-msg{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:20;color:#ff4444;font-family:serif;font-size:28px;
+  text-shadow:0 0 20px #ff0000;pointer-events:none;
+  opacity:0;transition:opacity 0.3s;letter-spacing:3px;
+}
+
+/* Harbor UI */
+#harbor-ui{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:30;display:none;
+  background:linear-gradient(135deg,#1a0f00ee,#2d1a00cc);
+  border:2px solid #c8a050;border-radius:12px;
+  padding:30px;min-width:360px;
+  color:#f5d89a;font-family:serif;text-align:center;
+}
+#harbor-ui h2{font-size:26px;margin-bottom:8px;color:#f5d89a;letter-spacing:2px}
+#harbor-ui p{margin-bottom:20px;font-size:14px;color:#c8a050}
+.shop-btn{
+  display:block;width:100%;padding:12px;margin:8px 0;
+  background:linear-gradient(135deg,#8b6914,#c8a050);
+  border:none;border-radius:6px;color:#1a0f00;
+  font-size:16px;font-family:serif;font-weight:bold;
+  cursor:pointer;letter-spacing:1px;
+  transition:transform 0.1s,filter 0.2s;
+}
+.shop-btn:hover{filter:brightness(1.2);transform:scale(1.02)}
+.shop-btn:active{transform:scale(0.98)}
+.shop-btn:disabled{opacity:0.4;cursor:not-allowed}
+.shop-btn.close{background:linear-gradient(135deg,#8b3a14,#c87050)}
+
+/* Start screen */
+#start-screen{
+  position:fixed;inset:0;z-index:50;
+  background:linear-gradient(135deg,#0a1628,#1a0f00);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#f5d89a;font-family:serif;
+}
+#start-screen h1{
+  font-size:52px;letter-spacing:6px;margin-bottom:8px;
+  text-shadow:0 0 30px #c8a050,0 0 60px #8b691466;
+}
+#start-screen .subtitle{font-size:16px;color:#c8a050;letter-spacing:4px;margin-bottom:40px}
+.start-btn{
+  padding:16px 48px;font-size:20px;font-family:serif;
+  background:linear-gradient(135deg,#8b6914,#c8a050);
+  border:none;border-radius:8px;color:#1a0f00;
+  font-weight:bold;cursor:pointer;letter-spacing:3px;
+  margin:8px;transition:transform 0.15s,filter 0.2s;
+  text-transform:uppercase;
+}
+.start-btn:hover{filter:brightness(1.3);transform:scale(1.05)}
+.start-btn.secondary{background:linear-gradient(135deg,#1a2a3a,#2a3a4a);color:#f5d89a}
+
+/* Notification */
+#notif{
+  position:fixed;top:80px;left:50%;transform:translateX(-50%);
+  z-index:25;padding:10px 24px;
+  background:linear-gradient(135deg,#2a1a00aa,#1a0f00aa);
+  border:1px solid #c8a050;border-radius:20px;
+  color:#f5d89a;font-family:serif;font-size:14px;
+  opacity:0;transition:opacity 0.5s;pointer-events:none;
+  text-shadow:1px 1px 2px #000;
+}
+
+/* Game over */
+#gameover{
+  position:fixed;inset:0;z-index:50;display:none;
+  background:rgba(10,5,0,0.9);
+  flex-direction:column;align-items:center;justify-content:center;
+  color:#f5d89a;font-family:serif;
+}
+#gameover h2{font-size:48px;margin-bottom:16px;text-shadow:0 0 20px #c8a050}
+#gameover p{font-size:20px;color:#c8a050;margin-bottom:8px}
+#gameover .score{font-size:32px;color:#f5d89a;margin:20px 0}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div class="hud-panel">
+    <div class="hud-label">Hull Integrity</div>
+    <div class="hud-value"><span id="health-val">100</span>%</div>
+    <div class="hud-bar"><div class="hud-fill" id="health-fill" style="width:100%"></div></div>
+  </div>
+  <div class="hud-panel">
+    <div class="hud-label">Sail Power</div>
+    <div class="hud-value"><span id="cannon-val">12</span> ⚓</div>
+    <div class="hud-bar"><div class="hud-fill" id="sail-fill" style="width:100%"></div></div>
+  </div>
+  <div class="hud-panel">
+    <div class="hud-label">Ship Speed</div>
+    <div class="hud-value" id="speed-val">0 kn</div>
+  </div>
+  <div class="hud-panel">
+    <div class="hud-label">Enemy Ships</div>
+    <div class="hud-value" id="enemy-val">0</div>
+  </div>
+</div>
+
+<div id="gold-display">💰 <span id="gold-val">0</span></div>
+
+<canvas id="compass" width="70" height="70"></canvas>
+
+<div id="minimap"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
+
+<div id="controls">
+  WASD / Arrows — Steer & Adjust sails<br>
+  SPACE — Fire Broadside Cannons<br>
+  Mouse — Aim cannons<br>
+  Click harbor marker — Enter harbor
+</div>
+
+<div id="combat-msg"></div>
+<div id="notif"></div>
+
+<div id="harbor-ui">
+  <h2>⚓ Harbor</h2>
+  <p>Repair and resupply your vessel</p>
+  <div id="shop-list"></div>
+  <button class="shop-btn close" onclick="G.closeHarbor()">Set Sail</button>
+</div>
+
+<div id="start-screen">
+  <h1>⚔ PIRATE WATERS ⚔</h1>
+  <div class="subtitle">Naval Combat Simulator</div>
+  <button class="start-btn" onclick="G.start()">New Voyage</button>
+  <button class="start-btn secondary" onclick="G.startTutorial()">How to Play</button>
+</div>
+
+<div id="gameover">
+  <h2>YE HAVE SUNK</h2>
+  <div class="score">Final Plunder: <span id="final-gold">0</span> Gold</div>
+  <p>Ships Defeated: <span id="final-kills">0</span></p>
+  <p>Distance Sailed: <span id="final-dist">0</span> leagues</p>
+  <button class="start-btn" onclick="G.restart()" style="margin-top:20px">Try Again</button>
+</div>
+
+<script>
+// ============================================================
+// PIRATE WATERS — Naval Combat Simulator
+// ============================================================
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const compassEl = document.getElementById('compass');
+const compassCtx = compassEl.getContext('2d');
+const minimapCanvas = document.getElementById('minimapCanvas');
+const mmCtx = minimapCanvas.getContext('2d');
+
+let worldWidth = 6000, worldHeight = 6000;
+
+// ============================================================
+// AUDIO ENGINE
+// ============================================================
+const Audio = (() => {
+  let ctx2;
+  const init = () => {
+    if (ctx2) return;
+    try { ctx2 = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  };
+  const play = (freq, type, dur, vol=0.3, decay=0.9) => {
+    if (!ctx2) return;
+    try {
+      const o = ctx2.createOscillator();
+      const g = ctx2.createGain();
+      o.connect(g); g.connect(ctx2.destination);
+      o.type = type; o.frequency.setValueAtTime(freq, ctx2.currentTime);
+      o.frequency.exponentialRampToValueAtTime(freq*0.1, ctx2.currentTime+dur);
+      g.gain.setValueAtTime(vol, ctx2.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx2.currentTime+dur);
+      o.start(); o.stop(ctx2.currentTime+dur);
+    } catch(e) {}
+  };
+  return {
+    init,
+    cannon: () => { play(80,'square',0.4,0.5); play(40,'sawtooth',0.3,0.3); },
+    splash: () => play(200,'sine',0.3,0.2,0.95),
+    hit: () => { play(150,'sawtooth',0.2,0.4); play(80,'square',0.3,0.3); },
+    coin: () => { play(800,'sine',0.1,0.2); setTimeout(()=>play(1200,'sine',0.15,0.2),100); },
+    sail: () => play(300,'sine',0.5,0.05,0.98),
+    wave: () => play(100,'sine',2,0.03,0.99),
+    sink: () => { for(let i=0;i<5;i++) setTimeout(()=>play(100-i*15,'sawtooth',0.5,0.3),i*200); },
+    horn: () => play(220,'sawtooth',1.5,0.2),
+    victory: () => { play(440,'sine',0.3,0.3); setTimeout(()=>play(550,'sine',0.3,0.3),200); setTimeout(()=>play(660,'sine',0.5,0.3),400); }
+  };
+})();
+
+// ============================================================
+// WORLD GENERATION
+// ============================================================
+const World = {
+  islands: [],
+  wrecks: [],
+  generate() {
+    this.islands = [];
+    // Main cluster of islands near spawn
+    for (let i = 0; i < 12; i++) {
+      const x = (i===0) ? 600 + Math.random()*400 : 200 + Math.random()*(worldWidth-400);
+      const y = (i===0) ? 600 + Math.random()*400 : 200 + Math.random()*(worldHeight-400);
+      if (Math.hypot(x-worldWidth/2, y-worldHeight/2) < 500) continue;
+      const size = 60 + Math.random()*120;
+      const type = ['palm','volcano','rocky'][Math.floor(Math.random()*3)];
+      this.islands.push({ x, y, r: size, type, harbor: Math.random()>0.3,
+        palmCount: 3+Math.floor(Math.random()*6), name: this._name() });
+    }
+    // Wrecks
+    for (let i = 0; i < 15; i++) {
+      this.wrecks.push({
+        x: 100 + Math.random()*(worldWidth-200),
+        y: 100 + Math.random()*(worldHeight-200),
+        gold: 10+Math.floor(Math.random()*60),
+        found: false, sinkAnim: 0
+      });
+    }
+  },
+  _name() {
+    const pre=['Black','Dead','Storm','Crimson','Golden','Iron','Silver','Jolly','Salty'];
+    const suf=['Cove','Isle','Reef','Bay','Point','Rock','Shore','Key','Atoll'];
+    return pre[Math.floor(Math.random()*pre.length)]+' '+suf[Math.floor(Math.random()*suf.length)];
+  }
+};
+
+// ============================================================
+// SHIP CLASS
+// ============================================================
+class Ship {
+  constructor(x, y, isPlayer=false) {
+    this.x = x; this.y = y;
+    this.angle = 0; // heading in radians
+    this.speed = 0;
+    this.maxSpeed = isPlayer ? 4.5 : 3.5;
+    this.isPlayer = isPlayer;
+    this.health = isPlayer ? 100 : 60+Math.random()*40;
+    this.maxHealth = this.health;
+    this.cannons = 12;
+    this.maxCannons = 12;
+    this.reload = 0; this.maxReload = 60;
+    this.side = 'left'; // which broadside is loaded
+    this.gold = isPlayer ? 50 : 20+Math.floor(Math.random()*80);
+    this.enemyType = isPlayer ? 'player' : ['sloop','brigantine','galleon'][Math.floor(Math.random()*3)];
+    if (!isPlayer) {
+      const sizes = {sloop:0.7, brigantine:1, galleon:1.4};
+      const s = sizes[this.enemyType];
+      this.maxSpeed *= s;
+      this.health *= s; this.maxHealth *= s;
+      this.gold = Math.floor(this.gold * s * 1.5);
+    }
+    this.scale = isPlayer ? 1 : (this.enemyType==='sloop'?0.7:this.enemyType==='galleon'?1.4:1);
+    this.wake = [];
+    this.aiTimer = 0;
+    this.aiTarget = null;
+    this.aiState = 'patrol';
+    this.bobOffset = Math.random()*Math.PI*2;
+    this.dead = false;
+    this.sinkTimer = 0;
+    this.hitFlash = 0;
+    this.sailArea = 1;
+    this.windAngle = Math.PI/4; // global wind
+    this.distance = 0;
+  }
+  get hullAngle() { return this.angle; }
+
+  update(wind) {
+    if (this.dead) {
+      this.sinkTimer += 0.02;
+      return;
+    }
+    if (this.reload > 0) this.reload--;
+    if (this.hitFlash > 0) this.hitFlash--;
+
+    // Movement
+    const nx = this.x + Math.sin(this.angle)*this.speed;
+    const ny = this.y - Math.cos(this.angle)*this.speed;
+    if (nx > 50 && nx < worldWidth-50 && ny > 50 && ny < worldHeight-50) {
+      this.distance += Math.hypot(nx-this.x, ny-this.y);
+      this.x = nx; this.y = ny;
+    }
+
+    // World wrap
+    if (this.x < 0) this.x = worldWidth;
+    if (this.x > worldWidth) this.x = 0;
+    if (this.y < 0) this.y = worldHeight;
+    if (this.y > worldHeight) this.y = 0;
+
+    // Wake trail
+    if (this.speed > 0.5) {
+      this.wake.push({x:this.x, y:this.y, life:1, angle:this.angle});
+      if (this.wake.length > 80) this.wake.shift();
+    }
+    this.wake.forEach(w => w.life -= 0.012);
+    this.wake = this.wake.filter(w => w.life > 0);
+
+    // AI
+    if (!this.isPlayer) this._ai();
+  }
+
+  _ai() {
+    this.aiTimer--;
+    if (this.aiTimer > 0) return;
+    this.aiTimer = 30+Math.random()*60;
+
+    const p = G.player;
+    if (!p || p.dead) { this.aiState = 'patrol'; return; }
+
+    const d = Math.hypot(this.x-p.x, this.y-p.y);
+    if (d < 600) {
+      this.aiState = 'attack';
+      this.aiTarget = p;
+    } else if (d < 1200) {
+      this.aiState = 'chase';
+      this.aiTarget = p;
+    } else {
+      this.aiState = 'patrol';
+      this.aiTarget = null;
+    }
+
+    if (this.aiState === 'attack' || this.aiState === 'chase') {
+      const targetAngle = Math.atan2(this.aiTarget.x-this.x, -(this.aiTarget.y-this.y));
+      let diff = targetAngle - this.angle;
+      while (diff > Math.PI) diff -= Math.PI*2;
+      while (diff < -Math.PI) diff += Math.PI*2;
+      this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.04);
+      this.speed = this.maxSpeed * 0.85;
+      if (this.aiState === 'attack' && this.reload === 0 && Math.abs(diff) < 0.5) {
+        this.fireBroadside();
+      }
+    } else {
+      // Patrol: random wandering
+      this.angle += (Math.random()-0.5)*0.03;
+      this.speed = this.maxSpeed * 0.4;
+    }
+  }
+
+  fireBroadside() {
+    if (this.reload > 0) return;
+    this.reload = this.maxReload;
+    Audio.cannon();
+    const angleOffset = this.side === 'left' ? -Math.PI/2 : Math.PI/2;
+    const broadAngle = this.angle + angleOffset;
+    for (let i = 0; i < 3; i++) {
+      const spread = (i-1)*0.12;
+      const a = broadAngle + spread;
+      G.projectiles.push(new Cannonball(
+        this.x + Math.cos(this.angle)*25*(this.side==='left'?-1:1),
+        this.y + Math.sin(this.angle)*25*(this.side==='left'?-1:1),
+        Math.sin(a)*8, -Math.cos(a)*8, this
+      ));
+    }
+    this.speed *= 0.85;
+    G.showCombatMsg(this.isPlayer ? '' : 'ENEMY FIRE!');
+  }
+
+  takeDamage(dmg) {
+    this.health -= dmg;
+    this.hitFlash = 15;
+    if (this.health <= 0) {
+      this.health = 0;
+      this.dead = true;
+      Audio.sink();
+      if (!this.isPlayer) {
+        G.gold += this.gold;
+        G.kills++;
+        G.showNotif(`Ship sunk! +${this.gold} gold`);
+        Audio.coin();
+        G.wrecks.push({x:this.x, y:this.y, gold:0, found:false, sinkAnim:1});
+      }
+    } else {
+      Audio.hit();
+    }
+  }
+
+  draw(camX, camY) {
+    const sx = this.x - camX + W()/2;
+    const sy = this.y - camY + H()/2;
+    if (sx < -150 || sx > W()+150 || sy < -150 || sy > H()+150) return;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    const bob = Math.sin(Date.now()*0.002 + this.bobOffset) * 2;
+    ctx.rotate(this.angle);
+    ctx.scale(this.scale, this.scale);
+    ctx.translate(0, bob);
+
+    // Shadow
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(4, 4, 30, 12, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // Hull
+    const hullColor = this.isPlayer ? '#8B6914' : (this.hitFlash>0 ? '#ff4444' : '#5c3a1e');
+    ctx.fillStyle = hullColor;
+    ctx.strokeStyle = this.isPlayer ? '#c8a050' : '#8b5a2b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -35);
+    ctx.bezierCurveTo(18, -25, 20, 10, 14, 28);
+    ctx.lineTo(-14, 28);
+    ctx.bezierCurveTo(-20, 10, -18, -25, 0, -35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Deck
+    ctx.fillStyle = '#a07830';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 12, 20, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Mast
+    ctx.fillStyle = '#4a3520';
+    ctx.fillRect(-2, -20, 4, 35);
+
+    // Sail
+    ctx.fillStyle = this.isPlayer ? '#f5f0e0' : (this.enemyType==='galleon'?'#8b0000':this.enemyType==='brigantine'?'#2a1a4a':'#4a2a1a');
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.quadraticCurveTo(22*(this.side==='right'?-1:1), -5, 0, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#c8a05044';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Flag
+    ctx.fillStyle = this.isPlayer ? '#f5f89a' : '#cc0000';
+    ctx.fillRect(-3, -38, 8, 5);
+
+    // Cannons (left side)
+    if (this.side === 'left') {
+      for (let i = -1; i <= 1; i++) {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-20, i*8-2, 6, 4);
+      }
+    } else {
+      for (let i = -1; i <= 1; i++) {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(14, i*8-2, 6, 4);
+      }
+    }
+
+    // Name/health for enemies
+    if (!this.isPlayer) {
+      const bw = 40, bh = 5;
+      ctx.fillStyle = '#333a';
+      ctx.fillRect(-bw/2, -50, bw, bh);
+      ctx.fillStyle = this.health > this.maxHealth*0.5 ? '#4c4' : (this.health > this.maxHealth*0.25 ? '#cc4' : '#c44');
+      ctx.fillRect(-bw/2, -50, bw*(this.health/this.maxHealth), bh);
+    }
+
+    ctx.restore();
+
+    // Wake
+    this.wake.forEach(w => {
+      const wx = w.x - camX + W()/2;
+      const wy = w.y - camY + H()/2;
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.rotate(w.angle);
+      ctx.globalAlpha = w.life * 0.4;
+      ctx.fillStyle = '#8ac';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8*w.life, 3*w.life, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // Sink animation
+    if (this.dead) {
+      const sinkAlpha = Math.max(0, 1-this.sinkTimer);
+      ctx.save();
+      ctx.globalAlpha = sinkAlpha;
+      ctx.translate(sx, sy);
+      ctx.rotate(this.angle);
+      ctx.scale(this.scale, this.scale*(1-this.sinkTimer*0.5));
+      ctx.fillStyle = '#4a3520';
+      ctx.beginPath();
+      ctx.moveTo(0, -35);
+      ctx.bezierCurveTo(18, -25, 20, 10, 14, 28);
+      ctx.lineTo(-14, 28);
+      ctx.bezierCurveTo(-20, 10, -18, -25, 0, -35);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+// ============================================================
+// CANNONBALL CLASS
+// ============================================================
+class Cannonball {
+  constructor(x, y, vx, vy, owner) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.owner = owner;
+    this.life = 180;
+    this.r = 4;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.02; // arc
+    this.vx *= 0.998; this.vy *= 0.998;
+    this.life--;
+    return this.life > 0;
+  }
+  draw(camX, camY) {
+    const sx = this.x - camX + W()/2;
+    const sy = this.y - camY + H()/2;
+    ctx.fillStyle = '#222';
+    ctx.beginPath();
+    ctx.arc(sx, sy, this.r, 0, Math.PI*2);
+    ctx.fill();
+    // Shadow
+    ctx.fillStyle = '#0003';
+    ctx.beginPath();
+    ctx.ellipse(sx+2, sy+4, this.r*1.5, this.r*0.5, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// ============================================================
+// PARTICLE
+// ============================================================
+class Particle {
+  constructor(x, y, type='splash') {
+    this.x = x; this.y = y;
+    this.type = type;
+    if (type === 'splash') {
+      this.vx = (Math.random()-0.5)*4;
+      this.vy = (Math.random()-0.5)*4;
+      this.life = 30+Math.random()*20;
+    } else if (type === 'gold') {
+      this.vx = (Math.random()-0.5)*2;
+      this.vy = -3 - Math.random()*2;
+      this.life = 60;
+      this.text = '+'+Math.floor(Math.random()*30+10);
+    } else if (type === 'smoke') {
+      this.vx = (Math.random()-0.5)*0.5;
+      this.vy = -0.5-Math.random();
+      this.life = 40+Math.random()*30;
+      this.r = 8+Math.random()*12;
+    }
+    this.maxLife = this.life;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.type !== 'smoke') this.vy += 0.15;
+    this.life--;
+    return this.life > 0;
+  }
+  draw(camX, camY) {
+    const sx = this.x - camX + W()/2;
+    const sy = this.y - camY + H()/2;
+    const a = this.life/this.maxLife;
+    if (this.type === 'splash') {
+      ctx.fillStyle = `rgba(150,200,255,${a})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 3, 0, Math.PI*2);
+      ctx.fill();
+    } else if (this.type === 'gold') {
+      ctx.fillStyle = `rgba(255,215,0,${a})`;
+      ctx.font = 'bold 16px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(this.text, sx, sy);
+    } else if (this.type === 'smoke') {
+      ctx.fillStyle = `rgba(100,100,100,${a*0.3})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, this.r*(1-this.life/this.maxLife+0.5), 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+// ============================================================
+// WAVE SYSTEM
+// ============================================================
+const Wave = {
+  t: 0,
+  update() { this.t += 0.015; },
+  getHeight(x, y) {
+    return Math.sin(x*0.02+this.t)*3 + Math.sin(y*0.015+this.t*0.7)*2 + Math.sin((x+y)*0.01+this.t*1.3)*1.5;
+  }
+};
+
+// ============================================================
+// GAME STATE
+// ============================================================
+const G = {
+  state: 'menu', // menu, playing, paused, gameover
+  player: null,
+  enemies: [],
+  projectiles: [],
+  particles: [],
+  gold: 50,
+  kills: 0,
+  camera: {x:0, y:0},
+  wind: {angle: Math.PI/4, speed: 2},
+  mouse: {x: W()/2, y: H()/2},
+  keys: {},
+  showNotif(msg) {
+    const el = document.getElementById('notif');
+    el.textContent = msg;
+    el.style.opacity = 1;
+    setTimeout(() => el.style.opacity = 0, 2500);
+  },
+  showCombatMsg(msg) {
+    const el = document.getElementById('combat-msg');
+    el.textContent = msg;
+    el.style.opacity = 1;
+    setTimeout(() => el.style.opacity = 0, 1000);
+  },
+  start() {
+    Audio.init();
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('gameover').style.display = 'none';
+    World.generate();
+    this.player = new Ship(worldWidth/2, worldHeight/2, true);
+    this.enemies = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.gold = 50;
+    this.kills = 0;
+    this.spawnEnemies(6);
+    this.state = 'playing';
+  },
+  startTutorial() {
+    Audio.init();
+    document.getElementById('start-screen').style.display = 'none';
+    World.generate();
+    this.player = new Ship(worldWidth/2, worldHeight/2, true);
+    this.enemies = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.gold = 500;
+    this.kills = 0;
+    this.state = 'playing';
+    this.showNotif('Tutorial: WASD to steer, SPACE to fire, click islands to enter harbor');
+  },
+  spawnEnemies(n) {
+    for (let i = 0; i < n; i++) {
+      let x, y;
+      do {
+        x = 200 + Math.random()*(worldWidth-400);
+        y = 200 + Math.random()*(worldHeight-400);
+      } while (Math.hypot(x-this.player.x, y-this.player.y) < 800);
+      this.enemies.push(new Ship(x, y, false));
+    }
+  },
+  restart() {
+    document.getElementById('gameover').style.display = 'none';
+    this.start();
+  },
+  openHarbor(island) {
+    const ui = document.getElementById('harbor-ui');
+    const list = document.getElementById('shop-list');
+    list.innerHTML = '';
+    const repairs = Math.ceil((this.player.maxHealth - this.player.health) / 5);
+    const cannons = this.player.maxCannons - this.player.cannons;
+    list.innerHTML += `<button class="shop-btn" onclick="G.repair()" ${this.player.health>=this.player.maxHealth?'disabled':''}>
+      Repair Hull (${repairs}⚓) — ${this.player.health>=this.player.maxHealth?'Full HP':`${this.player.health}/${this.player.maxHealth} HP`}
+    </button>`;
+    list.innerHTML += `<button class="shop-btn" onclick="G.resupply()" ${cannons<=0?'disabled':''}>
+      Resupply Cannons (${cannons*5}⚓) — ${this.player.cannons}/${this.player.maxCannons} loaded
+    </button>`;
+    list.innerHTML += `<button class="shop-btn" onclick="G.upgradeShip()">
+      Upgrade Ship (100⚓) — +2 max cannons
+    </button>`;
+    ui.style.display = 'block';
+  },
+  closeHarbor() {
+    document.getElementById('harbor-ui').style.display = 'none';
+    Audio.horn();
+  },
+  repair() {
+    const cost = Math.ceil((this.player.maxHealth - this.player.health) / 5);
+    if (this.gold >= cost) {
+      this.gold -= cost;
+      this.player.health = this.player.maxHealth;
+      Audio.coin();
+      this.openHarbor(null);
+    } else {
+      this.showNotif('Not enough gold! Need '+cost);
+    }
+  },
+  resupply() {
+    const cost = (this.player.maxCannons - this.player.cannons) * 5;
+    if (this.gold >= cost) {
+      this.gold -= cost;
+      this.player.cannons = this.player.maxCannons;
+      Audio.coin();
+      this.openHarbor(null);
+    } else {
+      this.showNotif('Not enough gold!');
+    }
+  },
+  upgradeShip() {
+    if (this.gold >= 100) {
+      this.gold -= 100;
+      this.player.maxCannons += 2;
+      this.player.cannons += 2;
+      Audio.coin();
+      this.showNotif('Ship upgraded! Max cannons +2');
+      this.openHarbor(null);
+    } else {
+      this.showNotif('Need 100 gold!');
+    }
+  },
+  gameOver() {
+    this.state = 'gameover';
+    document.getElementById('final-gold').textContent = this.gold;
+    document.getElementById('final-kills').textContent = this.kills;
+    document.getElementById('final-dist').textContent = Math.floor(this.player.distance/100);
+    document.getElementById('gameover').style.display = 'flex';
+    Audio.sink();
+  },
+
+  update() {
+    if (this.state !== 'playing') return;
+
+    Wave.update();
+    this.wind.angle += 0.001; // wind shifts slowly
+
+    // Player input
+    if (this.player && !this.player.dead) {
+      const p = this.player;
+      // Turn
+      if (this.keys['ArrowLeft'] || this.keys['KeyA']) p.angle -= 0.035;
+      if (this.keys['ArrowRight'] || this.keys['KeyD']) p.angle += 0.035;
+      // Sail power
+      if (this.keys['ArrowUp'] || this.keys['KeyW']) {
+        p.speed = Math.min(p.speed + 0.08, p.maxSpeed);
+        p.sailArea = Math.min(p.sailArea + 0.02, 1.5);
+      } else if (this.keys['ArrowDown'] || this.keys['KeyS']) {
+        p.speed = Math.max(p.speed - 0.05, -1);
+        p.sailArea = Math.max(p.sailArea - 0.02, 0.3);
+      } else {
+        p.speed *= 0.98;
+        p.sailArea += (1-p.sailArea)*0.02;
+      }
+      // Wind effect
+      const windPush = Math.cos(p.angle - this.wind.angle) * this.wind.speed * 0.05 * p.sailArea;
+      p.speed = Math.max(-1, Math.min(p.maxSpeed, p.speed + windPush));
+      // Friction
+      p.speed *= 0.995;
+      if (Math.abs(p.speed) < 0.01) p.speed = 0;
+
+      // Fire
+      if (this.keys['Space'] && p.reload === 0) {
+        p.fireBroadside();
+        this.keys['Space'] = false;
+      }
+    }
+
+    // Update entities
+    if (this.player) this.player.update(this.wind);
+    this.enemies.forEach(e => e.update(this.wind));
+    this.enemies = this.enemies.filter(e => !e.dead || e.sinkTimer < 2);
+
+    // Respawn enemies
+    if (this.enemies.filter(e=>!e.dead).length < 3 && this.state==='playing') {
+      this.spawnEnemies(1);
+    }
+
+    // Projectiles
+    this.projectiles = this.projectiles.filter(proj => {
+      const alive = proj.update();
+      if (!alive) return false;
+
+      // Check hit
+      const targets = proj.owner.isPlayer ? this.enemies : (this.player?[this.player]:[]);
+      for (const t of targets) {
+        if (!t || t.dead) continue;
+        if (Math.hypot(proj.x-t.x, proj.y-t.y) < 30*t.scale) {
+          t.takeDamage(15+Math.random()*10);
+          for (let i=0;i<5;i++) this.particles.push(new Particle(proj.x, proj.y, 'splash'));
+          if (t.dead) {
+            for (let i=0;i<8;i++) this.particles.push(new Particle(t.x, t.y, 'splash'));
+          }
+          return false;
+        }
+      }
+      // Splash on water impact (check islands)
+      for (const isl of World.islands) {
+        if (Math.hypot(proj.x-isl.x, proj.y-isl.y) < isl.r) {
+          for (let i=0;i<3;i++) this.particles.push(new Particle(proj.x, proj.y, 'splash'));
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // Particles
+    this.particles = this.particles.filter(p => p.update());
+
+    // Wrecks collection
+    for (const wreck of World.wrecks) {
+      if (wreck.found || !this.player) continue;
+      if (Math.hypot(wreck.x-this.player.x, wreck.y-this.player.y) < 60) {
+        this.gold += wreck.gold;
+        wreck.found = true;
+        this.particles.push(new Particle(wreck.x, wreck.y, 'gold'));
+        Audio.coin();
+        this.showNotif(`Treasure found! +${wreck.gold} gold`);
+      }
+    }
+
+    // Camera
+    if (this.player) {
+      this.camera.x += (this.player.x - this.camera.x) * 0.08;
+      this.camera.y += (this.player.y - this.camera.y) * 0.08;
+    }
+
+    // HUD
+    if (this.player) {
+      document.getElementById('health-val').textContent = Math.ceil(this.player.health);
+      document.getElementById('health-fill').style.width = (this.player.health/this.player.maxHealth*100)+'%';
+      document.getElementById('cannon-val').textContent = this.player.cannons;
+      document.getElementById('sail-fill').style.width = (this.player.sailArea/1.5*100)+'%';
+      document.getElementById('speed-val').textContent = Math.abs(this.player.speed).toFixed(1)+' kn';
+      document.getElementById('enemy-val').textContent = this.enemies.filter(e=>!e.dead).length;
+    }
+    document.getElementById('gold-val').textContent = this.gold;
+
+    // Game over check
+    if (this.player && this.player.dead && this.player.sinkTimer > 1.5) {
+      this.gameOver();
+    }
+  },
+
+  drawOcean(camX, camY) {
+    const tileSize = 120;
+    const startX = Math.floor((camX - W()/2) / tileSize) * tileSize;
+    const startY = Math.floor((camY - H()/2) / tileSize) * tileSize;
+
+    // Ocean base
+    const grad = ctx.createLinearGradient(0, 0, W(), H());
+    grad.addColorStop(0, '#0a2540');
+    grad.addColorStop(0.5, '#0d3060');
+    grad.addColorStop(1, '#0a2540');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W(), H());
+
+    // Wave tiles
+    for (let tx = startX - tileSize; tx < camX + W()/2 + tileSize; tx += tileSize) {
+      for (let ty = startY - tileSize; ty < camY + H()/2 + tileSize; ty += tileSize) {
+        const sx = tx - camX + W()/2;
+        const sy = ty - camY + H()/2;
+        const wh = Wave.getHeight(tx, ty);
+
+        // Wave highlight
+        ctx.save();
+        ctx.globalAlpha = 0.08 + Math.abs(wh)*0.02;
+        ctx.fillStyle = '#4a8ab0';
+        ctx.beginPath();
+        ctx.arc(sx + tileSize/2, sy + tileSize/2, 40 + wh*3, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+
+        // Foam lines
+        if (wh > 3) {
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy + tileSize/2 + wh);
+          ctx.lineTo(sx + tileSize, sy + tileSize/2 + wh*0.7);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  },
+
+  drawIsland(isl, camX, camY) {
+    const sx = isl.x - camX + W()/2;
+    const sy = isl.y - camY + H()/2;
+    if (sx < -200 || sx > W()+200 || sy < -200 || sy > H()+200) return;
+
+    // Water shadow
+    ctx.fillStyle = '#00000033';
+    ctx.beginPath();
+    ctx.ellipse(sx+5, sy+8, isl.r*1.1, isl.r*0.5, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Sandy beach
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, isl.r);
+    grad.addColorStop(0, '#d4a84b');
+    grad.addColorStop(0.6, '#c4943a');
+    grad.addColorStop(0.85, '#8b6914');
+    grad.addColorStop(1, '#1a3a2a');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, isl.r, 0, Math.PI*2);
+    ctx.fill();
+
+    // Grass/vegetation
+    if (isl.type === 'palm' || isl.type !== 'volcano') {
+      ctx.fillStyle = '#2d5a1e';
+      ctx.beginPath();
+      ctx.arc(sx-isl.r*0.2, sy-isl.r*0.2, isl.r*0.5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#3a6b2a';
+      ctx.beginPath();
+      ctx.arc(sx+isl.r*0.15, sy-isl.r*0.3, isl.r*0.4, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Volcano
+    if (isl.type === 'volcano') {
+      ctx.fillStyle = '#4a3520';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy-isl.r*0.8);
+      ctx.lineTo(sx+isl.r*0.5, sy+isl.r*0.3);
+      ctx.lineTo(sx-isl.r*0.5, sy+isl.r*0.3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#c44';
+      ctx.beginPath();
+      ctx.arc(sx, sy-isl.r*0.6, isl.r*0.15, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Palm trees
+    if (isl.type === 'palm') {
+      for (let i = 0; i < isl.palmCount; i++) {
+        const px = sx + (Math.random()-0.5)*isl.r*1.2;
+        const py = sy + (Math.random()-0.5)*isl.r*0.8;
+        // Trunk
+        ctx.strokeStyle = '#8b6914';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px+(Math.random()-0.5)*10, py-20);
+        ctx.stroke();
+        // Fronds
+        ctx.fillStyle = '#2d5a1e';
+        for (let j=0;j<5;j++) {
+          const a = (j/5)*Math.PI*2;
+          ctx.beginPath();
+          ctx.ellipse(px+(Math.random()-0.5)*10+Math.cos(a)*12, py-22+Math.sin(a)*5, 14, 5, a, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+    }
+
+    // Harbor marker
+    if (isl.harbor) {
+      const pulse = Math.sin(Date.now()*0.003)*0.3+0.7;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#4caf50';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 10, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚓', sx, sy+5);
+      ctx.restore();
+    }
+
+    // Label
+    ctx.fillStyle = '#f5d89a99';
+    ctx.font = '11px Palatino,serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(isl.name, sx, sy + isl.r + 16);
+  },
+
+  drawWreck(wreck, camX, camY) {
+    if (wreck.found) return;
+    const sx = wreck.x - camX + W()/2;
+    const sy = wreck.y - camY + H()/2;
+    if (sx < -50 || sx > W()+50 || sy < -50 || sy > H()+50) return;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.globalAlpha = 0.7;
+    // Broken hull
+    ctx.fillStyle = '#3a2510';
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.lineTo(-10, -15);
+    ctx.lineTo(15, -10);
+    ctx.lineTo(20, 5);
+    ctx.lineTo(5, 12);
+    ctx.lineTo(-15, 8);
+    ctx.closePath();
+    ctx.fill();
+    // Mast
+    ctx.fillStyle = '#2a1a08';
+    ctx.fillRect(-2, -25, 4, 20);
+    ctx.restore();
+
+    // Sparkle
+    const sparkle = Math.sin(Date.now()*0.005)*0.5+0.5;
+    ctx.save();
+    ctx.globalAlpha = sparkle*0.8;
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '12px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('✦', sx, sy-30);
+    ctx.restore();
+  },
+
+  drawMinimap() {
+    const mc = mmCtx;
+    const mw = 180, mh = 180;
+    mc.clearRect(0, 0, mw, mh);
+
+    // Ocean
+    mc.fillStyle = '#0a2040';
+    mc.fillRect(0, 0, mw, mh);
+
+    const scaleX = mw / worldWidth;
+    const scaleY = mh / worldHeight;
+
+    // Islands
+    mc.fillStyle = '#4a8b40';
+    World.islands.forEach(isl => {
+      mc.beginPath();
+      mc.arc(isl.x*scaleX, isl.y*scaleY, Math.max(3, isl.r*scaleX), 0, Math.PI*2);
+      mc.fill();
+    });
+
+    // Wrecks
+    World.wrecks.forEach(w => {
+      if (w.found) return;
+      mc.fillStyle = '#ffd700';
+      mc.beginPath();
+      mc.arc(w.x*scaleX, w.y*scaleY, 2, 0, Math.PI*2);
+      mc.fill();
+    });
+
+    // Enemies
+    mc.fillStyle = '#e74c3c';
+    this.enemies.forEach(e => {
+      if (e.dead) return;
+      mc.beginPath();
+      mc.arc(e.x*scaleX, e.y*scaleY, 3, 0, Math.PI*2);
+      mc.fill();
+    });
+
+    // Player
+    if (this.player) {
+      mc.fillStyle = '#4caf50';
+      mc.beginPath();
+      mc.arc(this.player.x*scaleX, this.player.y*scaleY, 4, 0, Math.PI*2);
+      mc.fill();
+      // Direction indicator
+      mc.strokeStyle = '#4caf50';
+      mc.lineWidth = 1;
+      mc.beginPath();
+      mc.moveTo(this.player.x*scaleX, this.player.y*scaleY);
+      mc.lineTo(
+        this.player.x*scaleX + Math.sin(this.player.angle)*8,
+        this.player.y*scaleY - Math.cos(this.player.angle)*8
+      );
+      mc.stroke();
+    }
+
+    // Border
+    mc.strokeStyle = '#c8a05055';
+    mc.lineWidth = 1;
+    mc.strokeRect(0, 0, mw, mh);
+  },
+
+  drawCompass() {
+    const cc = compassCtx;
+    cc.clearRect(0, 0, 70, 70);
+    const cx = 35, cy = 35;
+
+    // Rose
+    cc.strokeStyle = '#c8a05055';
+    cc.lineWidth = 1;
+    cc.beginPath();
+    cc.arc(cx, cy, 28, 0, Math.PI*2);
+    cc.stroke();
+
+    if (!this.player) return;
+
+    // Wind direction
+    const windAngle = this.wind.angle;
+    const wa = windAngle - this.player.angle;
+    cc.save();
+    cc.translate(cx, cy);
+    cc.rotate(-this.player.angle);
+
+    // Cardinal directions
+    const dirs = [['N',0,'#c44'],['E',Math.PI/2,'#aaa'],['S',Math.PI,'#aaa'],['W',-Math.PI/2,'#aaa']];
+    dirs.forEach(([label, a, col]) => {
+      cc.save();
+      cc.rotate(a);
+      cc.fillStyle = col;
+      cc.font = 'bold 9px serif';
+      cc.textAlign = 'center';
+      cc.fillText(label, 0, -18);
+      cc.restore();
+    });
+
+    // Wind arrow
+    const wx = Math.sin(windAngle)*22;
+    const wy = -Math.cos(windAngle)*22;
+    cc.fillStyle = '#4a8ab0aa';
+    cc.beginPath();
+    cc.moveTo(wx, wy);
+    cc.lineTo(wx-Math.sin(windAngle+0.5)*8, wy+Math.cos(windAngle+0.5)*8);
+    cc.lineTo(wx-Math.sin(windAngle-0.5)*8, wy+Math.cos(windAngle-0.5)*8);
+    cc.closePath();
+    cc.fill();
+
+    cc.restore();
+
+    // Player heading dot
+    cc.fillStyle = '#4caf50';
+    cc.beginPath();
+    cc.arc(cx, cy, 3, 0, Math.PI*2);
+    cc.fill();
+  },
+
+  draw() {
+    ctx.clearRect(0, 0, W(), H());
+
+    if (this.state === 'menu') return;
+
+    const camX = this.camera.x;
+    const camY = this.camera.y;
+
+    // Ocean
+    this.drawOcean(camX, camY);
+
+    // Wrecks
+    World.wrecks.forEach(w => this.drawWreck(w, camX, camY));
+
+    // Islands
+    World.islands.forEach(isl => this.drawIsland(isl, camX, camY));
+
+    // Enemies
+    this.enemies.forEach(e => e.draw(camX, camY));
+
+    // Player
+    if (this.player) this.player.draw(camX, camY);
+
+    // Projectiles
+    this.projectiles.forEach(p => p.draw(camX, camY));
+
+    // Particles
+    this.particles.forEach(p => p.draw(camX, camY));
+
+    // Harbor interaction hint
+    if (this.player && !document.getElementById('harbor-ui').style.display?.startsWith('block')) {
+      for (const isl of World.islands) {
+        if (!isl.harbor) continue;
+        const d = Math.hypot(this.player.x-isl.x, this.player.y-isl.y);
+        if (d < isl.r + 60) {
+          ctx.save();
+          ctx.fillStyle = '#f5d89a';
+          ctx.font = '14px Palatino,serif';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#000';
+          ctx.shadowBlur = 8;
+          ctx.fillText('Click to enter Harbor', isl.x-camX+W()/2, isl.y-camY+H()/2-isl.r-20);
+          ctx.restore();
+        }
+      }
+    }
+
+    // Minimap & compass
+    this.drawMinimap();
+    this.drawCompass();
+  }
+};
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function loop() {
+  G.update();
+  G.draw();
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+window.addEventListener('keydown', e => {
+  G.keys[e.code] = true;
+  if (e.code === 'Space') { e.preventDefault(); }
+});
+window.addEventListener('keyup', e => { G.keys[e.code] = false; });
+window.addEventListener('mousemove', e => { G.mouse.x = e.clientX; G.mouse.y = e.clientY; });
+
+canvas.addEventListener('click', e => {
+  if (G.state !== 'playing' || !G.player) return;
+  const mx = e.clientX, my = e.clientY;
+  const worldX = G.camera.x + (mx - W()/2);
+  const worldY = G.camera.y + (my - H()/2);
+  for (const isl of World.islands) {
+    if (isl.harbor && Math.hypot(worldX-isl.x, worldY-isl.y) < isl.r+30) {
+      G.openHarbor(isl);
+      return;
+    }
+  }
+});
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', () => {
+  canvas.width = W();
+  canvas.height = H();
+});
+
+// ============================================================
+// INIT
+// ============================================================
+canvas.width = W();
+canvas.height = H();
+loop();
+</script>
+</body>
+</html>
