@@ -2,66 +2,60 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Slime Surge</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#04040d}
-body{font-family:'Orbitron',monospace;user-select:none;-webkit-user-select:none;touch-action:none}
+body{font-family:'Orbitron',monospace;user-select:none;-webkit-user-select:none}
 canvas{display:block;width:100%;height:100%}
 
-#ui{position:fixed;top:0;left:0;right:0;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;z-index:5;pointer-events:none;font-size:clamp(10px,2.5vw,14px)}
+#ui{position:fixed;top:0;left:0;right:0;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;z-index:5;pointer-events:none;font-size:clamp(10px,2.5vw,13px)}
 #score span{color:#00ffaa;text-shadow:0 0 10px #0f8}
 #hi span{color:#ffcc00;text-shadow:0 0 8px #fc0}
 #boost span{color:#ff44cc;text-shadow:0 0 8px #f4c}
 
-#overlay{position:fixed;inset:0;background:rgba(4,4,18,0.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;padding:1em}
+#overlay{position:fixed;inset:0;background:rgba(4,4,18,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;padding:1em}
 #overlay.hidden{display:none}
-.title{font-size:clamp(2rem,9vw,5rem);font-weight:900;background:linear-gradient(135deg,#00ffaa,#00ccff,#ff44cc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 20px #0ff6);letter-spacing:3px;margin-bottom:.2em;text-align:center}
-.sub{font-size:clamp(0.65rem,2vw,0.95rem);color:#7af;color:text-align:center;margin-bottom:2em;text-align:center;padding:0 1em;max-width:400px;line-height:1.6}
-.btn{padding:.9em 3em;font-size:clamp(0.9rem,3vw,1.3rem);background:linear-gradient(135deg,#00ffaa,#00ccff);border:none;color:#04040d;font-family:Orbitron;font-weight:900;cursor:pointer;border-radius:8px;letter-spacing:2px;text-transform:uppercase;transition:all .2s;box-shadow:0 0 20px #0f86;margin:.4em}
+.title{font-size:clamp(2rem,10vw,5rem);font-weight:900;background:linear-gradient(135deg,#00ffaa,#00ccff,#ff44cc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 20px #0ff6);letter-spacing:3px;margin-bottom:.2em;text-align:center}
+.sub{font-size:clamp(0.65rem,2vw,0.9rem);color:#aaa;margin-bottom:2em;text-align:center;padding:0 1em;max-width:400px;line-height:1.7}
+.btn{padding:.9em 3em;font-size:clamp(0.9rem,3vw,1.2rem);background:linear-gradient(135deg,#00ffaa,#00ccff);border:none;color:#04040d;font-family:Orbitron;font-weight:900;cursor:pointer;border-radius:8px;letter-spacing:2px;text-transform:uppercase;transition:all .2s;box-shadow:0 0 20px #0f86;margin:.4em}
 .btn:hover,.btn:active{transform:scale(1.05);box-shadow:0 0 40px #0ffa}
-.btn.secondary{background:transparent;border:2px solid #00ffaa;color:#00ffaa;font-size:clamp(0.7rem,2vw,0.9rem);padding:.6em 1.5em;box-shadow:none}
-.btn.secondary:hover{background:#00ffaa22}
-.hint{font-size:clamp(0.55rem,1.5vw,0.75rem);color:#555;margin-top:2em;text-align:center;line-height:2}
+.hint{font-size:clamp(0.55rem,1.5vw,0.72rem);color:#555;margin-top:2em;text-align:center;line-height:2;max-width:360px}
 
-#powerbar-wrap{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);width:min(280px,80vw);height:12px;background:rgba(255,255,255,0.06);border-radius:6px;overflow:hidden;z-index:5;pointer-events:none;opacity:0;transition:opacity .3s}
-#powerbar-wrap.visible{opacity:1}
-#powerbar{height:100%;width:0%;background:linear-gradient(90deg,#00ff88,#ffcc00,#ff4488);border-radius:6px;transition:width .02s linear;box-shadow:0 0 10px #0f8}
+#combo-popup{position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);font-size:clamp(1.5rem,6vw,3rem);font-weight:900;color:#ffcc00;text-shadow:0 0 30px #fc0;pointer-events:none;z-index:6;opacity:0;transition:opacity .2s,transform .2s}
+#combo-popup.show{opacity:1;transform:translate(-50%,-50%) scale(1.1)}
 
-#combo-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:clamp(1.5rem,6vw,3rem);font-weight:900;color:#ffcc00;text-shadow:0 0 30px #fc0;pointer-events:none;z-index:6;opacity:0;transition:opacity .3s,transform .3s}
-#combo-popup.show{opacity:1;transform:translate(-50%,-60%) scale(1.2)}
+#ring-flash{position:fixed;inset:0;background:rgba(0,255,170,0.06);pointer-events:none;z-index:4;opacity:0;transition:opacity .08s}
 
-#ring-flash{position:fixed;inset:0;background:rgba(0,255,170,0.08);pointer-events:none;z-index:4;opacity:0;transition:opacity .1s}
+#boost-hint{position:fixed;bottom:clamp(60px,12vw,100px);right:clamp(12px,3vw,24px);background:rgba(255,68,204,0.15);border:2px solid #ff44cc;border-radius:50%;width:clamp(48px,12vw,64px);height:clamp(48px,12vw,64px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:5;pointer-events:none;opacity:0;transition:opacity .3s;cursor:pointer}
+#boost-hint.visible{opacity:1}
+#boost-hint .label{font-size:clamp(7px,1.5vw,10px);color:#ff44cc;font-weight:700;letter-spacing:1px}
+#boost-hint .key{font-size:clamp(9px,2vw,12px);color:#fff;font-weight:900}
 </style>
 </head>
 <body>
 
 <div id="ui">
   <div id="score">SCORE <span>0</span></div>
-  <div id="boost">BOOST <span>0</span></div>
+  <div id="boost">BOOST <span>100</span></div>
   <div id="hi">BEST <span>0</span></div>
 </div>
 
 <div id="overlay">
   <div class="title">🐌 SLIME SURGE</div>
-  <div class="sub">Charge your shot and launch through glowing rings! Chain combos to reach the stars.</div>
-  <button class="btn" id="startBtn">LAUNCH</button>
-  <button class="btn secondary" id="howBtn">HOW TO PLAY</button>
-  <div class="hint" id="howText" style="display:none">
-    Hold anywhere to AIM — release to LAUNCH<br>
-    Desktop: Hold mouse, aim, release to fire<br>
-    Mobile: Touch + drag, release to launch<br>
-    Pass through rings to score & refill boost<br>
-    Use boost to slow time and aim mid-air<br>
-    Chain rings for COMBO multiplier!
-  </div>
+  <div class="sub">Rings fall toward you! Shoot them for points.<br>Tap BOOST to slow time and aim perfectly.</div>
+  <button class="btn" id="startBtn">PLAY</button>
+  <div class="hint">TAP LEFT/RIGHT — steer the snail<br>TAP BOOST button — slow time & aim<br>PASS THROUGH rings — combo bonus!</div>
 </div>
 
-<div id="powerbar-wrap"><div id="powerbar"></div></div>
 <div id="combo-popup"></div>
 <div id="ring-flash"></div>
+<div id="boost-hint">
+  <div class="label">BOOST</div>
+  <div class="key">⌗</div>
+</div>
 <canvas id="c"></canvas>
 
 <script>
@@ -70,15 +64,12 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const startBtn = document.getElementById('startBtn');
-const howBtn = document.getElementById('howBtn');
-const howText = document.getElementById('howText');
 const scoreEl = document.querySelector('#score span');
 const hiEl = document.querySelector('#hi span');
 const boostEl = document.querySelector('#boost span');
-const powerbar = document.getElementById('powerbar');
-const powerbarWrap = document.getElementById('powerbar-wrap');
 const comboPopup = document.getElementById('combo-popup');
 const ringFlash = document.getElementById('ring-flash');
+const boostHint = document.getElementById('boost-hint');
 
 const GW = 480, GH = 720;
 let W, H, scale = 1, ox = 0, oy = 0;
@@ -86,33 +77,40 @@ let W, H, scale = 1, ox = 0, oy = 0;
 let best = parseInt(localStorage.getItem('slime-surge-best') || '0');
 hiEl.textContent = best;
 
-let state = 'start'; // start | playing | dead
+let state = 'start';
 let score = 0, combo = 0, boost = 100, maxBoost = 100;
-let lastStep = 0, gameSpeed = 16.67;
+let lastStep = 0;
 let frame = 0;
 let deathTimer = null;
 
 // snail
 let snail = {
-  x: GW/2, y: GH - 100,
+  x: GW/2, y: GH - 120,
   vx: 0, vy: 0,
-  radius: 18,
-  angle: -Math.PI/2,
-  charging: false,
-  charge: 0,
+  radius: 20,
   alive: true,
-  glow: 0,
-  squash: 1, stretch: 1,
-  trail: []
+  stretch: 1, squash: 1,
+  trail: [],
+  flashTimer: 0
 };
 
 // rings
 let rings = [];
+let projectiles = [];
 let particles = [];
 let stars = [];
 let floatingTexts = [];
 let screenShake = {x:0, y:0, mag:0};
 let slowMo = 1;
+let boostActive = false;
+let boostCooldown = 0;
+let difficulty = 1;
+
+// aim state (projectile shooter)
+let aimX = GW/2, aimY = 0, isAiming = false;
+
+// controls
+let moveDir = 0; // -1 left, 0 none, 1 right
 
 function resize() {
   W = window.innerWidth;
@@ -126,7 +124,7 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// ─── STARS (background) ───────────────────────────────────────────────
+// ─── STARS ──────────────────────────────────────────────────────────
 function initStars() {
   stars = [];
   for (let i = 0; i < 80; i++) {
@@ -141,39 +139,66 @@ function initStars() {
 }
 initStars();
 
-// ─── RINGS ───────────────────────────────────────────────────────────
+// ─── RINGS ──────────────────────────────────────────────────────────
 function spawnRing() {
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 80 + Math.random() * 200;
+  const y = -60 - Math.random() * 150;
+  const spread = Math.min(200, GW * 0.4);
   rings.push({
-    x: GW/2 + Math.cos(angle) * dist,
-    y: -50 - Math.random() * 80,
-    innerR: 28, outerR: 36,
-    hue: Math.random() * 60 + 160, // cyan to purple
-    speed: 0.8 + Math.random() * 0.6,
+    x: GW/2 + (Math.random() - 0.5) * spread,
+    y,
+    vy: (0.6 + difficulty * 0.15 + Math.random() * 0.4),
+    innerR: 30, outerR: 40,
+    hue: (160 + Math.random() * 120) % 360,
     pulse: Math.random() * Math.PI * 2,
-    active: true,
     passed: false,
-    points: 10 + Math.floor(Math.random() * 20)
+    points: 10 + Math.floor(difficulty * 3)
   });
 }
 
 function initRings() {
   rings = [];
-  for (let i = 0; i < 6; i++) {
-    const r = {
-      x: GW/2 + (Math.random() - 0.5) * 280,
-      y: GH/2 - 60 - i * 110,
-      innerR: 28, outerR: 36,
-      hue: (i * 40 + 160) % 360,
-      speed: 0.8,
+  for (let i = 0; i < 5; i++) {
+    rings.push({
+      x: GW/2 + (Math.random() - 0.5) * 260,
+      y: -60 - i * 140,
+      vy: 0.8,
+      innerR: 30, outerR: 40,
+      hue: (160 + i * 40) % 360,
       pulse: Math.random() * Math.PI * 2,
-      active: true,
       passed: false,
       points: 10 + i * 5
-    };
-    rings.push(r);
+    });
   }
+}
+
+// ─── PROJECTILES ────────────────────────────────────────────────────
+function shootProjectile(targetX, targetY) {
+  if (boost < 15 && !boostActive) return;
+  if (boostActive) {
+    boost -= 10;
+  } else {
+    boost -= 15;
+  }
+  const dx = targetX - snail.x;
+  const dy = targetY - snail.y;
+  const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+  const speed = 14;
+  projectiles.push({
+    x: snail.x, y: snail.y - snail.radius,
+    vx: (dx/dist) * speed,
+    vy: (dy/dist) * speed,
+    life: 1
+  });
+  spawnParticles(snail.x, snail.y - snail.radius, 8, '#00ffaa', 0.6);
+  updateHUD();
+}
+
+function fireProjectile() {
+  // auto-aim: fire straight up with slight spread
+  const spread = (Math.random() - 0.5) * 60;
+  const targetX = snail.x + spread;
+  const targetY = snail.y - 400;
+  shootProjectile(targetX, targetY);
 }
 
 // ─── PARTICLES ──────────────────────────────────────────────────────
@@ -185,51 +210,56 @@ function spawnParticles(x, y, count, color, speedMult=1) {
       x, y,
       vx: Math.cos(angle) * spd,
       vy: Math.sin(angle) * spd,
-      life: 1, decay: 0.02 + Math.random() * 0.03,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.03,
       r: Math.random() * 4 + 1,
       color
     });
   }
 }
 
-function spawnTrail(x, y) {
-  snail.trail.push({x, y, life: 1});
-  if (snail.trail.length > 25) snail.trail.shift();
+function spawnTrail(x, y, color='#00ffaa') {
+  snail.trail.push({x, y, life: 0.7, color});
+  if (snail.trail.length > 20) snail.trail.shift();
 }
 
-// ─── FLOATING TEXT ───────────────────────────────────────────────────
+// ─── FLOATING TEXT ──────────────────────────────────────────────────
 function floatText(text, x, y, color='#ffcc00') {
-  floatingTexts.push({text, x, y, vy: -1.5, life: 1, color});
+  floatingTexts.push({text, x, y, vy: -2, life: 1, color});
 }
 
-// ─── COMBO POPUP ────────────────────────────────────────────────────
+// ─── COMBO ──────────────────────────────────────────────────────────
 let comboTimeout = null;
 function showCombo(n) {
   if (n < 2) return;
   comboPopup.textContent = `×${n} COMBO!`;
   comboPopup.classList.add('show');
   clearTimeout(comboTimeout);
-  comboTimeout = setTimeout(() => comboPopup.classList.remove('show'), 900);
+  comboTimeout = setTimeout(() => comboPopup.classList.remove('show'), 1000);
 }
 
-// ─── SCREEN SHAKE ────────────────────────────────────────────────────
+// ─── SHAKE ──────────────────────────────────────────────────────────
 function shake(mag) {
   screenShake.mag = Math.max(screenShake.mag, mag);
 }
 
 // ─── BOOST ──────────────────────────────────────────────────────────
 function activateBoost() {
-  if (boost >= 30) {
-    boost -= 30;
-    slowMo = 0.25;
-    setTimeout(() => { slowMo = 1; }, 1500);
-  }
+  if (boostCooldown > 0 || boost < 30) return;
+  boostActive = true;
+  slowMo = 0.2;
+  boostCooldown = 30; // frames of boost
+  boostHint.style.borderColor = '#ff88dd';
+  boostHint.style.background = 'rgba(255,68,204,0.35)';
+  setTimeout(() => {
+    boostActive = false;
+    slowMo = 1;
+    boostHint.style.borderColor = '#ff44cc';
+    boostHint.style.background = 'rgba(255,68,204,0.15)';
+  }, 1800);
 }
 
-// ─── INPUT ───────────────────────────────────────────────────────────
-let mouseX = GW/2, mouseY = GH/2;
-let touchActive = false, touchId = null;
-
+// ─── INPUT ──────────────────────────────────────────────────────────
 function getGameCoords(clientX, clientY) {
   return {
     x: (clientX - ox) / scale,
@@ -237,81 +267,68 @@ function getGameCoords(clientX, clientY) {
   };
 }
 
-function onPointerDown(clientX, clientY, id) {
+// Touch/click on canvas
+canvas.addEventListener('pointerdown', e => {
   if (state !== 'playing') return;
-  const {x, y} = getGameCoords(clientX, clientY);
-  touchId = id;
-  touchActive = true;
-  snail.charging = true;
-  snail.charge = 0;
-  powerbarWrap.classList.add('visible');
-  // Check boost click (top-right corner)
-  if (x > GW - 80 && y < 60 && boost >= 30) {
+  e.preventDefault();
+  const {x, y} = getGameCoords(e.clientX, e.clientY);
+
+  // Check boost button area (bottom-right)
+  const btnX = GW - 40;
+  const btnY = GH - 40;
+  const dist = Math.sqrt((x-btnX)**2 + (y-btnY)**2);
+  if (dist < 45) {
     activateBoost();
+    return;
   }
-}
 
-function onPointerMove(clientX, clientY) {
-  if (!touchActive) return;
-  const {x, y} = getGameCoords(clientX, clientY);
-  mouseX = x; mouseY = y;
-}
-
-function onPointerUp(clientX, clientY) {
-  if (!touchActive || state !== 'playing') return;
-  touchActive = false;
-  if (snail.charging && snail.charge > 0.05) {
-    const dx = snail.x - mouseX;
-    const dy = snail.y - mouseY;
-    const len = Math.sqrt(dx*dx + dy*dy) || 1;
-    const power = snail.charge * 22;
-    snail.vx = (dx/len) * power;
-    snail.vy = (dy/len) * power;
-    snail.charging = false;
-    snail.charge = 0;
-    powerbarWrap.classList.remove('visible');
-    powerbar.style.width = '0%';
-    spawnParticles(snail.x, snail.y, 8, '#00ffaa', 0.5);
+  // Movement: left half = move left, right half = move right
+  // Actually, let's use horizontal position
+  if (x < GW * 0.35) {
+    // Left side tap: move left + shoot
+    moveDir = -1;
+    fireProjectile();
+  } else if (x > GW * 0.65) {
+    // Right side tap: move right + shoot
+    moveDir = 1;
+    fireProjectile();
   } else {
-    snail.charging = false;
-    snail.charge = 0;
-    powerbarWrap.classList.remove('visible');
-    powerbar.style.width = '0%';
+    // Center: just shoot
+    fireProjectile();
   }
-}
+}, {passive:false});
 
-function onBoostKey() {
-  if (state === 'playing') activateBoost();
-}
+canvas.addEventListener('pointerup', e => {
+  moveDir = 0;
+});
 
-// mouse
-canvas.addEventListener('mousedown', e => { e.preventDefault(); onPointerDown(e.clientX, e.clientY, 'mouse'); });
-canvas.addEventListener('mousemove', e => onPointerMove(e.clientX, e.clientY));
-canvas.addEventListener('mouseup', e => onPointerUp(e.clientX, e.clientY));
-canvas.addEventListener('mouseleave', () => { touchActive = false; snail.charging = false; powerbarWrap.classList.remove('visible'); });
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') moveDir = -1;
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') moveDir = 1;
+  if (e.code === 'Space' && state === 'playing') { e.preventDefault(); fireProjectile(); }
+  if (e.code === 'KeyB' && state === 'playing') activateBoost();
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft' || e.code === 'KeyA') { if (moveDir === -1) moveDir = 0; }
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') { if (moveDir === 1) moveDir = 0; }
+});
 
-// touch
-canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; onPointerDown(t.clientX, t.clientY, t.identifier); }, {passive:false});
-canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = Array.from(e.changedTouches).find(t => t.identifier === touchId); if (t) onPointerMove(t.clientX, t.clientY); }, {passive:false});
-canvas.addEventListener('touchend', e => { e.preventDefault(); const t = Array.from(e.changedTouches).find(t => t.identifier === touchId); if (t) onPointerUp(t.clientX, t.clientY); }, {passive:false});
-
-// keyboard boost
-window.addEventListener('keydown', e => { if (e.code === 'Space') onBoostKey(); });
-
-// ─── GAME STATE ──────────────────────────────────────────────────────
+// ─── GAME STATE ─────────────────────────────────────────────────────
 function reset() {
   clearTimeout(deathTimer);
-  score = 0; combo = 0; boost = maxBoost;
-  snail.x = GW/2; snail.y = GH - 100;
+  score = 0; combo = 0; boost = maxBoost; difficulty = 1;
+  snail.x = GW/2; snail.y = GH - 120;
   snail.vx = 0; snail.vy = 0;
-  snail.charging = false; snail.charge = 0;
-  snail.alive = true; snail.glow = 0;
-  snail.squash = 1; snail.stretch = 1;
-  snail.trail = [];
-  particles = []; floatingTexts = [];
+  snail.alive = true;
+  snail.stretch = 1; snail.squash = 1;
+  snail.trail = []; snail.flashTimer = 0;
+  rings = []; projectiles = []; particles = []; floatingTexts = [];
   screenShake = {x:0, y:0, mag:0};
-  slowMo = 1;
+  slowMo = 1; boostActive = false; boostCooldown = 0;
+  moveDir = 0;
   initRings();
+  boostHint.classList.add('visible');
   updateHUD();
 }
 
@@ -325,28 +342,25 @@ function startGame() {
 
 function endGame() {
   state = 'dead';
+  boostHint.classList.remove('visible');
   if (score > best) {
     best = score;
     localStorage.setItem('slime-surge-best', best);
     hiEl.textContent = best;
   }
-  spawnParticles(snail.x, snail.y, 30, '#ff4488', 1.5);
-  shake(15);
+  spawnParticles(snail.x, snail.y, 40, '#ff4488', 1.5);
+  shake(18);
   deathTimer = setTimeout(() => {
     overlay.querySelector('.title').textContent = 'GAME OVER';
-    overlay.querySelector('.sub').innerHTML = `Score: <b style="color:#00ffaa">${score}</b> · Best: <b style="color:#ffcc00">${best}</b><br>Tap to launch again!`;
+    overlay.querySelector('.sub').innerHTML = `Score: <b style="color:#00ffaa">${score}</b> · Best: <b style="color:#ffcc00">${best}</b>`;
     overlay.querySelector('.btn').textContent = 'RETRY';
     overlay.classList.remove('hidden');
-    howText.style.display = 'none';
-  }, 600);
+  }, 700);
 }
 
 startBtn.addEventListener('click', () => {
   if (state === 'dead') reset();
   startGame();
-});
-howBtn.addEventListener('click', () => {
-  howText.style.display = howText.style.display === 'none' ? 'block' : 'none';
 });
 
 // ─── HUD ─────────────────────────────────────────────────────────────
@@ -359,91 +373,116 @@ function updateHUD() {
 function update(dt) {
   frame++;
   const sm = slowMo;
-  const t = dt * sm;
 
-  // stars parallax
+  // stars
   for (const s of stars) {
     s.y += s.speed * sm;
     s.twinkle += 0.03 * sm;
     if (s.y > GH) { s.y = -2; s.x = Math.random() * GW; }
   }
 
-  // charge mechanic
-  if (snail.charging) {
-    snail.charge = Math.min(1, snail.charge + 0.012 * sm);
-    powerbar.style.width = (snail.charge * 100) + '%';
-    const dx = snail.x - mouseX;
-    const dy = snail.y - mouseY;
-    snail.angle = Math.atan2(dy, dx);
+  // boost cooldown
+  if (boostCooldown > 0) boostCooldown -= sm;
+
+  // snail movement
+  const SPEED = 5;
+  if (moveDir !== 0) {
+    snail.vx = moveDir * SPEED;
+    // stretch in move direction
+    snail.stretch = 1 + Math.abs(snail.vx) * 0.05;
+  } else {
+    snail.vx *= 0.85;
+    snail.stretch += (1 - snail.stretch) * 0.2;
   }
-
-  // physics
-  const GRAVITY = 0.25;
-  snail.vy += GRAVITY * sm;
-  snail.vx *= 0.995;
-  snail.vy *= 0.995;
-  snail.x += snail.vx * sm;
-  snail.y += snail.vy * sm;
-
-  // trail
-  if (Math.abs(snail.vx) > 0.5 || Math.abs(snail.vy) > 0.5) {
-    if (frame % 2 === 0) spawnTrail(snail.x, snail.y);
-  }
-
-  // squash/stretch
-  const speed = Math.sqrt(snail.vx*snail.vx + snail.vy*snail.vy);
-  const targetStretch = 1 + speed * 0.04;
-  snail.stretch += (targetStretch - snail.stretch) * 0.2;
   snail.squash = 1 / snail.stretch;
 
-  // wall bounce
-  if (snail.x < snail.radius) { snail.x = snail.radius; snail.vx *= -0.6; spawnParticles(snail.x, snail.y, 5, '#aaa', 0.5); }
-  if (snail.x > GW - snail.radius) { snail.x = GW - snail.radius; snail.vx *= -0.6; spawnParticles(snail.x, snail.y, 5, '#aaa', 0.5); }
-  if (snail.y > GH + 80) { if (snail.alive) { snail.alive = false; endGame(); } }
+  // wall clamp
+  snail.x += snail.vx * sm;
+  if (snail.x < snail.radius) { snail.x = snail.radius; snail.vx = 0; }
+  if (snail.x > GW - snail.radius) { snail.x = GW - snail.radius; snail.vx = 0; }
 
-  // rings
+  // trail
+  if (Math.abs(snail.vx) > 0.5) {
+    if (frame % 3 === 0) spawnTrail(snail.x, snail.y + snail.radius * 0.5);
+  }
+
+  // rings fall
   for (const r of rings) {
-    r.y += r.speed * sm;
+    r.y += r.vy * difficulty * sm;
     r.pulse += 0.06 * sm;
 
-    if (!r.passed) {
-      const dx = snail.x - r.x;
-      const dy = snail.y - r.y;
+    // collision with snail
+    const dx = snail.x - r.x;
+    const dy = snail.y - r.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (!r.passed && dist < r.outerR + snail.radius * 0.8) {
+      // ring hit snail
+      r.passed = true;
+      combo = 0;
+      shake(8);
+      spawnParticles(r.x, r.y, 15, `hsl(${r.hue},100%,60%)`, 1);
+      floatText('HIT!', r.x, r.y, '#ff4488');
+      // Damage snail
+      snail.flashTimer = 20;
+      activateBoost(); // auto-boost on hit
+    }
+  }
+
+  // projectiles
+  for (const p of projectiles) {
+    p.x += p.vx * sm;
+    p.y += p.vy * sm;
+    p.life -= 0.008 * sm;
+
+    // check ring collision
+    for (const r of rings) {
+      if (r.passed) continue;
+      const dx = p.x - r.x;
+      const dy = p.y - r.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < r.outerR + snail.radius && dist > r.innerR - snail.radius * 0.5) {
-        // passed through ring!
+      if (dist < r.outerR + 6) {
         r.passed = true;
         combo++;
         const pts = r.points * Math.min(combo, 5);
         score += pts;
-        boost = Math.min(maxBoost, boost + 15);
-        floatText(`+${pts}`, r.x, r.y - 20, combo > 1 ? '#ffcc00' : '#00ffaa');
-        spawnParticles(r.x, r.y, 20, `hsl(${r.hue},100%,60%)`, 1.2);
-        shake(4);
+        boost = Math.min(maxBoost, boost + 12);
+        floatText(`+${pts}`, r.x, r.y, combo > 1 ? '#ffcc00' : '#00ffaa');
+        spawnParticles(r.x, r.y, 25, `hsl(${r.hue},100%,60%)`, 1.5);
+        shake(5);
         showCombo(combo);
-        // ring flash
         ringFlash.style.opacity = '1';
-        setTimeout(() => ringFlash.style.opacity = '0', 100);
+        setTimeout(() => ringFlash.style.opacity = '0', 80);
+        p.life = 0;
         updateHUD();
       }
     }
   }
 
-  // remove old rings, spawn new
-  rings = rings.filter(r => r.y < GH + 80);
-  if (rings.length < 5) spawnRing();
-  if (rings.length === 0) spawnRing();
+  // remove dead projectiles
+  projectiles = projectiles.filter(p => p.life > 0 && p.y > -20 && p.y < GH + 20 && p.x > -20 && p.x < GW + 20);
+
+  // ring cleanup
+  rings = rings.filter(r => r.y < GH + 80 && !r.passed);
+
+  // spawn new rings
+  if (rings.length < 4 + Math.floor(difficulty * 0.5)) spawnRing();
+
+  // difficulty ramp
+  difficulty = 1 + score * 0.002;
+
+  // snail flash
+  if (snail.flashTimer > 0) snail.flashTimer--;
 
   // particles
   for (const p of particles) {
     p.x += p.vx * sm; p.y += p.vy * sm;
-    p.vy += 0.05 * sm;
+    p.vy += 0.06 * sm;
     p.life -= p.decay * sm;
   }
   particles = particles.filter(p => p.life > 0);
 
   // trail fade
-  for (const t2 of snail.trail) t2.life -= 0.04 * sm;
+  for (const t2 of snail.trail) t2.life -= 0.05 * sm;
   snail.trail = snail.trail.filter(t2 => t2.life > 0);
 
   // floating texts
@@ -459,11 +498,26 @@ function update(dt) {
     screenShake.x = (Math.random() - 0.5) * screenShake.mag;
     screenShake.y = (Math.random() - 0.5) * screenShake.mag;
   }
+
+  // auto-boost when low on health (snail flash = took damage recently)
+  // game over: ring reaches bottom
+  for (const r of rings) {
+    if (!r.passed && r.y > GH + r.outerR) {
+      // ring passed snail = miss, reset combo
+      combo = 0;
+      r.passed = true;
+    }
+  }
+
+  // Check game over: 3 rings got through without being shot
+  const missedRings = rings.filter(r => !r.passed && r.y > GH).length;
+  // No instant game over - let rings pile up at bottom
+  // Actually just remove them
+  rings = rings.filter(r => !(r.y > GH + 50));
 }
 
 // ─── DRAW ───────────────────────────────────────────────────────────
 function drawBackground() {
-  // deep space gradient
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#04040d');
   bg.addColorStop(0.5, '#060614');
@@ -471,7 +525,6 @@ function drawBackground() {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // stars
   for (const s of stars) {
     const sx = ox + s.x * scale;
     const sy = oy + s.y * scale;
@@ -492,101 +545,100 @@ function drawRing(r) {
   const hue = r.hue;
 
   // glow
-  const grd = ctx.createRadialGradient(cx, cy, ir, cx, cy, or + 10*scale);
+  const grd = ctx.createRadialGradient(cx, cy, ir, cx, cy, or + 15*scale);
   grd.addColorStop(0, `hsla(${hue},100%,65%,0)`);
-  grd.addColorStop(0.5, `hsla(${hue},100%,65%,0.3)`);
+  grd.addColorStop(0.5, `hsla(${hue},100%,65%,0.35)`);
   grd.addColorStop(1, `hsla(${hue},100%,65%,0)`);
   ctx.fillStyle = grd;
   ctx.beginPath();
-  ctx.arc(cx, cy, or + 10*scale, 0, Math.PI * 2);
+  ctx.arc(cx, cy, or + 15*scale, 0, Math.PI * 2);
   ctx.fill();
 
-  // ring arc
+  // ring
   ctx.beginPath();
   ctx.arc(cx, cy, or, 0, Math.PI * 2);
   ctx.strokeStyle = `hsl(${hue},100%,65%)`;
-  ctx.lineWidth = (or - ir) * scale;
+  ctx.lineWidth = Math.max(3, (or - ir)) * scale;
   ctx.stroke();
 
-  // inner glow ring
+  // inner
   ctx.beginPath();
   ctx.arc(cx, cy, ir, 0, Math.PI * 2);
-  ctx.strokeStyle = `hsla(${hue},100%,85%,0.5)`;
-  ctx.lineWidth = 2 * scale;
+  ctx.strokeStyle = `hsla(${hue},100%,85%,0.4)`;
+  ctx.lineWidth = 1.5 * scale;
   ctx.stroke();
 
-  // center dot
-  if (!r.passed) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = `hsl(${hue},100%,90%)`;
-    ctx.fill();
-  }
+  // points label
+  ctx.fillStyle = `hsla(${hue},100%,80%,0.6)`;
+  ctx.font = `bold ${Math.floor(9 * scale)}px Orbitron,monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`+${r.points}`, cx, cy + 3 * scale);
+}
+
+function drawProjectile(p) {
+  const px = ox + p.x * scale;
+  const py = oy + p.y * scale;
+  const r = 6 * scale;
+
+  // glow
+  const pg = ctx.createRadialGradient(px, py, 0, px, py, r * 3);
+  pg.addColorStop(0, 'rgba(0,255,170,0.6)');
+  pg.addColorStop(1, 'rgba(0,255,170,0)');
+  ctx.fillStyle = pg;
+  ctx.beginPath();
+  ctx.arc(px, py, r * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // core
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#00ffaa';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(px, py, r * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
 }
 
 function drawSnail() {
-  if (!snail.alive) return;
   const sx = ox + snail.x * scale;
   const sy = oy + snail.y * scale;
   const r = snail.radius * scale;
 
   // trail
-  for (let i = 0; i < snail.trail.length; i++) {
-    const t = snail.trail[i];
-    const tx = ox + t.x * scale;
-    const ty = oy + t.y * scale;
-    const tr = r * 0.5 * t.life;
+  for (const t2 of snail.trail) {
+    const tx = ox + t2.x * scale;
+    const ty = oy + t2.y * scale;
+    const tr = r * 0.4 * t2.life;
+    ctx.globalAlpha = t2.life * 0.4;
+    ctx.fillStyle = t2.color || '#00ffaa';
     ctx.beginPath();
     ctx.arc(tx, ty, tr, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0,255,170,${t.life * 0.3})`;
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
 
   ctx.save();
   ctx.translate(sx, sy);
 
-  // aim line when charging
-  if (snail.charging) {
-    const dx = snail.x - mouseX;
-    const dy = snail.y - mouseY;
-    const len = Math.sqrt(dx*dx + dy*dy) || 1;
-    const nx = dx/len, ny = dy/len;
-    const lineLen = snail.charge * 120 * scale;
-
-    // dotted trajectory
-    ctx.save();
-    ctx.strokeStyle = `rgba(0,255,170,0.5)`;
-    ctx.lineWidth = 2 * scale;
-    ctx.setLineDash([4*scale, 4*scale]);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(nx * lineLen, ny * lineLen);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-
-    // charge circle
-    ctx.beginPath();
-    ctx.arc(nx * lineLen * 0.5, ny * lineLen * 0.5, (10 + snail.charge * 20) * scale, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(0,255,170,${snail.charge * 0.6})`;
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
+  // flash when hit
+  if (snail.flashTimer > 0 && snail.flashTimer % 4 < 2) {
+    ctx.globalAlpha = 0.5;
   }
 
-  ctx.rotate(snail.angle + Math.PI/2);
+  // boost aura
+  if (boostActive) {
+    const aura = ctx.createRadialGradient(0, 0, r, 0, 0, r * 2.5);
+    aura.addColorStop(0, 'rgba(255,68,204,0.25)');
+    aura.addColorStop(1, 'rgba(255,68,204,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.scale(snail.stretch, snail.squash);
 
-  // outer glow
-  const glowR = r * 1.8;
-  const gg = ctx.createRadialGradient(0, 0, r*0.5, 0, 0, glowR);
-  gg.addColorStop(0, 'rgba(0,255,170,0.3)');
-  gg.addColorStop(1, 'rgba(0,255,170,0)');
-  ctx.fillStyle = gg;
-  ctx.beginPath();
-  ctx.arc(0, 0, glowR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // shell (body = ellipse, shell = circle)
   // body
   ctx.fillStyle = '#225544';
   ctx.beginPath();
@@ -594,7 +646,7 @@ function drawSnail() {
   ctx.fill();
 
   // shell
-  const sg = ctx.createRadialGradient(-r*0.15, -r*0.1, 0, 0, 0, r*0.6);
+  const sg = ctx.createRadialGradient(-r*0.15, -r*0.1, 0, 0, 0, r*0.55);
   sg.addColorStop(0, '#aaffdd');
   sg.addColorStop(0.3, '#44ffaa');
   sg.addColorStop(0.7, '#00cc77');
@@ -619,7 +671,6 @@ function drawSnail() {
   ctx.lineWidth = 2 * scale;
   ctx.beginPath(); ctx.moveTo(-r*0.25, -r*0.4); ctx.lineTo(-r*0.4, -r*1.1); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(r*0.25, -r*0.4); ctx.lineTo(r*0.4, -r*1.1); ctx.stroke();
-  // antenna tips
   ctx.fillStyle = '#00ffaa';
   ctx.beginPath(); ctx.arc(-r*0.4, -r*1.1, 3*scale, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(r*0.4, -r*1.1, 3*scale, 0, Math.PI*2); ctx.fill();
@@ -628,7 +679,6 @@ function drawSnail() {
   ctx.fillStyle = '#336655';
   ctx.beginPath(); ctx.ellipse(-r*0.35, -r*0.75, r*0.12, r*0.25, -0.2, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(r*0.35, -r*0.75, r*0.12, r*0.25, 0.2, 0, Math.PI*2); ctx.fill();
-  // eyes
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(-r*0.35, -r*0.9, r*0.1, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(r*0.35, -r*0.9, r*0.1, 0, Math.PI*2); ctx.fill();
@@ -642,6 +692,7 @@ function drawSnail() {
   ctx.ellipse(-r*0.15, -r*0.3, r*0.2, r*0.15, -0.5, 0, Math.PI*2);
   ctx.fill();
 
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 
@@ -664,45 +715,20 @@ function drawFloatingTexts() {
     const fx = ox + ft.x * scale;
     const fy = oy + ft.y * scale;
     ctx.globalAlpha = ft.life;
-    ctx.font = `bold ${Math.floor(16 * scale)}px Orbitron,monospace`;
+    ctx.font = `bold ${Math.floor(14 * scale)}px Orbitron,monospace`;
     ctx.fillStyle = ft.color;
     ctx.shadowColor = ft.color;
-    ctx.shadowBlur = 10 * scale;
+    ctx.shadowBlur = 8 * scale;
     ctx.fillText(ft.text, fx, fy);
     ctx.shadowBlur = 0;
   }
   ctx.globalAlpha = 1;
 }
 
-function drawBoostIndicator() {
-  if (boost >= 30 && state === 'playing') {
-    const bx = ox + (GW - 70) * scale;
-    const by = oy + 30 * scale;
-    // boost button area
-    ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#ff44cc';
-    ctx.beginPath();
-    ctx.arc(bx, by, 22 * scale, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 0.8;
-    ctx.strokeStyle = '#ff44cc';
-    ctx.lineWidth = 2 * scale;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#ff44cc';
-    ctx.font = `bold ${Math.floor(9 * scale)}px Orbitron,monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillText('BOOST', bx, by + 3 * scale);
-    ctx.font = `bold ${Math.floor(8 * scale)}px Orbitron,monospace`;
-    ctx.fillStyle = '#fff';
-    ctx.fillText('SPACE', bx, by + 14 * scale);
-  }
-}
-
 function drawComboMeter() {
   if (combo > 1 && state === 'playing') {
     const cx = ox + GW/2 * scale;
-    const cy = oy + 40 * scale;
+    const cy = oy + 38 * scale;
     ctx.font = `bold ${Math.floor(12 * scale)}px Orbitron,monospace`;
     ctx.textAlign = 'center';
     ctx.fillStyle = `rgba(255,204,0,${0.7 + Math.sin(frame*0.1)*0.3})`;
@@ -713,6 +739,46 @@ function drawComboMeter() {
   }
 }
 
+function drawAimGuide() {
+  if (state !== 'playing') return;
+  const sx = ox + snail.x * scale;
+  const sy = oy + (snail.y - snail.radius) * scale;
+
+  // shoot button zones hint
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#00ffaa';
+  ctx.fillRect(ox, oy, GW * 0.35 * scale, GH * scale);
+  ctx.fillStyle = '#ff44cc';
+  ctx.fillRect(ox + GW * 0.65 * scale, oy, GW * 0.35 * scale, GH * scale);
+  ctx.globalAlpha = 0.5;
+  ctx.font = `bold ${Math.floor(10 * scale)}px Orbitron,monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00ffaa';
+  ctx.fillText('← LEFT + SHOOT', ox + GW * 0.175 * scale, oy + GH * scale * 0.15);
+  ctx.fillStyle = '#ff44cc';
+  ctx.fillText('RIGHT + SHOOT →', ox + GW * 0.825 * scale, oy + GH * scale * 0.15);
+
+  ctx.globalAlpha = 1;
+
+  // projectile trail from snail
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = '#00ffaa';
+  ctx.lineWidth = 2 * scale;
+  ctx.setLineDash([3*scale, 6*scale]);
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx, sy - 200 * scale);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // muzzle flash at snail top
+  ctx.beginPath();
+  ctx.arc(sx, sy, 6 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,255,170,0.4)';
+  ctx.fill();
+}
+
 // ─── RENDER ─────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, W, H);
@@ -721,26 +787,18 @@ function render() {
 
   drawBackground();
 
-  // rings
   for (const r of rings) drawRing(r);
-
-  // particles behind snail
+  for (const p of projectiles) drawProjectile(p);
   drawParticles();
-
-  // snail
   drawSnail();
-
-  // floating texts
   drawFloatingTexts();
-
-  // HUD elements
-  drawBoostIndicator();
+  drawAimGuide();
   drawComboMeter();
 
   ctx.restore();
 }
 
-// ─── MAIN LOOP ───────────────────────────────────────────────────────
+// ─── MAIN LOOP ──────────────────────────────────────────────────────
 function loop(t) {
   if (state !== 'playing' && state !== 'dead') return;
 
@@ -756,7 +814,6 @@ function loop(t) {
   requestAnimationFrame(loop);
 }
 
-// Initial render
 render();
 </script>
 </body>
