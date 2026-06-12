@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bowen Test Sandbox OS</title>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --fg: #e0e0e0;
+            --accent: #00ffcc;
+            --surface: #1a1a1a;
+            --Font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body, html {
+            Margin: 0; Padding: 0;
+            Background: var(--bg);
+            Color: var(--fg);
+            Font-family: var(--Font);
+            Overflow: hidden;
+            Height: 100vh;
+        }
+        #desktop {
+            Position: relative;
+             Height: 100vh;
+             Padding: 20px;
+             Display: grid;
+             Grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+             Gap: 20px;
+             Align-items: start;
+        }
+        .Icon {
+            Display: flex;
+             Flex-direction: column;
+             Align-items: center;
+             Cursor: pointer;
+             Padding: 10px;
+             Border-radius: 8px;
+             Transition: Background 0.2s;
+        }
+        .Icon:hover { Background: rgba(255,255,255,0.1); }
+        .Icon img { Width: 50px; Height: 50px; Margin-bottom: 8px; }
+        .Icon span { Font-size: 0.9rem; Text-align: center; }
+
+        #window-manager {
+            Position: absolute;
+             Top: 0; Left: 0; Width: 100%; Height: 100%;
+             Pointer-events: none;
+        }
+        .window {
+            Position: absolute;
+             Background: var(--surface);
+             Border: 1px solid #444;
+             Border-radius: 8px;
+             Box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+             Display: flex;
+             Flex-direction: column;
+             Min-width: 300px;
+             Min-height: 200px;
+             Pointer-events: auto;
+             Overflow: hidden;
+        }
+        .window-header {
+            Padding: 10px;
+             Background: #333;
+             Display: flex;
+              Justify-content: space-between;
+              Align-items: center;
+              Cursor: move;
+        }
+        .window-title { Font-weight: bold; Font-size: 0.8rem; }
+        .window-close { Cursor: pointer; Color: #ff5555; Padding: 0 5px; }
+        .window-content {
+            Padding: 15px;
+             Flex: 1;
+             Overflow: auto;
+             Font-family: 'Courier New', Courier, monospace;
+             Font-size: 0.85rem;
+             White-space: pre-wrap;
+        }
+        #taskbar {
+            Position: absolute;
+             Bottom: 0; Width: 100%;
+             Height: 40px;
+             Background: rgba(20,20,20,0.9);
+             Backdrop-filter: blur(10px);
+             Display: flex;
+             Align-items: center;
+             Padding: 0 10px;
+             Border-top: 1px solid #444;
+        }
+        .Task-Btn {
+              Padding: 5px 15px;
+             Border: 1px solid #555;
+             Background: transparent;
+             Color: white;
+             Border-radius: 4px;
+             Margin-right: 5px;
+             Cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="desktop">
+        <div class="icon" onclick="openApp('browser-os')">
+            <div style="font-size: 40px;">🌐</div>
+            <span>Browser OS</span>
+        </div>
+        <div class="icon" onclick="openApp('coding-test')">
+            <div style="font-size: 40px;">💻</div>
+            <span>Coding Sandbox</span>
+        </div>
+        <div class="icon" onclick="openApp('creative-writing')">
+            <div style="font-size: 40px;">✍</div>
+            <span>Romanc Novel</span>
+        </div>
+        <div class="icon" onclick="openApp('vision-test')">
+            <div style="font-size: 40px;">👁</div>
+            <span>Vision Analysis</span>
+        </div>
+    </div>
+
+    <div id="window-manager"></div>
+
+    <div id="taskbar">
+        <button class="Task-Btn"> Start </button>
+        <span id="clock" style="margin-left: auto; Font-size: 0.8rem;"></span>
+    </div>
+
+    <script>
+            const apps = {
+            'browser-os': { title: 'Browser OS Emulator', content: 'Initializing Kernel......\n> [SYSTEM] Loading Network Stack......\n> [SYSTEM] Mounting Virtual Drives......\n> [READY] Type commands to simulate OS actions.\n> help' },
+            'coding-test': { title: 'Debugger v4.8', content: 'Enter bug report or code snippet to analyze......' },
+            'creative-writing': { title: 'Romanc Novel Engine', content: '"The rain lashed against the window of the neon-lit apartment......"\n\n\n[PROMPT]: Continue the story where the AI discovers a secret.' },
+            'vision-test': { title: 'Vision Analysis Tool', content: '"Please upload an image to analyze......'"\n\n\n[STATUS]: Waiting for input......' }
+        };
+
+        let openWindows = [];
+        function openApp(id) {
+            const app = apps[id];
+            if (!app) return;
+            const win = document.createElement('div');
+            win.className = 'window';
+            win.style.left = (50 + openWindows.length * 30) + 'px';
+            win.style.top = (50 + openWindows.length * 30) + 'px';
+            win.innerHTML = `
+                <div class="window-header">
+                    <span class="window-title">${app.title}</span>
+                    <span class="window-close" onclick="this.closest('.window').remove()">X</span>
+                </div>
+                <div class="window-content">${app.content}</div>
+            `;
+            document.getElementById('window-manager').appendChild(win);
+            openWindows.push(win);
+            
+            makeDraggable(win);
+        }
+
+        function makeDraggable(el) {
+            const header = el.querySelector('.window-header');
+            let x = 0, y = 0, nx = 0, ny = 0;
+            header.onmousedown = (e) => {
+                nx = e.clientX - x;
+                ny = e.clientY - y;
+                el.style.zIndex = "1000";
+                document.onmousemove = (e) => {
+                    x = e.clientX;
+                    y = e.clientY;
+                    el.style.left = (x - nx) + 'px';
+                    el.style.top = (y - ny) + 'px';
+                };
+                document.onmouseup = () => {
+                    document.onmousemove = null;
+                    document.onmouseup = null;
+                };
+            };
+        }
+
+        setInterval(() => {
+            const d = new Date();
+            document.getElementById('clock').innerText = d.toLocaleTimeString();
+        }, 1000);
+    </script>
+</body>
+</html>
