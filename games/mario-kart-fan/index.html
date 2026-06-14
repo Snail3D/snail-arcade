@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Mario Kart Fan Game</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Courier New',monospace;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;background:#222}
+.overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;background:rgba(10,10,10,0.95)}
+.overlay.active{display:flex}
+.overlay h1{color:#00ff88;font-size:clamp(24px,5vw,48px);margin-bottom:20px;text-shadow:0 0 20px #00ff88}
+.overlay h2{color:#ff4444;font-size:clamp(18px,4vw,36px);margin-bottom:15px}
+.overlay p{color:#ccc;font-size:clamp(12px,2.5vw,18px);margin:5px;text-align:center}
+.btn{background:#00ff88;color:#0a0a0a;border:none;padding:15px 40px;font-size:clamp(14px,3vw,20px);font-family:'Courier New',monospace;cursor:pointer;margin:10px;border-radius:8px;font-weight:bold}
+.btn:hover{background:#00cc66}
+.btn:active{background:#00aa55}
+.char-select{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:15px;max-width:500px}
+.char-btn{width:clamp(60px,15vw,80px);height:clamp(60px,15vw,80px);border:3px solid #333;border-radius:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:clamp(24px,6vw,36px);background:#1a1a1a;transition:border-color 0.2s}
+.char-btn.selected{border-color:#00ff88;box-shadow:0 0 15px #00ff88}
+.char-btn span{font-size:clamp(8px,2vw,11px);color:#aaa;margin-top:2px}
+.map-select{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:15px;max-width:500px}
+.map-btn{padding:10px 20px;border:3px solid #333;border-radius:8px;cursor:pointer;font-family:'Courier New',monospace;font-size:clamp(11px,2.5vw,14px);background:#1a1a1a;color:#ccc;transition:border-color 0.2s}
+.map-btn.selected{border-color:#00ff88;box-shadow:0 0 15px #00ff88}
+.controls{position:fixed;bottom:0;left:0;width:100%;display:none;z-index:50;pointer-events:none}
+.controls.active{display:flex;justify-content:space-between;padding:10px}
+.ctrl-group{display:flex;gap:8px;pointer-events:auto}
+.ctrl-btn{width:clamp(50px,12vw,70px);height:clamp(50px,12vw,70px);border-radius:50%;border:2px solid rgba(0,255,136,0.5);background:rgba(0,255,136,0.15);color:#00ff88;font-size:clamp(18px,4vw,24px);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ctrl-btn:active{background:rgba(0,255,136,0.4)}
+.ctrl-btn.item-btn{width:clamp(55px,14vw,75px);border-color:rgba(255,200,0,0.5);background:rgba(255,200,0,0.15);color:#ffcc00}
+.ctrl-btn.item-btn:active{background:rgba(255,200,0,0.4)}
+.hud{position:fixed;top:0;left:0;width:100%;padding:8px;display:none;z-index:50;pointer-events:none}
+.hud.active{display:flex;justify-content:space-between;align-items:flex-start}
+.hud-item{color:#fff;font-size:clamp(10px,2.5vw,14px);background:rgba(0,0,0,0.7);padding:4px 8px;border-radius:4px}
+.hud-item.speed{color:#00ff88}
+.hud-item.lap{color:#ffcc00}
+.hud-item.pos{color:#ff4444}
+.minimap-container{position:fixed;bottom:10px;right:10px;z-index:55;pointer-events:none}
+.minimap-container.active{display:block}
+.minimap{border:2px solid rgba(0,255,136,0.5);border-radius:4px;background:rgba(0,0,0,0.6)}
+#item-display{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:60;pointer-events:none;display:none}
+#item-display.active{display:block}
+#item-display span{font-size:clamp(30px,8vw,50px);animation:itemPop 0.5s ease-out}
+@keyframes itemPop{0%{transform:scale(2);opacity:0}100%{transform:scale(1);opacity:1}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud" id="hud">
+  <div class="hud-item speed" id="hud-speed">⚡ 0</div>
+  <div class="hud-item lap" id="hud-lap">Lap 1/3</div>
+  <div class class="hud-item pos" id="hud-pos">Pos: 1/8</div>
+</div>
+
+<div class="minimap-container" id="minimap-container">
+  <canvas class="minimap" id="minimap" width="120" height="120"></canvas>
+</div>
+
+<div class="controls" id="controls">
+  <div class="ctrl-group">
+    <div class="ctrl-btn" id="btn-left">◀</div>
+    <div class="ctrl-btn" id="btn-right">▶</div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-btn item-btn" id="btn-item">🎁</div>
+    <div class="ctrl-btn" id="btn-up">▲</div>
+    <div class="ctrl-btn" id="btn-down">▼</div>
+  </div>
+</div>
+
+<div class="overlay active" id="start">
+  <h1>🏁 SNAIL KART 🏁</h1>
+  <p>Choose your racer:</p>
+  <div class="char-select" id="char-select"></div>
+  <p>Choose your track:</p>
+  <div class="map-select" id="map-select"></div>
+  <button class="btn" id="start-btn">START RACE!</button>
+  <p style="margin-top:15px;font-size:clamp(9px,2vw,12px);color:#666">Desktop: Arrow keys + Space (item) | Mobile: Touch controls</p>
+</div>
+
+<div class="overlay" id="gameover">
+  <h2 id="go-title">Race Complete!</h2>
+  <p id="go-pos"></p>
+  <p id="go-time"></p>
+  <button class="btn" id="restart-btn">RACE AGAIN</button>
+  <button class="btn" id="menu-btn" style="background:#333;color:#ccc">MAIN MENU</button>
+</div>
+
+<div id="item-display"><span id="item-icon"></span></div>
+
+<script>
+// ==================== GAME CONFIG ====================
+const W = 800, H = 600;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimap');
+const miniCtx = miniCanvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.width = (W * s) + 'px';
+  canvas.style.height = (H * s) + 'px';
+  canvas.style.position = 'absolute';
+  canvas.style.left = ((window.innerWidth - W * s) / 2) + 'px';
+  canvas.style.top = ((window.innerHeight - H * s) / 2) + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ==================== CHARACTER DEFINITIONS ====================
+const CHARACTERS = [
+  { name: 'Mario', emoji: '🔴', color: '#ff3333', speed: 3.2, accel: 0.12, handling: 0.045, weight: 1, desc: 'Balanced' },
+  { name: 'Luigi', emoji: '🟢', color: '#33cc33', speed: 3.4, accel: 0.11, handling: 0.048, weight: 0.95, desc: 'Fast' },
+  { name: 'Peach', emoji: '🩷', color: '#ff66aa', speed: 2.9, accel: 0.13, handling: 0.05, weight: 0.85, desc: 'Agile' },
+  { name: 'Toad', emoji: '🟣', color: '#9933ff', speed: 3.6, accel: 0.10, handling: 0.042, weight: 0.75, desc: 'Quick' },
+  { name: 'Yoshi', emoji: '🦖', color: '#33cc99', speed: 3.1, accel: 0.13, handling: 0.047, weight: 1.05, desc: 'Heavy' },
+  { name: 'DK', emoji: '🦍', color: '#8B4513', speed: 2.8, accel: 0.14, handling: 0.040, weight: 1.3, desc: 'Heavy' },
+  { name: 'Bowser', emoji: '🐉', color: '#ff6600', speed: 3.0, accel: 0.10, handling: 0.038, weight: 1.4, desc: 'Tank' },
+  { name: 'Shy Guy', emoji: '🟡', color: '#ffcc00', speed: 3.3, accel: 0.12, handling: 0.046, weight: 0.9, desc: 'Lucky' },
+];
+
+// ==================== ITEM DEFINITIONS ====================
+const ITEMS = {
+  mushroom: { name: 'Mushroom', emoji: '🍄', type: 'boost', desc: 'Speed boost!' },
+  greenShell: { name: 'Green Shell', emoji: '🟢', type: 'projectile', desc: 'Fires forward!' },
+  redShell: { name: 'Red Shell', emoji: '🔴', type: 'homing', desc: 'Homing missile!' },
+  banana: { name: 'Banana', emoji: '🍌', type: 'trap', desc: 'Slippery!' },
+  blueShell: { name: 'Blue Shell', emoji: '🔵', type: 'homing_big', desc: 'Devastating!' },
+  star: { name: 'Star', emoji: '⭐', type: 'invincible', desc: 'Invincible!' },
+  lightning: { name: 'Lightning', emoji: '⚡', type: 'aoe', desc: 'Shrinks all!' },
+  fireFlower: { name: 'Fire Flower', emoji: '🌸', type: 'fire', desc: 'Fireballs!' },
+};
+
+// ==================== TRACK DEFINITIONS ====================
+// Track = array of points forming a closed loop. Each point: {x, y}
+// We also define inner/outer boundaries for collision.
+
+function generateTrack(type) {
+  const points = [];
+  const cx = W / 2, cy = H / 2;
+
+  if (type === 0) {
+    // Mushroom Cup - Simple oval
+    const rx = 300, ry = 200;
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * Math.PI * 2;
+      points.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+    }
+  } else if (type === 1) {
+    // Flower Cup - Figure 8
+    for (let i = 0; i < 150; i++) {
+      const t = (i / 150) * Math.PI * 2;
+      const x = cx + Math.sin(t) * 250;
+      const y = cy + Math.sin(t * 2) * 150;
+      points.push({ x, y });
+    }
+  } else if (type === 2) {
+    // Star Cup - Complex circuit
+    const pts = [
+      {x:100,y:100},{x:300,y:60},{x:500,y:80},{x:700,y:120},
+      {x:750,y:250},{x:720,y:400},{x:650,y:500},{x:500,y:550},
+      {x:350,y:530},{x:200,y:480},{x:100,y:400},{x:80,y:280},
+      {x:120,y:200},{x:180,y:150}
+    ];
+    // Catmull-Rom spline interpolation
+    for (let i = 0; i < pts.length; i++) {
+      const p0 = pts[(i - 1 + pts.length) % pts.length];
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % pts.length];
+      const p3 = pts[(i + 2) % pts.length];
+      for (let t = 0; t < 1; t += 0.05) {
+        const tt = t, ttt = tt * tt;
+        const x = 0.5 * ((2*p1.x) + (-p0.x+p2.x)*tt + (2*p0.x-5*p1.x+4*p2.x-p3.x)*ttt);
+        const y = 0.5 * ((2*p1.y) + (-p0.y+p2.y)*tt + (2*p0.y-5*p1.y+4*p2.y-p3.y)*ttt);
+        points.push({x, y});
+      }
+    }
+  } else {
+    // Special Cup - Snake track
+    const pts = [
+      {x:150,y:80},{x:350,y:50},{x:550,y:70},{x:700,y:150},
+      {x:730,y:300},{x:680,y:450},{x:550,y:530},{x:400,y:500},
+      {x:250,y:520},{x:120,y:450},{x:80,y:300},{x:100,y:180}
+    ];
+    for (let i = 0; i < pts.length; i++) {
+      const p0 = pts[(i - 1 + pts.length) % pts.length];
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % pts.length];
+      const p3 = pts[(i + 2) % pts.length];
+      for (let t = 0; t < 1; t += 0.04) {
+        const tt = t, ttt = tt * tt;
+        const x = 0.5 * ((2*p1.x) + (-p0.x+p2.x)*tt + (2*p0.x-5*p1.x+4*p2.x-p3.x)*ttt);
+        const y = 0.5 * ((2*p1.y) + (-p0.y+p2.y)*tt + (2*p0.y-5*p1.y+4*p2.y-p3.y)*ttt);
+        points.push({x, y});
+      }
+    }
+  }
+  return points;
+}
+
+const TRACK_NAMES = ['Mushroom Cup', 'Flower Cup', 'Star Cup', 'Special Cup'];
+const TRACK_COLORS = ['#ff6644', '#ff44aa', '#ffcc00', '#44aaff'];
+
+// ==================== GAME STATE ====================
+let gameState = 'menu'; // menu, countdown, racing, finished
+let selectedChar = 0;
+let selectedMap = 0;
+let countdownTimer = 0;
+let raceTime = 0;
+let totalLaps = 3;
+let trackPoints = [];
+let trackWidth = 80;
+let karts = [];
+let items_onTrack = [];
+let projectiles = [];
+let traps = [];
+let particles = [];
+let itemBoxes = [];
+let lastTimestamp = 0;
+let keys = {};
+let touchState = { left: false, right: false, up: false, down: false, item: false };
+let playerIndex = 0;
+let raceFinished = false;
+
+// ==================== KART CLASS ====================
+class Kart {
+  constructor(char, isPlayer, startPos) {
+    this.char = char;
+    this.isPlayer = isPlayer;
+    this.x = startPos.x;
+    this.y = startPos.y;
+    this.angle = 0;
+    this.speed = 0;
+    this.maxSpeed = char.speed;
+    this.accelRate = char.accel;
+    this.handling = char.handling;
+    this.weight = char.weight;
+    this.lap = 0;
+    this.checkpoint = 0;
+    this.totalCheckpoints = trackPoints.length;
+    this.finished = false;
+    this.finishTime = 0;
+    this.rank = 0;
+
+    // Item system
+    this.item = null;
+    this.itemSlot = null;
+    this.hasItem = false;
+    this.itemCooldown = 0;
+
+    // Power-ups
+    this.boostTimer = 0;
+    this.invincibleTimer = 0;
+    this.shrunk = false;
+    this.shrinkTimer = 0;
+
+    // AI
+    this.aiTarget = 0;
+    this.aiOffset = (Math.random() - 0.5) * trackWidth * 0.5;
+    this.aiAggression = 0.5 + Math.random() * 0.5;
+
+    // Visual
+    this.driftAngle = 0;
+    this.driftTimer = 0;
+    this.spinTimer = 0;
+    this.trail = [];
+  }
+
+  update(dt) {
+    if (this.spinTimer > 0) {
+      this.spinTimer -= dt;
+      this.driftAngle += 0.3;
+      this.speed *= 0.95;
+      return;
+    }
+
+    // Boost
+    if (this.boostTimer > 0) {
+      this.boostTimer -= dt;
+      this.speed = Math.min(this.speed + 0.3, this.maxSpeed * 1.5);
+    }
+
+    // Invincibility
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer -= dt;
+      this.speed = Math.min(this.speed + 0.2, this.maxSpeed * 1.3);
+    }
+
+    // Shrink
+    if (this.shrinkTimer > 0) {
+      this.shrinkTimer -= dt;
+      if (this.shrinkTimer <= 0) {
+        this.shrunk = false;
+      }
+    }
+
+    // Item cooldown
+    if (this.itemCooldown > 0) this.itemCooldown -= dt;
+
+    // Trail
+    if (Math.abs(this.speed) > 0.5) {
+      this.trail.push({ x: this.x, y: this.y, age: 0 });
+      if (this.trail.length > 20) this.trail.shift();
+    }
+    this.trail.forEach(t => t.age += dt);
+    this.trail = this.trail.filter(t => t.age < 0.5);
+
+    // Checkpoint tracking
+    const tp = trackPoints;
+    const distToNext = Math.hypot(tp[this.checkpoint].x - this.x, tp[this.checkpoint].y - this.y);
+    if (distToNext < 40) {
+      this.checkpoint = (this.checkpoint + 1) % tp.length;
+      if (this.checkpoint === 0 && this.lap > 0) {
+        // Lap complete
+      }
+      if (this.checkpoint === 0 && this.lap < totalLaps) {
+        // Lap completed
+      }
+    }
+
+    // Finish check
+    if (this.checkpoint >= tp.length * 0.95 && this.lap >= totalLaps && !this.finished) {
+      this.finished = true;
+      this.finishTime = raceTime;
+    }
+  }
+
+  useItem() {
+    if (!this.hasItem || this.itemCooldown > 0) return;
+    const item = ITEMS[this.itemSlot];
+    if (!item) return;
+
+    this.hasItem = false;
+    this.itemCooldown = 1.0;
+
+    switch (item.type) {
+      case 'boost':
+        this.boostTimer = 2.0;
+        showItemPopup(item.emoji);
+        break;
+      case 'projectile':
+        projectiles.push({
+          x: this.x, y: this.y, angle: this.angle,
+          speed: 6, type: 'green', life: 5, owner: this,
+          bounces: 3
+        });
+        showItemPopup(item.emoji);
+        break;
+      case 'homing':
+        projectiles.push({
+          x: this.x, y: this.y, angle: this.angle,
+          speed: 4, type: 'red', life: 8, owner: this,
+          homing: true, target: null
+        });
+        showItemPopup(item.emoji);
+        break;
+      case 'trap':
+        traps.push({ x: this.x, y: this.y, life: 15 });
+        showItemPopup(item.emoji);
+        break;
+      case 'homing_big':
+        projectiles.push({
+          x: this.x, y: this.y, angle: this.angle,
+          speed: 3.5, type: 'blue', life: 12, owner: this,
+          homing: true, target: null, big: true
+        });
+        showItemPopup(item.emoji);
+        break;
+      case 'invincible':
+        this.invincibleTimer = 5.0;
+        showItemPopup(item.emoji);
+        break;
+      case 'aoe':
+        // Shrink all other karts
+        karts.forEach(k => {
+          if (k !== this && !k.shrunk) {
+            k.shrunk = true;
+            k.shrinkTimer = 8.0;
+            k.speed *= 0.5;
+          }
+        });
+        showItemPopup(item.emoji);
+        break;
+      case 'fire':
+        for (let i = -2; i <= 2; i++) {
+          projectiles.push({
+            x: this.x, y: this.y,
+            angle: this.angle + i * 0.15,
+            speed: 5, type: 'fire', life: 4, owner: this
+          });
+        }
+        showItemPopup(item.emoji);
+        break;
+    }
+  }
+
+  getRank() {
+    let rank = 1;
+    karts.forEach(k => {
+      if (k === this) return;
+      const myProgress = this.lap * this.totalCheckpoints + this.checkpoint;
+      const kProgress = k.lap * k.totalCheckpoints + k.checkpoint;
+      if (kProgress > myProgress) rank++;
+    });
+    return rank;
+  }
+}
+
+// ==================== AI LOGIC ====================
+function updateAI(kart, dt) {
+  if (kart.isPlayer || kart.spinTimer > 0) return;
+
+  const tp = trackPoints;
+  const targetIdx = (kart.checkpoint + 15) % tp.length;
+  const target = tp[targetIdx];
+
+  // Add some offset for variety
+  const dx = target.x - kart.x + kart.aiOffset;
+  const dy = target.y - kart.y + kart.aiOffset;
+  const targetAngle = Math.atan2(dy, dx);
+
+  let angleDiff = targetAngle - kart.angle;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+  kart.angle += angleDiff * kart.handling * kart.aiAggression;
+
+  // Speed control
+  const absDiff = Math.abs(angleDiff);
+  if (absDiff > 0.5) {
+    kart.speed = Math.max(0.5, kart.maxSpeed * 0.6);
+  } else if (absDiff > 0.2) {
+    kart.speed = Math.min(kart.speed + kart.accelRate * 0.7, kart.maxSpeed * 0.85);
+  } else {
+    kart.speed = Math.min(kart.speed + kart.accelRate, kart.maxSpeed);
+  }
+
+  // AI item usage
+  if (kart.hasItem && kart.itemCooldown <= 0 && Math.random() < 0.01) {
+    kart.useItem();
+  }
+
+  // Random item request
+  if (Math.random() < 0.003 && !kart.hasItem) {
+    requestItem(kart);
+  }
+}
+
+// ==================== INPUT HANDLING ====================
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// Touch controls
+const btnLeft = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+const btnUp = document.getElementById('btn-up');
+const btnDown = document.getElementById('btn-down');
+const btnItem = document.getElementById('btn-item');
+
+function addTouchEvents(btn, key) {
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); touchState[key] = true; });
+  btn.addEventListener('pointerup', e => { e.preventDefault(); touchState[key] = false; });
+  btn.addEventListener('pointercancel', e => { touchState[key] = false; });
+}
+addTouchEvents(btnLeft, 'left');
+addTouchEvents(btnRight, 'right');
+addTouchEvents(btnUp, 'up');
+addTouchEvents(btnDown, 'down');
+addTouchEvents(btnItem, 'item');
+
+// Canvas click for item on desktop
+canvas.addEventListener('click', () => {
+  if (gameState === 'racing') {
+    karts[playerIndex].useItem();
+  }
+});
+
+// ==================== UI SETUP ====================
+function setupCharSelect() {
+  const container = document.getElementById('char-select');
+  container.innerHTML = '';
+  CHARACTERS.forEach((c, i) => {
+    const btn = document.createElement('div');
+    btn.className = 'char-btn' + (i === selectedChar ? ' selected' : '');
+    btn.innerHTML = c.emoji + '<span>' + c.name + '</span>';
+    btn.style.borderColor = i === selectedChar ? '#00ff88' : '#333';
+    btn.onclick = () => {
+      selectedChar = i;
+      container.querySelectorAll('.char-btn').forEach((b, j) => {
+        b.classList.toggle('selected', j === i);
+        b.style.borderColor = j === i ? '#00ff88' : '#333';
+      });
+    };
+    container.appendChild(btn);
+  });
+}
+
+function setupMapSelect() {
+  const container = document.getElementById('map-select');
+  container.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const btn = document.createElement('div');
+    btn.className = 'map-btn' + (i === selectedMap ? ' selected' : '');
+    btn.textContent = TRACK_NAMES[i];
+    btn.style.borderColor = i === selectedMap ? '#00ff88' : '#333';
+    btn.onclick = () => {
+      selectedMap = i;
+      container.querySelectorAll('.map-btn').forEach((b, j) => {
+        b.classList.toggle('selected', j === i);
+        b.style.borderColor = j === i ? '#00ff88' : '#333';
+      });
+    };
+    container.appendChild(btn);
+  }
+}
+
+function showItemPopup(emoji) {
+  const el = document.getElementById('item-display');
+  const icon = document.getElementById('item-icon');
+  icon.textContent = emoji;
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 800);
+}
+
+// ==================== ITEM SYSTEM ====================
+function requestItem(kart) {
+  if (kart.hasItem) return;
+  const ranks = karts.map(k => k.getRank()).sort((a, b) => a - b);
+  const myRank = kart.getRank();
+  const lastPlace = ranks[ranks.length - 1];
+
+  // Rubber banding: worse rank = better items
+  const itemKeys = Object.keys(ITEMS);
+  let pool;
+
+  if (myRank <= 2) {
+    // Leading karts get worse items
+    pool = ['banana', 'greenShell', 'greenShell', 'banana'];
+  } else if (myRank <= 4) {
+    pool = ['greenShell', 'redShell', 'mushroom', 'banana'];
+  } else {
+    // Trailing karts get better items
+    pool = ['redShell', 'blueShell', 'star', 'fireFlower', 'lightning', 'mushroom'];
+  }
+
+  kart.itemSlot = pool[Math.floor(Math.random() * pool.length)];
+  kart.hasItem = true;
+}
+
+// ==================== TRACK COLLISION ====================
+function isOnTrack(x, y) {
+  let minDist = Infinity;
+  for (let i = 0; i < trackPoints.length; i++) {
+    const p = trackPoints[i];
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < minDist) minDist = d;
+  }
+  return minDist < trackWidth / 2;
+}
+
+function getTrackNormal(x, y) {
+  let minDist = Infinity, closest = null;
+  for (let i = 0; i < trackPoints.length; i++) {
+    const p = trackPoints[i];
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < minDist) { minDist = d; closest = p; }
+  }
+  return closest;
+}
+
+// ==================== DRAWING ====================
+function drawTrack() {
+  const tp = trackPoints;
+
+  // Track surface
+  ctx.lineWidth = trackWidth;
+  ctx.strokeStyle = '#555555';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(tp[0].x, tp[0].y);
+  for (let i = 1; i < tp.length; i++) {
+    ctx.lineTo(tp[i].x, tp[i].y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Track border
+  ctx.lineWidth = trackWidth + 8;
+  ctx.strokeStyle = '#cc0000';
+  ctx.beginPath();
+  ctx.moveTo(tp[0].x, tp[0].y);
+  for (let i = 1; i < tp.length; i++) {
+    ctx.lineTo(tp[i].x, tp[i].y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Inner track
+  ctx.lineWidth = trackWidth;
+  ctx.strokeStyle = '#444';
+  ctx.beginPath();
+  ctx.moveTo(tp[0].x, tp[0].y);
+  for (let i = 1; i < tp.length; i++) {
+    ctx.lineTo(tp[i].x, tp[i].y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Start/finish line
+  const s0 = tp[0], s1 = tp[1];
+  const sx = (s0.x + s1.x) / 2, sy = (s0.y + s1.y) / 2;
+  const perpX = -(s1.y - s0.y);
+  const perpY = (s1.x - s0.x);
+  const len = Math.hypot(perpX, perpY);
+  const nx = perpX / len, ny = perpY / len;
+
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([8, 8]);
+  ctx.beginPath();
+  ctx.moveTo(sx + nx * trackWidth / 2, sy + ny * trackWidth / 2);
+  ctx.lineTo(sx - nx * trackWidth / 2, sy - ny * trackWidth / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Checkpoint markers (subtle)
+  for (let i = 0; i < tp.length; i += Math.floor(tp.length / 4)) {
+    const p = tp[i];
+    ctx.fillStyle = 'rgba(255,255,0,0.15)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawKart(kart) {
+  const scale = kart.shrunk ? 0.6 : 1;
+  const r = 12 * scale;
+
+  // Trail effects
+  if (kart.boostTimer > 0) {
+    ctx.fillStyle = 'rgba(255,100,0,0.3)';
+    for (let i = 0; i < kart.trail.length; i++) {
+      const t = kart.trail[i];
+      const a = 1 - t.age / 0.5;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 5 * a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (kart.invincibleTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.3 + Math.sin(Date.now() * 0.01) * 0.2;
+  }
+
+  // Kart body
+  ctx.save();
+  ctx.translate(kart.x, kart.y);
+  ctx.rotate(kart.angle + kart.driftAngle);
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(2, 2, r + 4, r + 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wheels
+  ctx.fillStyle = '#222';
+  const wheelOffsets = [[-r+2, -r+4], [r-2, -r+4], [-r+2, r-4], [r-2, r-4]];
+  wheelOffsets.forEach(([wx, wy]) => {
+    ctx.fillRect(wx - 3, wy - 2, 6, 4);
+  });
+
+  // Body
+  ctx.fillStyle = kart.char.color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r + 3, r, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Driver emoji
+  ctx.rotate(-kart.angle - kart.driftAngle); // Reset rotation for emoji
+  ctx.font = (r * 1.5) + 'px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(kart.char.emoji, 0, 0);
+
+  // Invincibility stars
+  if (kart.invincibleTimer > 0) {
+    ctx.rotate(kart.angle + kart.driftAngle);
+    ctx.fillStyle = '#ffcc00';
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + Date.now() * 0.005;
+      const sx = Math.cos(a) * (r + 10);
+      const sy = Math.sin(a) * (r + 8);
+      ctx.font = '10px serif';
+      ctx.fillText('⭐', sx, sy);
+    }
+  }
+
+  ctx.restore();
+
+  if (kart.invincibleTimer > 0) {
+    ctx.restore();
+  }
+
+  // Name tag
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(kart.char.name, kart.x, kart.y - r - 8);
+}
+
+function drawProjectiles() {
+  projectiles.forEach(p => {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.angle);
+
+    if (p.type === 'green') {
+      ctx.fillStyle = '#33cc33';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#228822';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else if (p.type === 'red') {
+      ctx.fillStyle = '#ff3333';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Arrow indicator
+      ctx.fillStyle = '#ff0';
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(6, -4);
+      ctx.lineTo(6, 4);
+      ctx.fill();
+    } else if (p.type === 'blue') {
+      ctx.fillStyle = '#3366ff';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2244cc';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (p.type === 'fire') {
+      ctx.fillStyle = '#ff6600';
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath();
+      ctx.arc(0, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  });
+}
+
+function drawTraps() {
+  traps.forEach(t => {
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = '16px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🍌', t.x, t.y + 5);
+  });
+}
+
+function drawItemBoxes() {
+  itemBoxes.forEach(b => {
+    const pulse = Math.sin(Date.now() * 0.005) * 3;
+    ctx.fillStyle = '#ff9900';
+    ctx.fillRect(b.x - 10 - pulse, b.y - 10 - pulse, 20 + pulse * 2, 20 + pulse * 2);
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x - 10 - pulse, b.y - 10 - pulse, 20 + pulse * 2, 20 + pulse * 2);
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('?', b.x, b.y + 5);
+  });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    const a = 1 - p.age / p.maxAge;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawCountdown() {
+  if (gameState !== 'countdown') return;
+  const sec = Math.ceil(countdownTimer);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(W / 2 - 60, H / 2 - 40, 120, 80);
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 48px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (sec > 0) {
+    ctx.fillText(sec.toString(), W / 2, H / 2);
+  } else {
+    ctx.fillText('GO!', W / 2, H / 2);
+  }
+}
+
+// ==================== MINIMAP ====================
+function drawMinimap() {
+  miniCtx.clearRect(0, 0, 120, 120);
+
+  // Find bounds
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  trackPoints.forEach(p => {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  });
+
+  const padding = 50;
+  minX -= padding; minY -= padding;
+  maxX += padding; maxY += padding;
+  const scaleX = 120 / (maxX - minX);
+  const scaleY = 120 / (maxY - minY);
+  const scale = Math.min(scaleX, scaleY);
+
+  // Draw track on minimap
+  miniCtx.strokeStyle = '#666';
+  miniCtx.lineWidth = 3;
+  miniCtx.beginPath();
+  trackPoints.forEach((p, i) => {
+    const mx = (p.x - minX) * scale;
+    const my = (p.y - minY) * scale;
+    if (i === 0) miniCtx.moveTo(mx, my);
+    else miniCtx.lineTo(mx, my);
+  });
+  miniCtx.closePath();
+  miniCtx.stroke();
+
+  // Draw karts on minimap
+  karts.forEach((k, i) => {
+    const mx = (k.x - minX) * scale;
+    const my = (k.y - minY) * scale;
+    miniCtx.fillStyle = k.isPlayer ? '#00ff88' : k.char.color;
+    miniCtx.beginPath();
+    miniCtx.arc(mx, my, k.isPlayer ? 4 : 3, 0, Math.PI * 2);
+    miniCtx.fill();
+    if (k.isPlayer) {
+      miniCtx.strokeStyle = '#fff';
+      miniCtx.lineWidth = 1;
+      miniCtx.stroke();
+    }
+  });
+}
+
+// ==================== COLLISION DETECTION ====================
+function checkCollisions() {
+  // Projectiles vs karts
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+
+    // Homing: find nearest kart that's not owner
+    if (p.homing) {
+      let nearest = null, nearDist = Infinity;
+      karts.forEach(k => {
+        if (k === p.owner || k.invincibleTimer > 0) return;
+        const d = Math.hypot(k.x - p.x, k.y - p.y);
+        if (d < nearDist) { nearDist = d; nearest = k; }
+      });
+      if (nearest) {
+        const dx = nearest.x - p.x;
+        const dy = nearest.y - p.y;
+        p.angle = Math.atan2(dy, dx);
+      }
+    }
+
+    p.x += Math.cos(p.angle) * p.speed;
+    p.y += Math.sin(p.angle) * p.speed;
+    p.life -= 0.016;
+
+    let hit = false;
+    karts.forEach(k => {
+      if (k === p.owner) return;
+      if (k.invincibleTimer > 0) {
+        // Star hits karts = explosion
+        createExplosion(k.x, k.y, '#ffcc00');
+        k.spinTimer = 2.0;
+        hit = true;
+        return;
+      }
+      const d = Math.hypot(k.x - p.x, k.y - p.y);
+      const hitR = k.shrunk ? 8 : 14;
+      if (d < hitR + 8) {
+        if (p.big) {
+          k.spinTimer = 3.0;
+          k.speed *= 0.2;
+          createExplosion(k.x, k.y, '#3366ff');
+        } else {
+          k.spinTimer = 1.5;
+          k.speed *= 0.3;
+          createExplosion(k.x, k.y, p.type === 'red' ? '#ff3333' : '#33cc33');
+        }
+        hit = true;
+      }
+    });
+
+    if (hit || p.life <= 0 || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
+      if (hit) createExplosion(p.x, p.y, p.type === 'blue' ? '#3366ff' : '#ff6600');
+      projectiles.splice(i, 1);
+    }
+  }
+
+  // Banana traps vs karts
+  for (let i = traps.length - 1; i >= 0; i--) {
+    const t = traps[i];
+    t.life -= 0.016;
+    if (t.life <= 0) { traps.splice(i, 1); continue; }
+
+    karts.forEach(k => {
+      const d = Math.hypot(k.x - t.x, k.y - t.y);
+      if (d < 18 && k.spinTimer <= 0) {
+        k.spinTimer = 2.0;
+        k.speed *= 0.3;
+        createExplosion(t.x, t.y, '#ffcc00');
+      }
+    });
+  }
+
+  // Item box collisions
+  itemBoxes.forEach((b, i) => {
+    karts.forEach(k => {
+      const d = Math.hypot(k.x - b.x, k.y - b.y);
+      if (d < 25 && !k.hasItem) {
+        requestItem(k);
+        createExplosion(b.x, b.y, '#ff9900');
+        itemBoxes.splice(i, 1);
+      }
+    });
+  });
+
+  // Kart vs kart collision
+  for (let i = 0; i < karts.length; i++) {
+    for (let j = i + 1; j < karts.length; j++) {
+      const a = karts[i], b = karts[j];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const minD = (a.shrunk ? 8 : 14) + (b.shrunk ? 8 : 14);
+      if (d < minD && d > 0) {
+        const pushX = (b.x - a.x) / d;
+        const pushY = (b.y - a.y) / d;
+        const force = 2;
+        a.x -= pushX * force * a.weight;
+        a.y -= pushY * force * a.weight;
+        b.x += pushX * force * b.weight;
+        b.y += pushY * force * b.weight;
+
+        // Spin on heavy impact
+        if (d < 10) {
+          if (a.spinTimer <= 0) a.spinTimer = 0.5;
+          if (b.spinTimer <= 0) b.spinTimer = 0.5;
+        }
+      }
+    }
+  }
+
+  // Off-track slowdown
+  karts.forEach(k => {
+    if (k.spinTimer > 0) return;
+    if (!isOnTrack(k.x, k.y)) {
+      k.speed *= 0.96;
+    }
+  });
+}
+
+function createExplosion(x, y, color) {
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * (2 + Math.random() * 3),
+      vy: Math.sin(a) * (2 + Math.random() * 3),
+      life: 0.5, maxAge: 0.5,
+      size: 3 + Math.random() * 4,
+      color: color
+    });
+  }
+}
+
+// ==================== UPDATE LOOP ====================
+function update(dt) {
+  if (gameState === 'countdown') {
+    countdownTimer -= dt;
+    if (countdownTimer <= 0) {
+      gameState = 'racing';
+      raceTime = 0;
+    }
+    return;
+  }
+
+  if (gameState !== 'racing') return;
+  raceTime += dt;
+
+  // Player input
+  const player = karts[playerIndex];
+  if (!player.finished && player.spinTimer <= 0) {
+    const turnSpeed = player.handling;
+
+    if (keys['ArrowLeft'] || touchState.left) player.angle -= turnSpeed;
+    if (keys['ArrowRight'] || touchState.right) player.angle += turnSpeed;
+
+    if (keys['ArrowUp'] || touchState.up) {
+      player.speed = Math.min(player.speed + player.accelRate, player.maxSpeed);
+    } else if (keys['ArrowDown'] || touchState.down) {
+      player.speed = Math.max(player.speed - player.accelRate * 1.5, -player.maxSpeed * 0.4);
+    } else {
+      player.speed *= 0.98;
+    }
+
+    // Use item
+    if (keys[' '] || touchState.item) {
+      player.useItem();
+      keys[' '] = false;
+      touchState.item = false;
+    }
+  }
+
+  // Update all karts
+  karts.forEach(k => {
+    k.update(dt);
+    if (!k.isPlayer) updateAI(k, dt);
+
+    k.x += Math.cos(k.angle) * k.speed;
+    k.y += Math.sin(k.angle) * k.speed;
+
+    // Clamp to bounds
+    k.x = Math.max(10, Math.min(W - 10, k.x));
+    k.y = Math.max(10, Math.min(H - 10, k.y));
+  });
+
+  // Checkpoints & laps
+  karts.forEach(k => {
+    const tp = trackPoints;
+    const cp = tp[k.checkpoint];
+    const d = Math.hypot(cp.x - k.x, cp.y - k.y);
+    if (d < 50) {
+      k.checkpoint = (k.checkpoint + 1) % tp.length;
+      if (k.checkpoint === 0) {
+        k.lap++;
+        if (k.isPlayer && k.lap > totalLaps) {
+          k.finished = true;
+          k.finishTime = raceTime;
+        }
+      }
+    }
+  });
+
+  checkCollisions();
+
+  // Update particles
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.95;
+    p.vy *= 0.95;
+    p.life -= dt;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  // Respawn item boxes
+  if (Math.random() < 0.005 && itemBoxes.length < 8) {
+    const idx = Math.floor(Math.random() * trackPoints.length);
+    const p = trackPoints[idx];
+    // Place slightly off center
+    const perp = trackPoints[(idx + 1) % trackPoints.length];
+    const nx = -(perp.y - p.y);
+    const ny = (perp.x - p.x);
+    const len = Math.hypot(nx, ny) || 1;
+    const offset = (Math.random() - 0.5) * trackWidth * 0.4;
+    itemBoxes.push({
+      x: p.x + (nx / len) * offset,
+      y: p.y + (ny / len) * offset
+    });
+  }
+
+  // Check race end
+  if (!raceFinished) {
+    const allFinished = karts.every(k => k.finished);
+    if (allFinished) {
+      raceFinished = true;
+      endRace();
+    }
+  }
+
+  // Update HUD
+  updateHUD();
+}
+
+function updateHUD() {
+  const player = karts[playerIndex];
+  const speed = Math.abs(player.speed);
+  document.getElementById('hud-speed').textContent = '⚡ ' + Math.floor(speed * 30);
+  document.getElementById('hud-lap').textContent = 'Lap ' + Math.min(player.lap + 1, totalLaps) + '/' + totalLaps;
+  document.getElementById('hud-pos').textContent = 'Pos: ' + player.getRank() + '/' + karts.length;
+}
+
+// ==================== RENDER ====================
+function render() {
+  // Background
+  ctx.fillStyle = '#2a5a2a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid pattern for grass
+  ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  drawTrack();
+  drawItemBoxes();
+  drawTraps();
+  drawProjectiles();
+  drawParticles();
+  karts.forEach(k => drawKart(k));
+  drawCountdown();
+
+  // HUD
+  document.getElementById('hud').classList.toggle('active', gameState === 'racing');
+  document.getElementById('minimap-container').classList.toggle('active', gameState === 'racing');
+  if (gameState === 'racing') drawMinimap();
+
+  // Controls visibility
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  document.getElementById('controls').classList.toggle('active', isMobile && gameState === 'racing');
+}
+
+// ==================== GAME FLOW ====================
+function startGame() {
+  // Reset state
+  karts = [];
+  projectiles = [];
+  traps = [];
+  particles = [];
+  itemBoxes = [];
+  raceTime = 0;
+  raceFinished = false;
+
+  trackPoints = generateTrack(selectedMap);
+
+  // Create karts in grid formation at start
+  const startPoints = trackPoints.slice(0, 8);
+  const charPool = [...CHARACTERS];
+  // Shuffle
+  for (let i = charPool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [charPool[i], charPool[j]] = [charPool[j], charPool[i]];
+  }
+
+  // Player position
+  const playerStart = startPoints[0];
+  const playerKart = new Kart(charPool[0], true, playerStart);
+  playerKart.angle = Math.atan2(
+    trackPoints[1].y - playerStart.y,
+    trackPoints[1].x - playerStart.x
+  );
+  karts.push(playerKart);
+  playerIndex = 0;
+
+  // AI karts
+  for (let i = 1; i < 8; i++) {
+    const startPos = startPoints[i % startPoints.length];
+    const row = Math.floor(i / 2);
+    const col = i % 2;
+    const perp = trackPoints[1];
+    const dx = perp.x - playerStart.x;
+    const dy = perp.y - playerStart.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+
+    const aiX = playerStart.x + nx * (col * 25 - 12) + (Math.random() - 0.5) * 10;
+    const aiY = playerStart.y + ny * (col * 25 - 12) + (Math.random() - 0.5) * 10;
+
+    const aiKart = new Kart(charPool[i], false, { x: aiX, y: aiY });
+    aiKart.angle = Math.atan2(dy, dx);
+    karts.push(aiKart);
+  }
+
+  // Initial item boxes
+  for (let i = 0; i < 6; i++) {
+    const idx = Math.floor(Math.random() * trackPoints.length);
+    const p = trackPoints[idx];
+    const perp = trackPoints[(idx + 1) % trackPoints.length];
+    const nx = -(perp.y - p.y);
+    const ny = (perp.x - p.x);
+    const len = Math.hypot(nx, ny) || 1;
+    const offset = (Math.random() - 0.5) * trackWidth * 0.4;
+    itemBoxes.push({
+      x: p.x + (nx / len) * offset,
+      y: p.y + (ny / len) * offset
+    });
+  }
+
+  gameState = 'countdown';
+  countdownTimer = 3.5;
+  document.getElementById('start').classList.remove('active');
+  document.getElementById('gameover').classList.remove('active');
+}
+
+function endRace() {
+  const player = karts[playerIndex];
+  const playerRank = player.getRank();
+
+  // Sort all karts by rank
+  const sorted = [...karts].sort((a, b) => {
+    const aProg = a.lap * a.totalCheckpoints + a.checkpoint;
+    const bProg = b.lap * b.totalCheckpoints + b.checkpoint;
+    if (a.finished !== b.finished) return a.finished ? -1 : 1;
+    if (a.finished && b.finished) return a.finishTime - b.finishTime;
+    return bProg - aProg;
+  });
+  const finalRank = sorted.indexOf(player) + 1;
+
+  const titles = ['🏆 1st - YOU WIN!', '🥈 2nd!', '🥉 3rd!', '4th', '5th', '6th', '7th', '8th'];
+
+  document.getElementById('go-title').textContent = titles[finalRank - 1] || 'Race Complete!';
+  document.getElementById('go-pos').textContent = 'Position: ' + finalRank + '/8';
+  document.getElementById('go-time').textContent = 'Time: ' + player.finishTime.toFixed(1) + 's';
+
+  setTimeout(() => {
+    document.getElementById('gameover').classList.add('active');
+  }, 500);
+}
+
+function goToMenu() {
+  gameState = 'menu';
+  document.getElementById('gameover').classList.remove('active');
+  document.getElementById('start').classList.add('active');
+  document.getElementById('hud').classList.remove('active');
+  document.getElementById('controls').classList.remove('active');
+  document.getElementById('minimap-container').classList.remove('active');
+}
+
+// ==================== MAIN LOOP ====================
+function gameLoop(timestamp) {
+  const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.05);
+  lastTimestamp = timestamp;
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ==================== INITIALIZATION ====================
+function init() {
+  canvas.width = W;
+  canvas.height = H;
+  miniCanvas.width = 120;
+  miniCanvas.height = 120;
+
+  setupCharSelect();
+  setupMapSelect();
+
+  document.getElementById('start-btn').onclick = startGame;
+  document.getElementById('restart-btn').onclick = startGame;
+  document.getElementById('menu-btn').onclick = goToMenu;
+
+  lastTimestamp = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+init();
+</script>
+</body>
+</html>
