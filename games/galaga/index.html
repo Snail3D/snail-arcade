@@ -13,10 +13,109 @@ canvas { display: block; width: 100%; height: 100%; }
 <body>
 <canvas id="c"></canvas>
 <script>
+// === CRITICAL FIX: All variable declarations and initialization ===
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Game state
+let state = 'menu'; // 'menu', 'playing', 'paused', 'gameover'
+const STATE = { menu: 'menu', playing: 'playing', paused: 'paused', gameover: 'gameover' };
+
+// Player
+const player = { x: 0, y: 0, w: 20, h: 28, speed: 4, shootCooldown: 0, invuln: 0, trail: [], spreadTimer: 0, shieldTimer: 0, tripleTimer: 0, cloakTimer: 0 };
+
+// Game objects
+let enemies = [];
+let bullets = [];
+let enemyBullets = [];
+let particles = [];
+let stars = [];
+let nebulaClouds = [];
+
+// Input
+const keys = {};
+const touches = {};
+
+// Game variables
+let score = 0;
+let highScore = parseInt(localStorage.getItem('snailaga-best') || '0');
+let lives = 3;
+let level = 1;
+let frameCount = 0;
+let audioCtx = null;
+let enemyFormationX = 0;
+let formationDir = 1;
+let formationSpeed = 1;
+let levelAnnounceTimer = 0;
+let shakeTimer = 0;
+let comboCount = 0;
+let comboTimer = 0;
+let maxCombo = 0;
+let menuPulse = 0;
+let isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+// === CRITICAL FIX: Event listeners ===
+window.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (state === STATE.menu) { startGame(); }
+    else if (state === STATE.gameover) { state = STATE.menu; }
+    else if (state === STATE.playing) { playerShoot(); }
+    else if (state === STATE.paused) { state = STATE.playing; }
+  }
+  if (e.code === 'KeyP' && state === STATE.playing) { state = STATE.paused; }
+  if (e.code === 'KeyP' && state === STATE.paused) { state = STATE.playing; }
+});
+
+window.addEventListener('keyup', (e) => {
+  keys[e.code] = false;
+});
+
+// Touch controls
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  for (const t of e.changedTouches) {
+    touches[t.identifier] = { x: t.clientX, y: t.clientY };
+  }
+  if (state === STATE.menu) { startGame(); }
+  else if (state === STATE.gameover) { state = STATE.menu; }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (touches[t.identifier]) {
+      touches[t.identifier].x = t.clientX;
+      touches[t.identifier].y = t.clientY;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    delete touches[t.identifier];
+  }
+}, { passive: false });
+
+// Mouse click for desktop testing
+canvas.addEventListener('click', (e) => {
+  initAudio();
+  if (state === STATE.menu) { startGame(); }
+  else if (state === STATE.gameover) { state = STATE.menu; }
+  else if (state === STATE.playing) { playerShoot(); }
+});
+
+// Resize
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 }
+window.addEventListener('resize', resize);
+
+// === Rest of the game code (unchanged) ===
 function initAudio() {
   try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
 }
@@ -179,6 +278,10 @@ function createEnemies() {
   formationSpeed = 0.5 + level * 0.15;
   bossWaveActive = (level % 5 === 0);
 }
+
+// Add missing variables for enemy positioning
+let startX = 0, startY = 0, bossWaveActive = false;
+
 function generateDivePath(enemy) {
   const patterns = ['swoop', 'loop', 'zigzag', 'direct'];
   // Grabbers use grab pattern, swirlers use spiral
@@ -217,6 +320,10 @@ function startGame() {
   player.shieldTimer = 0;
   player.tripleTimer = 0;
   player.cloakTimer = 0;
+  player.trail = [];
+  // Calculate enemy formation position
+  startX = canvas.width / 2 - 100;
+  startY = 40;
   createEnemies();
   levelAnnounceTimer = 120;
   if (!audioCtx) initAudio();
@@ -786,7 +893,7 @@ function drawPlayer() {
     const flicker = Math.sin(fc * 0.3 + i) * 2;
     ctx.fillStyle = `rgba(0,255,136,${alpha})`;
     ctx.fillRect(t.x - 4 + flicker, t.y, 8, 10);
-    ctx.fillStyle = `rgba(200,25230,${alpha * 0.5})`;
+    ctx.fillStyle = `rgba(200,255,200,${alpha * 0.5})`;
     ctx.fillRect(t.x - 2, t.y + 6, 4, 6);
   }
 
@@ -987,6 +1094,51 @@ function drawPlayer() {
       ctx.fill();
     }
   }
+
+  ctx.shadowBlur = 0;
+}
+function drawAphid(e) {
+  const x = e.x, y = e.y;
+  const fc = frameCount;
+  ctx.shadowColor = e.type.color1;
+  ctx.shadowBlur = 6 + Math.sin(fc * 0.08) * 2;
+
+  // Body — small pink alien
+  ctx.fillStyle = e.type.color1;
+  ctx.beginPath();
+  ctx.ellipse(x, y, 8, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Antennae
+  ctx.strokeStyle = e.type.color2;
+  ctx.lineWidth = 1.5;
+  const antWave = Math.sin(fc * 0.1) * 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 3, y - 8);
+  ctx.quadraticCurveTo(x - 8, y - 16 + antWave, x - 6, y - 18 + antWave);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + 3, y - 8);
+  ctx.quadraticCurveTo(x + 8, y - 16 - antWave, x + 6, y - 18 - antWave);
+  ctx.stroke();
+
+  // Eyes
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(x - 3, y - 6, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 3, y - 6, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye highlights
+  ctx.fillStyle = e.type.color2;
+  ctx.beginPath();
+  ctx.arc(x - 3.5, y - 6.5, 0.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 2.5, y - 6.5, 0.8, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.shadowBlur = 0;
 }
@@ -1792,7 +1944,7 @@ function drawGameOver() {
 
   if (score >= highScore && score > 0) {
     ctx.fillStyle = '#ffcc00';
-    ctx.font = `bold ${Math.min(16, canvas.width * 0.02)}px "Courier New", monospace`;
+    ctx.font = `${Math.min(16, canvas.width * 0.02)}px "Courier New", monospace`;
     ctx.fillText('*** NEW HIGH SCORE ***', canvas.width / 2, canvas.height * 0.58);
   }
 
@@ -1932,6 +2084,12 @@ function loop() {
   render();
   requestAnimationFrame(loop);
 }
+
+// === CRITICAL FIX: Initialize everything ===
+resize();
+initNebula();
+initStars();
+loop();
 </script>
 </body>
 </html>
