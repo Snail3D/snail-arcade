@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snail Pirate Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            touch-action: none;
+            font-family: 'Courier New', monospace;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        #ui {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 20;
+        }
+        #fireBtn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.7);
+            border: 3px solid red;
+            border-radius: 50%;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 20;
+            touch-action: manipulation;
+        }
+        #fireBtn:active {
+            background: rgba(255, 0, 0, 0.9);
+        }
+        .health-bar {
+            width: 150px;
+            height: 15px;
+            background: #333;
+            border: 2px solid white;
+            margin-top: 5px;
+        }
+        .health-fill {
+            height: 100%;
+            background: #0f0;
+            transition: width 0.3s;
+        }
+        #joystick {
+            position: fixed;
+            bottom: 100px;
+            left: 50px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            z-index: 20;
+            touch-action: none;
+        }
+        #joystickKnob {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div>Loot: <span id="lootCount">0</span></div>
+        <div>Enemies Defeated: <span id="defeatedCount">0</span></div>
+        <div>
+            Your Ship:
+            <div class="health-bar">
+                <div class="health-fill" id="playerHealth"></div>
+            </div>
+        </div>
+    </div>
+    <div id="joystick">
+        <div id="joystickKnob"></div>
+    </div>
+    <button id="fireBtn">FIRE</button>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Resize canvas
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+        
+        // Game state
+        const game = {
+            loot: 0,
+            defeated: 0,
+            lastTime: 0
+        };
+        
+        // Camera
+        const camera = { x: 0, y: 0 };
+        
+        // World generation
+        const WORLD_WIDTH = 3000;
+        const WORLD_HEIGHT = 2000;
+        const islands = [];
+        const enemies = [];
+        const bullets = [];
+        const particles = [];
+        
+        // Generate world
+        function generateWorld() {
+            // Create islands
+            for (let i = 0; i < 15; i++) {
+                islands.push({
+                    x: Math.random() * WORLD_WIDTH - WORLD_WIDTH/2,
+                    y: Math.random() * WORLD_HEIGHT - WORLD_HEIGHT/2,
+                    width: 60 + Math.random() * 100,
+                    height: 40 + Math.random() * 60,
+                    // 3D-ish height for visual depth
+                    height3D: 10 + Math.random() * 20
+                });
+            }
+            
+            // Create enemy ships
+            for (let i = 0; i < 12; i++) {
+                enemies.push(createEnemy());
+            }
+        }
+        
+        function createEnemy() {
+            const types = ['sloop', 'galleon', 'frigate'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            return {
+                x: (Math.random() - 0.5) * WORLD_WIDTH * 0.8,
+                y: (Math.random() - 0.5) * WORLD_HEIGHT * 0.8,
+                type: type,
+                health: type === 'sloop' ? 30 : type === 'galleon' ? 80 : 50,
+                maxHealth: type === 'sloop' ? 30 : type === 'galleon' ? 80 : 50,
+                loot: type === 'sloop' ? 10 : type === 'galleon' ? 30 : 20,
+                speed: 0.5 + Math.random() * 0.5,
+                angle: Math.random() * Math.PI * 2,
+                moveTimer: 0,
+                moveDirection: Math.random() * Math.PI * 2
+            };
+        }
+        
+        // Player
+        const player = {
+            x: 0,
+            y: 0,
+            size: 25,
+            health: 100,
+            maxHealth: 100,
+            speed: 3,
+            angle: 0,
+            cannons: 4
+        };
+        
+        // Joystick controls
+        const joystick = {
+            active: false,
+            dx: 0,
+            dy: 0,
+            element: document.getElementById('joystick'),
+            knob: document.getElementById('joystickKnob')
+        };
+        
+        let touchId = null;
+        
+        // Touch handling for joystick
+        joystick.element.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchId = touch.identifier;
+            joystick.active = true;
+        });
+        
+        joystick.element.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let touch of e.touches) {
+                if (touch.identifier === touchId) {
+                    const rect = joystick.element.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    const dx = touch.clientX - centerX;
+                    const dy = touch.clientY - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const maxDistance = rect.width / 2;
+                    
+                    const clampedDistance = Math.min(distance, maxDistance);
+                    const angle = Math.atan2(dy, dx);
+                    
+                    const knobX = Math.cos(angle) * clampedDistance;
+                    const knobY = Math.sin(angle) * clampedDistance;
+                    
+                    joystick.knob.style.left = `calc(50% + ${knobX}px)`;
+                    joystick.knob.style.top = `calc(50% + ${knobY}px)`;
+                    
+                    joystick.dx = knobX / maxDistance;
+                    joystick.dy = knobY / maxDistance;
+                    
+                    player.angle = Math.atan2(joystick.dy, joystick.dx);
+                }
+            }
+        });
+        
+        joystick.element.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            joystick.active = false;
+            joystick.dx = 0;
+            joystick.dy = 0;
+            joystick.knob.style.left = '50%';
+            joystick.knob.style.top = '50%';
+        });
+        
+        // Keyboard controls
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        // Fire button
+        document.getElementById('fireBtn').addEventListener('click', fireCannon);
+        document.getElementById('fireBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            fireCannon();
+        });
+        
+        function fireCannon() {
+            for (let i = 0; i < player.cannons; i++) {
+                const offset = (i - (player.cannons - 1) / 2) * 15;
+                bullets.push({
+                    x: player.x + Math.cos(player.angle) * 30,
+                    y: player.y + Math.sin(player.angle) * 30,
+                    vx: Math.cos(player.angle) * 8,
+                    vy: Math.sin(player.angle) * 8,
+                    life: 60,
+                    offset: offset
+                });
+            }
+        }
+        
+        // Cloud effects
+        const clouds = [];
+        for (let i = 0; i < 20; i++) {
+            clouds.push({
+                x: Math.random() * WORLD_WIDTH - WORLD_WIDTH/2,
+                y: Math.random() * WORLD_HEIGHT - WORLD_HEIGHT/2,
+                size: 40 + Math.random() * 60,
+                speed: 0.2 + Math.random() * 0.3
+            });
+        }
+        
+        // Sky gradient (3D effect)
+        function drawSky() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(0.5, '#B0E0E6');
+            gradient.addColorStop(1, '#4682B4');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        
+        // Draw 3D-style island
+        function drawIsland(island) {
+            const screenX = island.x - camera.x;
+            const screenY = island.y - camera.y;
+            
+            // Skip if off screen
+            if (screenX < -island.width || screenX > canvas.width + island.width ||
+                screenY < -island.height * 2 || screenY > canvas.height + island.height) {
+                return;
+            }
+            
+            // 3D base (side)
+            ctx.fillStyle = '#8B4513';
+            ctx.beginPath();
+            ctx.ellipse(island.x - camera.x, island.y - camera.y + island.height3D, 
+                       island.width/2, island.height/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Top
+            ctx.fillStyle = '#228B22';
+            ctx.beginPath();
+            ctx.ellipse(island.x - camera.x, island.y - camera.y, 
+                       island.width/2, island.height/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Beach
+            ctx.fillStyle = '#F4A460';
+            ctx.beginPath();
+            ctx.ellipse(island.x - camera.x, island.y - camera.y + island.height/4, 
+                       island.width/2.5, island.height/4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Trees
+            ctx.fillStyle = '#006400';
+            for (let i = 0; i < 3; i++) {
+                const treeX = island.x - camera.x + (Math.random() - 0.5) * island.width * 0.6;
+                const treeY = island.y - camera.y + (Math.random() - 0.5) * island.height * 0.6;
+                ctx.beginPath();
+                ctx.moveTo(treeX, treeY - 15);
+                ctx.lineTo(treeX - 8, treeY);
+                ctx.lineTo(treeX + 8, treeY);
+                ctx.fill();
+            }
+        }
+        
+        // Draw 3D-style ship
+        function drawShip(x, y, angle, color, size) {
+            const screenX = x - camera.x;
+            const screenY = y - camera.y;
+            
+            ctx.save();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(angle);
+            
+            // 3D ship body (side)
+            ctx.fillStyle = '#5C4033';
+            ctx.beginPath();
+            ctx.moveTo(-size, size/2);
+            ctx.lineTo(size, size/2);
+            ctx.lineTo(size * 0.8, size);
+            ctx.lineTo(-size * 0.8, size);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Top deck
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(-size, 0);
+            ctx.lineTo(size, 0);
+            ctx.lineTo(size * 0.8, size/2);
+            ctx.lineTo(-size * 0.8, size/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Mast
+            ctx.strokeStyle = '#8B4513';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(0, -size * 1.5);
+            ctx.stroke();
+            
+            // Sail
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.moveTo(0, -size * 1.5);
+            ctx.lineTo(size * 0.8, -size);
+            ctx.lineTo(0, -size);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Flag
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, -size * 1.5 - 10, 15, 10);
+            ctx.fillStyle = '#FFF';
+            ctx.font = '8px Arial';
+            ctx.fillText('☠', 3, -size * 1.5 - 3);
+            
+            // Cannons
+            ctx.fillStyle = '#333';
+            for (let i = 0; i < 4; i++) {
+                const cannonY = (i - 1.5) * size * 0.3;
+                ctx.fillRect(size * 0.8, cannonY - 2, 10, 4);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Update game
+        function update(deltaTime) {
+            // Player movement
+            let moveX = 0, moveY = 0;
+            
+            // Keyboard
+            if (keys['w'] || keys['arrowup']) moveY = -player.speed;
+            if (keys['s'] || keys['arrowdown']) moveY = player.speed;
+            if (keys['a'] || keys['arrowleft']) moveX = -player.speed;
+            if (keys['d'] || keys['arrowright']) moveX = player.speed;
+            
+            // Joystick
+            if (joystick.active) {
+                moveX += joystick.dx * player.speed;
+                moveY += joystick.dy * player.speed;
+            }
+            
+            player.x += moveX;
+            player.y += moveY;
+            
+            // Boundary checking
+            player.x = Math.max(-WORLD_WIDTH/2, Math.min(WORLD_WIDTH/2, player.x));
+            player.y = Math.max(-WORLD_HEIGHT/2, Math.min(WORLD_HEIGHT/2, player.y));
+            
+            // Update camera (follow player smoothly)
+            camera.x += (player.x - canvas.width / 2 - camera.x) * 0.1;
+            camera.y += (player.y - canvas.height / 2 - camera.y) * 0.1;
+            
+            // Update enemies
+            enemies.forEach(enemy => {
+                enemy.moveTimer += deltaTime;
+                
+                // Simple AI - move randomly but avoid edges
+                if (enemy.moveTimer > 2000) {
+                    enemy.moveDirection = Math.random() * Math.PI * 2;
+                    enemy.moveTimer = 0;
+                    
+                    // Sometimes chase player if close
+                    const dx = player.x - enemy.x;
+                    const dy = player.y - enemy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < 200 && Math.random() > 0.5) {
+                        enemy.moveDirection = Math.atan2(dy, dx);
+                    }
+                }
+                
+                enemy.x += Math.cos(enemy.moveDirection) * enemy.speed;
+                enemy.y += Math.sin(enemy.moveDirection) * enemy.speed;
+                
+                // Keep enemies in bounds
+                enemy.x = Math.max(-WORLD_WIDTH/2 + 100, Math.min(WORLD_WIDTH/2 - 100, enemy.x));
+                enemy.y = Math.max(-WORLD_HEIGHT/2 + 100, Math.min(WORLD_HEIGHT/2 - 100, enemy.y));
+            });
+            
+            // Update bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.x += bullet.vx;
+                bullet.y += bullet.vy;
+                bullet.life--;
+                
+                // Check collisions with enemies
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const enemy = enemies[j];
+                    const dx = bullet.x - enemy.x;
+                    const dy = bullet.y - enemy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < 30) {
+                        enemy.health -= 10;
+                        createParticles(enemy.x, enemy.y, 'explosion');
+                        bullets.splice(i, 1);
+                        
+                        if (enemy.health <= 0) {
+                            game.loot += enemy.loot;
+                            game.defeated++;
+                            createParticles(enemy.x, enemy.y, 'loot');
+                            enemies.splice(j, 1);
+                        }
+                        break;
+                    }
+                }
+                
+                // Remove dead bullets
+                if (bullet.life <= 0) {
+                    bullets.splice(i, 1);
+                }
+            }
+            
+            // Update particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            
+            // Update clouds
+            clouds.forEach(cloud => {
+                cloud.x += cloud.speed;
+                if (cloud.x > WORLD_WIDTH/2 + 100) {
+                    cloud.x = -WORLD_WIDTH/2 - 100;
+                }
+            });
+            
+            // Update UI
+            document.getElementById('lootCount').textContent = game.loot;
+            document.getElementById('defeatedCount').textContent = game.defeated;
+            document.getElementById('playerHealth').style.width = (player.health / player.maxHealth * 100) + '%';
+        }
+        
+        function createParticles(x, y, type) {
+            const count = type === 'explosion' ? 20 : 10;
+            const colors = type === 'explosion' ? ['#ff0', '#f80', '#f00'] : ['#8b4513', '#d2691e', '#deb887'];
+            
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 30 + Math.random() * 20,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    size: type === 'explosion' ? 3 + Math.random() * 4 : 2 + Math.random() * 2
+                });
+            }
+        }
+        
+        // Render game
+        function render() {
+            // Draw sky (3D gradient)
+            drawSky();
+            
+            // Draw ocean
+            ctx.fillStyle = '#006994';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 3D effect - draw objects in order of Y position (painter's algorithm)
+            const renderQueue = [];
+            
+            // Add islands to render queue
+            islands.forEach(island => {
+                renderQueue.push({
+                    type: 'island',
+                    y: island.y,
+                    data: island
+                });
+            });
+            
+            // Add enemies to render queue
+            enemies.forEach(enemy => {
+                renderQueue.push({
+                    type: 'enemy',
+                    y: enemy.y,
+                    data: enemy
+                });
+            });
+            
+            // Add player to render queue
+            renderQueue.push({
+                type: 'player',
+                y: player.y,
+                data: player
+            });
+            
+            // Add bullets to render queue
+            bullets.forEach(bullet => {
+                renderQueue.push({
+                    type: 'bullet',
+                    y: bullet.y,
+                    data: bullet
+                });
+            });
+            
+            // Sort by Y position for 3D depth
+            renderQueue.sort((a, b) => a.y - b.y);
+            
+            // Render all objects
+            renderQueue.forEach(item => {
+                const screenX = item.data.x - camera.x;
+                const screenY = item.data.y - camera.y;
+                
+                // Skip if off screen
+                if (screenX < -200 || screenX > canvas.width + 200 ||
+                    screenY < -200 || screenY > canvas.height + 200) {
+                    return;
+                }
+                
+                if (item.type === 'island') {
+                    drawIsland(item.data);
+                } else if (item.type === 'enemy') {
+                    const enemy = item.data;
+                    const colors = {
+                        'sloop': '#2F4F4F',
+                        'galleon': '#8B0000',
+                        'frigate': '#4B0082'
+                    };
+                    drawShip(enemy.x, enemy.y, enemy.moveDirection, colors[enemy.type], 20);
+                    
+                    // Health bar
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(enemy.x - camera.x - 25, enemy.y - camera.y - 40, 50, 6);
+                    ctx.fillStyle = enemy.health > 20 ? '#0f0' : '#f00';
+                    ctx.fillRect(enemy.x - camera.x - 25, enemy.y - camera.y - 40, 
+                               50 * (enemy.health / enemy.maxHealth), 6);
+                } else if (item.type === 'player') {
+                    drawShip(player.x, player.y, player.angle, '#8B0000', player.size);
+                } else if (item.type === 'bullet') {
+                    ctx.fillStyle = '#FF4500';
+                    ctx.beginPath();
+                    ctx.arc(item.data.x - camera.x, item.data.y - camera.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            
+            // Draw clouds (always on top)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            clouds.forEach(cloud => {
+                const screenX = cloud.x - camera.x;
+                const screenY = cloud.y - camera.y;
+                
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, cloud.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw particles
+            particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 50;
+                ctx.beginPath();
+                ctx.arc(p.x - camera.x, p.y - camera.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+        }
+        
+        // Game loop
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - game.lastTime;
+            game.lastTime = timestamp;
+            
+            update(deltaTime);
+            render();
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Initialize game
+        function init() {
+            generateWorld();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Start game
+        init();
+    </script>
+</body>
+</html>

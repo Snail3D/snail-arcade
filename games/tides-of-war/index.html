@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>TIDES OF WAR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a1628;font-family:'Courier New',monospace;color:#c0d8e8}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:absolute;top:0;left:0;right:0;padding:8px 12px;display:none;pointer-events:none;z-index:10;font-size:13px;text-shadow:0 0 8px #0a1628}
+#hbar{width:180px;height:14px;background:#1a2a3a;border:1px solid #2a4a6a;border-radius:3px;overflow:hidden}
+#hfill{height:100%;background:linear-gradient(90deg,#2a6a4a,#4aaa7a)}
+.btn{background:rgba(42,106,170,0.3);border:2px solid #4a8aca;color:#e0f0ff;padding:12px 36px;font-size:18px;font-family:inherit;cursor:pointer;border-radius:6px;letter-spacing:4px;margin:8px}
+#ss h1{font-size:clamp(32px,8vw,64px);color:#e0f0ff;text-shadow:0 0 20px #2a6aaa,0 4px 8px #0a1628;letter-spacing:8px;text-align:center}
+#ss h2{font-size:clamp(14px,3vw,20px);color:#6a9ab8;text-align:center}
+#joystickArea{position:absolute;bottom:20px;left:20px;width:150px;height:150px;z-index:15;display:none;touch-action:none}
+#joystickBase{width:120px;height:120px;border:2px solid rgba(106,154,184,0.4);border-radius:50%;position:absolute;bottom:0;left:0;background:rgba(10,22,40,0.3)}
+#joystickHandle{width:50px;height:50px;border:2px solid rgba(106,154,184,0.7);border-radius:50%;position:absolute;background:rgba(42,106,170,0.4);transform:translate(-50%,-50%)}
+#waveAnnounce{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);font-size:clamp(24px,6vw,42px);color:#e0f0ff;text-shadow:0 0 30px #2a6aaa;z-index:25;display:none;pointer-events:none;letter-spacing:6px;text-align:center}
+#vignette{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at center,transparent 50%,rgba(5,10,20,0.7) 100%)}
+</style>
+</head>
+<body>
+<canvas id="gc"></canvas>
+<div id="vignette"></div>
+<div id="hud">
+<div style="display:flex;justify-content:space-between;align-items:center">
+<div><span style="color:#6a9ab8">SCORE </span><span style="color:#e0f0ff;font-weight:bold" id="sv">0</span></div>
+<div><span style="color:#6a9ab8">WAVE </span><span style="color:#e0f0ff;font-weight:bold" id="wv">1</span></div>
+<div><span style="color:#6a9ab8">HP </span><div id="hbar"><div id="hfill" style="width:100%"></div></div></div>
+</div>
+</div>
+<div id="ss">
+<h1>TIDES OF WAR</h1>
+<h2>3D NAVAL COMBAT</h2>
+<div class="btn" id="sb">SET SAIL</div>
+</div>
+<div id="gs" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;flex-direction:column;align-items:center;justify-content:center">
+<h1 style="font-size:clamp(24px,6vw,48px);color:#da4a4a">DEFEAT</h1>
+<div class="btn" id="rb">SAIL AGAIN</div>
+</div>
+<div id="joystickArea"><div id="joystickBase"><div id="joystickHandle"></div></div></div>
+<div id="waveAnnounce"></div>
+<script>
+const C=document.getElementById('gc'),X=C.getContext('2d'),W=()=>Math.min(window.innerWidth,window.innerHeight),H=()=>Math.min(window.innerHeight,window.innerWidth);
+function resize(){const d=devicePixelRatio||1;C.width=W();C.height=H()}
+resize();window.addEventListener('resize',resize);
+let IS_MOBILE='ontouchstart' in window;
+
+// Audio
+let audioCtx=null;
+function getAudio(){if(!audioCtx){audioCtx=new(window.AudioContext||window.webkitAudioContext)()}if(audioCtx.state==='suspended')audioCtx.resume();return audioCtx}
+function snd(type){
+const ac=getAudio(),t=ac.currentTime;
+if(type==='cannon'){
+const o=ac.createOscillator(),g=ac.createGain();
+o.connect(g);g.connect(ac.destination);
+o.frequency.setValueAtTime(80,t);o.frequency.exponentialRampToValueAtTime(30,t+0.3);
+g.gain.setValueAtTime(0.3,t);g.gain.exponentialRampToValueAtTime(0.01,t+0.5);
+o.start(t);o.stop(t+0.5);
+}else if(type==='splash'){
+const buf=ac.createBuffer(1,ac.sampleRate*0.3,ac.sampleRate),d=buf.getChannelData(0);
+for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/d.length*4);
+const n=ac.createBufferSource();n.buffer=buf;
+const g=ac.createGain();n.connect(g);g.connect(ac.destination);
+g.gain.setValueAtTime(0.3,t);g.gain.exponentialRampToValueAtTime(0.01,t+0.3);
+n.start(t);
+}else if(type==='explosion'){
+const o=ac.createOscillator(),g=ac.createGain();
+o.connect(g);g.connect(ac.destination);
+o.type='sawtooth';o.frequency.setValueAtTime(60,t);o.frequency.exponentialRampToValueAtTime(15,t+0.8);
+g.gain.setValueAtTime(0.3,t);g.gain.exponentialRampToValueAtTime(0.01,t+1);
+o.start(t);o.stop(t+1);
+}
+}
+
+// Game state
+const G={running:false,wave:0,score:0,hull:100,windDir:Math.PI/4,windSpd:0.5,camDist:500,zoom:1,gameTime:0,highScore:parseInt(localStorage.getItem('tidesHS'))||0};
+const P={x:0,z:0,heading:0,speed:0,maxSpd:3,turnRate:0,maxTurn:0.02,pelt:0,roll:0,pitch:0,ptCD:0,stCD:0,sails:[true,true,true],cannons:true};
+let enemies=[],projectiles=[],particles=[],waveTimer=0,wavePhase='spawn',waveMaxEnemies=0,waveAnn=0;
+
+function wave3D(x,z,t){
+return Math.sin(x*0.02+t*1.2)*Math.cos(z*0.015+t*0.8)*2.5
++Math.sin(x*0.035+z*0.025+t*1.8)*1.8
++Math.cos(x*0.01-z*0.03+t*0.5)*3.5
++Math.sin(x*0.05+t*2.5)*Math.sin(z*0.04+t*1.3)*1.2;
+}
+
+function toScreen(x,y,z,camX,camZ){
+const dx=x-camX,dz=z-camZ;
+const cos=Math.cos(G.camDist),sin=Math.sin(G.camDist);
+const rx=dx*cos+dz*sin,rz=-dx*sin+dz*cos;
+if(rz<0.1)return null;
+const scale=G.zoom/rz;
+return{x:W()/2+rx*scale,y:H()/2+scale*200,z:rz,scale:scale};
+}
+
+function drawShip3D(sx,sy,scale,ship,isEnemy){
+if(!scale||scale<0.01)return;
+const sw=40*scale,sh2=60*scale;
+X.save();X.translate(sx,sy);
+const roll=ship.roll||0;
+X.rotate(roll*0.05);
+
+// hull
+X.fillStyle=isEnemy?'#2a1a1a':'#1a2a3a';
+X.beginPath();X.moveTo(-sw,0);X.lineTo(-sw*0.8,-sh2*0.6);X.lineTo(sw*0.8,-sh2*0.6);X.lineTo(sw,0);X.closePath();X.fill();
+X.strokeStyle=isEnemy?'#4a2a2a':'#3a5a7a';X.lineWidth=1;X.stroke();
+
+// deck
+X.fillStyle=isEnemy?'#1e1414':'#152535';
+X.fillRect(-sw*0.6,-sh2*0.7,sw*1.2,sh2*0.15);
+
+// mast
+X.strokeStyle=isEnemy?'#3a2a1a':'#2a3a2a';X.lineWidth=Math.max(1,3*scale);
+X.beginPath();X.moveTo(0,-sh2*0.7);X.lineTo(0,-sh2*0.7-sh2*1.5);X.stroke();
+
+// sails
+const bil=0.3;
+if(!isEnemy){
+if(ship.sails[0]){X.fillStyle='#c8d8e8';X.beginPath();X.moveTo(-sw*0.3,-sh2*0.7-sh2*0.3);X.quadraticCurveTo(-sw*0.3+(Math.sin(G.gameTime*3))*bil*sw*0.5,-sh2*0.7-sh2*0.3+sh2*0.5,sw*0.5,-sh2*0.7-sh2*0.3+sh2*0.5);X.lineTo(-sw*0.2,-sh2*0.7-sh2*0.3+sh2*0.3);X.closePath();X.fill();X.strokeStyle='#a8b8c8';X.lineWidth=0.5;X.stroke()}
+if(ship.sails[1]){X.fillStyle='#c8d8e8';X.beginPath();X.moveTo(-sw*0.15,-sh2*0.7-sh2*0.7);X.quadraticCurveTo(-sw*0.15+(Math.sin(G.gameTime*3+1))*bil*sw*0.5,-sh2*0.7-sh2*0.7+sh2*0.4,sw*0.35,-sh2*0.7-sh2*0.7+sh2*0.4);X.lineTo(-sw*0.1,-sh2*0.7-sh2*0.7+sh2*0.3);X.closePath();X.fill();X.strokeStyle='#a8b8c8';X.lineWidth=0.5;X.stroke()}
+if(ship.sails[2]){X.fillStyle='#c8d8e8';X.beginPath();X.moveTo(sw*0.1,-sh2*0.7-sh2*1.0);X.quadraticCurveTo(sw*0.1+(Math.sin(G.gameTime*3+2))*bil*sw*0.4,-sh2*0.7-sh2*1.0+sh2*0.35,sw*0.4,-sh2*0.7-sh2*1.0+sh2*0.35);X.lineTo(sw*0.15,-sh2*0.7-sh2*1.0+sh2*0.25);X.closePath();X.fill();X.strokeStyle='#a8b8c8';X.lineWidth=0.5;X.stroke()}
+}else{
+if(ship.sails[0]){X.fillStyle='#4a3a2a';X.beginPath();X.moveTo(-sw*0.3,-sh2*0.7-sh2*0.3);X.quadraticCurveTo(-sw*0.3+(Math.sin(G.gameTime*3))*bil*sw*0.5,-sh2*0.7-sh2*0.3+sh2*0.5,sw*0.5,-sh2*0.7-sh2*0.3+sh2*0.5);X.lineTo(-sw*0.2,-sh2*0.7-sh2*0.3+sh2*0.3);X.closePath();X.fill()}
+if(ship.sails[1]){X.fillStyle='#4a3a2a';X.beginPath();X.moveTo(-sw*0.15,-sh2*0.7-sh2*0.7);X.quadraticCurveTo(-sw*0.15+(Math.sin(G.gameTime*3+1))*bil*sw*0.5,-sh2*0.7-sh2*0.7+sh2*0.4,sw*0.35,-sh2*0.7-sh2*0.7+sh2*0.4);X.lineTo(-sw*0.1,-sh2*0.7-sh2*0.7+sh2*0.3);X.closePath();X.fill()}
+if(ship.sails[2]){X.fillStyle='#4a3a2a';X.beginPath();X.moveTo(sw*0.1,-sh2*0.7-sh2*1.0);X.quadraticCurveTo(sw*0.1+(Math.sin(G.gameTime*3+2))*bil*sw*0.4,-sh2*0.7-sh2*1.0+sh2*0.35,sw*0.4,-sh2*0.7-sh2*1.0+sh2*0.35);X.lineTo(sw*0.15,-sh2*0.7-sh2*1.0+sh2*0.25);X.closePath();X.fill()}
+}
+
+// flag
+X.fillStyle=isEnemy?'#aa2222':'#2244aa';
+X.fillRect(-sw*0.05,-sh2*0.7-sh2-5*scale,sw*0.4,8*scale);
+
+// cannons
+if(ship.cannons){X.fillStyle='#1a1a1a';X.beginPath();X.arc(-sw*0.85,-sh2*0.4,4*scale,0,Math.PI*2);X.fill();X.beginPath();X.arc(sw*0.85,-sh2*0.4,4*scale,0,Math.PI*2);X.fill()}
+
+X.restore();
+}
+
+function spawnEnemy(type){
+const types={sloop:{hp:30,speed:2.5,hullScale:0.7,score:100},frigate:{hp:60,speed:1.8,hullScale:1.0,score:200},galleon:{hp:120,speed:1.0,hullScale:1.5,score:350},dreadnought:{hp:300,speed:0.6,hullScale:2.2,score:1000}};
+const t=types[type]||types.sloop;
+const angle=Math.random()*Math.PI*2;
+const dist=600+Math.random()*400;
+return{x:Math.cos(angle)*dist,z:Math.sin(angle)*dist,hp:t.hp,maxHp:t.hp,speed:t.speed,hullScale:t.hullScale,score:t.score,type:type,heading:angle+Math.PI,sailState:[true,true,true],cannons:true,reload:0,reloadMax:120,inRange:false,fireTimer:60+Math.random()*120,sinking:false,sinkT:0};
+}
+
+function fireCannon(side){
+if(side==='port'&&P.ptCD>0)return;if(side==='starboard'&&P.stCD>0)return;
+snd('cannon');
+const px=P.x+Math.sin(P.heading)*(-8)+Math.cos(P.heading)*(side==='port'?10:-10);
+const pz=P.z+Math.cos(P.heading)*(-8)-Math.sin(P.heading)*(side==='port'?10:-10);
+const targetAngle=P.heading+(side==='port'?0.15:-0.15);
+const vx=Math.sin(targetAngle)*8,vz=Math.cos(targetAngle)*8;
+projectiles.push({x:px,y:20,z:pz,vx:vx,vy:0,vz:vz,gravity:0.15,trail:[],life:180,side:side,isEnemy:false});
+if(side==='port')P.ptCD=40;else P.stCD=40;
+}
+
+function spawnParticles(x,y,z,count,color,speed,life){
+for(let i=0;i<count;i++){const a=Math.random()*Math.PI*2,sp=Math.random()*speed;
+particles.push({x:x+Math.cos(a)*sp,y:y+Math.random()*10,z:z+Math.sin(a)*sp,vx:Math.cos(a)*sp*0.5,vy:Math.random()*3+1,vz:Math.sin(a)*sp*0.5,life:life+Math.random()*life*0.5,maxLife:life*1.5,color:color,size:Math.random()*3+1})}
+}
+
+function spawnSplash(x,z){for(let i=0;i<15;i++){const a=Math.random()*Math.PI*2,sp=Math.random()*3;
+particles.push({x:x+Math.cos(a)*2,y:wave3D(x,z,G.gameTime),z:z+Math.sin(a)*2,vx:Math.cos(a)*sp*0.3,vy:Math.random()*2+2,vz:Math.sin(a)*sp*0.3,life:40+Math.random()*20,maxLife:50,color:'rgba(180,220,255,)',size:Math.random()*2+1})}
+}
+
+function startWave(){
+G.wave++;
+const baseCount=Math.min(3+G.wave*2,20);
+waveMaxEnemies=baseCount;waveTimer=0;wavePhase='spawn';waveAnn=180;
+document.getElementById('waveAnnounce').textContent='WAVE '+G.wave;
+document.getElementById('waveAnnounce').style.display='block';
+setTimeout(()=>{document.getElementById('waveAnnuce').style.display='none'},3000);
+}
+
+function update(dt){
+if(!G.running)return;
+G.gameTime+=dt;
+G.windDir+=Math.sin(G.gameTime*0.05)*0.001;
+G.windSpd=0.3+Math.sin(G.gameTime*0.03)*0.3;
+
+const keysState=P._keys={};
+// Keyboard input handled in event listener
+
+// Wind effect
+const windAngle=G.windDir;
+const headingDiff=P.heading-windAngle;
+const intoWind=Math.abs(headingDiff)<Math.PI*0.3;
+const maxSpeed=intoWind?P.maxSpd*0.4:P.maxSpd*(0.7+G.windSpd*0.3);
+if(P._turnDir===0)P.speed=Math.min(P.speed+0.05,maxSpeed);
+else P.speed=Math.max(0,P.speed-0.1);
+P.x+=Math.sin(P.heading)*P.speed;
+P.z+=Math.cos(P.heading)*P.speed;
+
+// Wave motion
+P.pelt+=dt*0.02;P.roll+=dt*0.015;
+P.y=wave3D(P.x,P.z,G.gameTime);
+P.pitch=Math.sin(P.pelt*3)*0.02+Math.cos(P.roll*2)*0.015;
+
+// Cooldowns
+if(P.ptCD>0)P.ptCD--;if(P.stCD>0)P.stCD--;
+
+// Update enemies
+enemies.forEach(e=>{
+if(e.sinking){e.sinkT+=dt;return}
+const dx=P.x-e.x,dz=P.z-e.z;
+const dist=Math.sqrt(dx*dx+dz*dz);
+const targetHeading=Math.atan2(dx,dz);
+let diff=targetHeading-e.heading;
+diff=((diff+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
+if(Math.abs(diff)>0.02)e.heading+=Math.sign(diff)*0.008*G.windSpd;
+e.x+=Math.sin(e.heading)*e.speed*G.windSpd;
+e.z+=Math.cos(e.heading)*e.speed*G.windSpd;
+if(dist<400&&dist>100&&Math.abs(diff)>Math.PI*0.35)e.heading+=Math.sign(diff)*0.01;
+if(e.cannons&&dist<350){e.fireTimer--;
+if(e.fireTimer<=0){e.fireTimer=e.reloadMax+Math.random()*30;
+const leadX=P.x+Math.sin(P.heading)*P.speed*15;const leadZ=P.z+Math.cos(P.heading)*P.speed*15;
+const la=Math.atan2(leadX-e.x,leadZ-e.z);
+projectiles.push({x:e.x,z:e.z,y:15,vx:Math.sin(la)*6,vz:Math.cos(la)*6,vy:0,gravity:0.12,trail:[],life:200,side:'enemy',isEnemy:true});
+snd('cannon',0.15);
+}
+}});
+
+// Update projectiles
+projectiles.forEach(p=>{
+p.x+=p.vx;p.y+=p.vy;p.z+=p.vz;p.vy-=p.gravity;
+p.trail.push({x:p.x,y:p.y,z:p.z});
+if(p.trail.length>20)p.trail.shift();
+if(p.y<wave3D(p.x,p.z,G.gameTime)){spawnSplash(p.x,p.z);snd('splash');p.life=0;return}
+if(!p.isEnemy){enemies.forEach(e=>{if(e.sinking)return;
+const dx=p.x-e.x,dz=p.z-e.z;const dist2=Math.sqrt(dx*dx+dz*dz);
+if(dist2<40*e.hullScale){
+if(Math.random()<0.3){const si=Math.floor(Math.random()*3);e.sails[si]=false;snd('sail')}
+if(Math.random()<0.15)e.cannons=false;
+e.hp-=20;spawnParticles(p.x,Math.max(p.y,10),p.z,20,'#da4a2a',5,30);snd('explosion');
+p.life=0;
+if(e.hp<=0){e.sinking=true;G.score+=e.score;spawnParticles(e.x,p.y,e.z,40,'#4a2a1a',8,50);
+}}});
+}
+if(p.isEnemy){const dx=p.x-P.x,dz=p.z-P.z;const dist2=Math.sqrt(dx*dx+dz*dz);
+if(dist2<30){spawnSplash(p.x,Math.max(p.y,10),p.z);G.hull-=15;p.life=0;
+if(G.hull<=0){G.hull=0;gameOver()}}}});
+projectiles=projectiles.filter(p=>p.life>0);
+
+// Update particles
+particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.z+=p.vz;p.vy-=0.05;p.vx*=0.98;p.vz*=0.98;p.life--});
+particles=particles.filter(p=>p.life>0);
+
+// Wave management
+if(wavePhase==='spawn'){
+waveTimer+=dt;
+if(Math.floor(waveTimer/90)%Math.max(1,Math.floor(waveMaxEnemies/4))===0&&waveMaxEnemies>0){
+const r=Math.random();let type='sloop';
+if(G.wave>=8&&r<0.2)type='dreadnought';else if(G.wave>=5&&r<0.4)type='galleon';else if(G.wave>=3&&r<0.6)type='frigate';
+enemies.push(spawnEnemy(type));
+}}}
+if(enemies.every(e=>e.sinking)&&enemies.length>0){if(wavePhase!=='done'){wavePhase='done';waveTimer=0}}
+if(wavePhase==='done'){waveTimer+=dt;if(waveTimer>300)startWave()}
+if(waveAnn>0){waveAnn--}}
+
+function render(){
+X.clearRect(0,0,W(),H());
+
+// Sky
+const skyH=H()*0.42;const sky=X.createLinearGradient(0,0,0,skyH);
+const dusk=Math.min(1,G.gameTime/600);
+sky.addColorStop(0,`rgba(${8+dusk*35},${25+dusk*25},${60+dusk*15})`);
+sky.addColorStop(0.5,`rgba(${30+dusk*60},${60+dusk*40},${80+dusk*30})`);
+sky.addColorStop(1,`rgba(${50+dusk*80},${80+dusk*50},${90+dusk*20})`);
+X.fillStyle=sky;X.fillRect(0,0,W(),skyH);
+
+// Sun
+const sunY=skyH*0.3+dusk*skyH*0.4;
+const sg=X.createRadialGradient(W()*0.7,sunY,0,W()*0.7,sunY,80);
+sg.addColorStop(0,'rgba(255,${200+dusk*55},${100+dusk*60},0.8)');sg.addColorStop(1,'rgba(255,180,100,0)');
+X.fillStyle=sg;X.fillRect(W()*0.6,sunY-80,160,160);
+
+// Water
+const water=X.createLinearGradient(0,skyH,0,H());
+water.addColorStop(0,`rgba(${15+dusk*25},${55+dusk*20},${85+dusk*15})`);
+water.addColorStop(1,`rgba(${8},${25+dusk*10},${45+dusk*8})`);
+X.fillStyle=water;X.fillRect(0,skyH,W(),H()-skyH);
+
+// Wave lines
+const vanishY=skyH,segments=60;
+for(let i=0;i<segments;i++){const nz=i/segments,y=vanishY+(H()-vanishY)*nz,perspective=1/(1+nz*4),waveOff=wave3D(0,i*15,0,G.gameTime)*perspective*3;
+X.strokeStyle=`rgba(${30+dusk*40+nz*20},${80+dusk*40+waveOff*5},${110+dusk*30},${0.15+nz*0.25})`;X.lineWidth=1+nz*2;X.beginPath();
+for(let j=0;j<20;j++){const nx=j/20,wx=(nx-0.5)*W()*2,wy=y+wave3D(wx,i*15,G.gameTime)*perspective*4;j===0?X.moveTo(nx*W(),wy):X.lineTo(nx*W(),wy)}
+X.stroke()}
+
+// Specular highlights
+for(let i=0;i<30;i++){const sx=Math.random()*W(),sy=skyH+(H()-skyH)*(0.3+Math.random()*0.7),sp=wave3D((sx-W()/2)*2,sy*3,G.gameTime);if(sp>3){X.fillStyle=`rgba(180,220,255,${0.05+Math.random()*0.08})`;X.fillRect(sx,sy,Math.random()*4+1,1)}}
+
+// Collect renderable objects
+const renderables=[];
+enemies.forEach(e=>{const s=toScreen(e.x,e.y+wave3D(e.x,e.z,G.gameTime),e.z,P.x,P.z);if(s)renderables.push({type:'enemy',obj:e,screen:s,z:s.z})});
+const ps=toScreen(P.x,P.y,P.z,P.x,P.z,0);if(ps)renderables.push({type:'player',obj:P,screen:ps,z:0});
+projectiles.forEach(p=>{const s=toScreen(p.x,p.y,p.z,P.x,P.y+5,P.z);if(s)renderables.push({type:'proj',obj:p,screen:s,z:s.z})});
+
+renderables.sort((a,b)=>b.z-a.z);
+
+renderables.forEach(r=>{
+if(r.type==='enemy'){const s=r.screen,e=r.obj;const alpha=Math.max(0.1,Math.min(1,s.z>500?0.3+((500-s.z)/500)*0.7:1));X.globalAlpha=alpha;drawShip3D(s.x,s.y,s.scale*e.hullScale,e,true);X.globalAlpha=1}
+if(r.type==='player'){const s=r.screen;X.save();X.translate(s.x,s.y);X.rotate(P.roll);drawShip3D(0,0,s.scale,P,false);
+const wakeX=s.x-Math.sin(P.heading)*s.scale*50,wakeZ=P.z+Math.cos(P.heading)*s.scale*50;
+if(s.z>20){X.strokeStyle='rgba(200,230,255,0.15)';X.lineWidth=2;X.beginPath();X.moveTo(-s.scale*30,3);X.lineTo(-s.scale*60,3+s.scale*15);X.moveTo(s.scale*30,3);X.lineTo(s.scale*60,3+s.scale*15);X.stroke()}X.restore()}
+if(r.type==='proj'){const s=r.screen,p=r.obj;const sz=Math.max(2,4*s.scale);X.fillStyle='#2a2a2a';X.beginPath();X.arc(s.x,s.y,sz,0,Math.PI*2);X.fill();
+const gl=X.createRadialGradient(s.x,s.y,0,s.x,s.y,sz*3);gl.addColorStop(0,'rgba(255,150,50,0.3)');gl.addColorStop(1,'rgba(255,150,50,0)');X.fillStyle=gl;X.fillRect(s.x-sz*3,s.y-sz*3,sz*6,sz*6)}
+});
+
+X.globalAlpha=1;
+document.getElementById('sv').textContent=G.score;
+document.getElementById('wv').textContent=G.wave;
+document.getElementById('hfill').style.width=G.hull+'%';
+}
+
+// Main loop
+let lastTime=0;
+function gameLoop(time){
+const dt=Math.min(0.05,(time-lastTime)/1000);lastTime=time;
+if(!G.running){requestAnimationFrame(gameLoop);return}
+update(dt);render();requestAnimationFrame(gameLoop);
+}
+
+// Input
+P._turnDir=0;P._keys={};
+document.addEventListener('keydown',e=>{
+if(e.key==='a'||e.key==='ArrowLeft')P._turnDir=-1;
+if(e.key==='d'||e.key==='ArrowRight')P._turnDir=1;
+if(e.key===' '){P._turnDir=0;fireCannon('port');fireCannon('starboard')}
+});
+document.addEventListener('keyup',e=>{if(e.key==='a'||e.key==='ArrowLeft'||e.key==='d'||e.key==='ArrowRight')P._turnDir=0});
+C.addEventListener('click',e=>{if(!G.running)return;const r=C.getBoundingClientRect();const x=(e.clientX-r.left)/r.width;if(x<0.5)fireCannon('port');else fireCannon('starboard')});
+C.addEventListener('wheel',e=>{G.zoom=Math.max(0.5,Math.min(2,G.zoom-e.deltaY*0.001))});
+
+let touchId=null,jtouch=null;
+C.addEventListener('touchstart',e=>{e.preventDefault();if(!G.running)return;
+for(let t of e.changedTouches){if(t.identifier!==touchId){const x=(t.clientX-C.getBoundingClientRect().left)/C.getBoundingClientRect().width;if(x<0.45){jtouch=t;touchId=t.identifier;document.getElementById('joystickArea').style.display='block'}else fireCannon(x<0.5?'port':'starboard')}}},{passive:false});
+C.addEventListener('touchmove',e=>{e.preventDefault();for(let t of e.changedTouches){if(t.identifier===touchId){const rect=C.getBoundingClientRect();const x=(t.clientX-rect.left)/rect.width;if(x<0.3)P._turnDir=-1;else if(x>0.7)P._turnDir=1;else P._turnDir=0;const handle=document.getElementById('joystickHandle');handle.style.transform='translate('+(-50+(x-0.5)*50)+'%,'+(-50+(x-0.5)*50)+'%)'}}},{passive:false});
+C.addEventListener('touchend',e=>{P._turnDir=0;jtouch=null;touchId=null;document.getElementById('joystickArea').style.display='none';document.getElementById('joystickHandle').style.transform='translate(-50%,-50%)'});
+
+// Game start
+document.getElementById('sb').addEventListener('click',()=>{
+G.running=true;G.wave=0;G.score=0;G.hull=100;G.gameTime=0;G.zoom=1;
+P.x=0;P.z=0;P.heading=0;P.speed=0;P.ptCD=0;P.stCD=0;P.sails=[true,true,true];P.cannons=true;
+enemies=[];projectiles=[];particles=[];
+document.getElementById('ss').style.display='none';
+document.getElementById('hud').style.display='block';
+startWave();
+});
+document.getElementById('rb').addEventListener('click',()=>{
+G.running=true;G.wave=0;G.score=0;G.hull=100;G.gameTime=0;G.zoom=1;
+P.x=0;P.z=0;P.heading=0;P.speed=0;P.ptCD=0;P.stCD=0;P.sails=[true,true,true];P.cannons=true;
+enemies=[];projectiles=[];particles=[];
+document.getElementById('gs').style.display='none';
+document.getElementById('hud').style.display='block';
+startWave();
+});
+
+function gameOver(){
+G.running=false;const hs=Math.max(G.highScore,G.score);localStorage.setItem('tidesHS',hs);
+document.getElementById('gs').style.display='flex';document.getElementById('hud').style.display='none';
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
