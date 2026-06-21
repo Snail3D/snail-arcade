@@ -116,6 +116,7 @@ resize();
 let state = 'ready'; // ready, playing, dead
 let score = 0, kills = 0, wave = 1, waveTimer = 0;
 let enemiesToSpawn = 0, spawnTimer = 0;
+let waveTransitioning = false;
 let best = parseInt(localStorage.getItem('alien-covenant-best') || '0', 10);
 let shakeAmount = 0, shakeX = 0, shakeY = 0;
 let gameTime = 0;
