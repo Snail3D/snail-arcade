@@ -424,7 +424,7 @@ function update(){
   if(player.iframe > 0) player.iframe--;
 
   // ── Spawn enemies ──
-  if(enemiesToSpawn.length > 0){
+  if(Array.isArray(enemiesToSpawn) && enemiesToSpawn.length > 0){
     spawnTimer--;
     if(spawnTimer <= 0){
       spawnEnemy(enemiesToSpawn.shift());
@@ -433,7 +433,8 @@ function update(){
   }
 
   // ── Check wave complete ──
-  if(enemiesToSpawn.length === 0 && enemies.length === 0){
+  if(!waveTransitioning && Array.isArray(enemiesToSpawn) && enemiesToSpawn.length === 0 && enemies.length === 0){
+    waveTransitioning = true;
     wave++;
     score += 500 * (wave - 1);
     // Heal a bit between waves
@@ -441,8 +442,7 @@ function update(){
     player.ammo = Math.min(player.maxAmmo, player.ammo + 30);
     // Spawn pickup
     spawnPickup(W/2 + (Math.random() - 0.5) * 200, H/2 + (Math.random() - 0.5) * 200);
-    setTimeout(() => { if(state === 'playing') startWave(); }, 1500);
-    enemiesToSpawn = [-1]; // prevent re-trigger
+    setTimeout(() => { if(state === 'playing') startWave(); waveTransitioning = false; }, 1500);
   }
 
   // ── Update enemies ──
