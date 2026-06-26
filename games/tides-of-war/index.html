@@ -76,7 +76,7 @@ o.start(t);o.stop(t+1);
 }
 
 // Game state
-const G={running:false,wave:0,score:0,hull:100,windDir:Math.PI/4,windSpd:0.5,camDist:500,zoom:1,gameTime:0,highScore:parseInt(localStorage.getItem('tidesHS'))||0};
+const G={running:false,wave:0,score:0,hull:100,windDir:Math.PI/4,windSpd:0.5,camDist:500,zoom:1,gameTime:0,highScore:parseInt(localStorage.getItem('tidesHS'))||0,comboCount:0,comboTimer:0,comboScore:0};
 const P={x:0,z:0,heading:0,speed:0,maxSpd:3,turnRate:0,maxTurn:0.02,pelt:0,roll:0,pitch:0,ptCD:0,stCD:0,sails:[true,true,true],cannons:true};
 let enemies=[],projectiles=[],particles=[],waveTimer=0,wavePhase='spawn',waveMaxEnemies=0,waveAnn=0;
 
@@ -149,6 +149,10 @@ return{x:Math.cos(angle)*dist,z:Math.sin(angle)*dist,hp:t.hp,maxHp:t.hp,speed:t.
 function fireCannon(side){
 if(side==='port'&&P.ptCD>0)return;if(side==='starboard'&&P.stCD>0)return;
 snd('cannon');
+// Combo: rapid successive hits multiply score
+const now = performance.now();
+if(now - lastHitTime < 2000) { G.comboCount++; G.comboTimer = 120; }
+else { G.comboCount = 1; G.comboTimer = 120; }
 const px=P.x+Math.sin(P.heading)*(-8)+Math.cos(P.heading)*(side==='port'?10:-10);
 const pz=P.z+Math.cos(P.heading)*(-8)-Math.sin(P.heading)*(side==='port'?10:-10);
 const targetAngle=P.heading+(side==='port'?0.15:-0.15);
