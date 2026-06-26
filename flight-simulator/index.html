@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daytona Beach Flight Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 10;
+  }
+  #hud div { position: absolute; color: #0f0; font-size: 14px; text-shadow: 0 0 5px #0f0; }
+  #alt { top: 20px; left: 20px; }
+  #spd { top: 40px; left: 20px; }
+  #hdg { top: 60px; left: 20px; }
+  #fuel { top: 80px; left: 20px; }
+  #throttle { top: 100px; left: 20px; }
+  #compass {
+    top: 20px; left: 50%; transform: translateX(-50%);
+    font-size: 18px; width: 200px; text-align: center;
+  }
+  #controls {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: #0f0; font-size: 12px; text-align: center;
+    text-shadow: 0 0 5px #0f0; z-index: 10; pointer-events: none;
+  }
+  #controls p { margin: 2px 0; }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 30px; height: 30px; z-index: 10; pointer-events: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: rgba(0,255,0,0.5);
+  }
+  #crosshair::before { width: 1px; height: 100%; left: 50%; }
+  #crosshair::after { height: 1px; width: 100%; top: 50%; }
+  #minimap {
+    position: fixed; bottom: 20px; right: 20px;
+    width: 150px; height: 150px; border: 1px solid #0f0;
+    background: rgba(0,0,0,0.5); z-index: 10; pointer-events: none;
+  }
+  #message {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #0f0; font-size: 24px; text-shadow: 0 0 10px #0f0;
+    z-index: 20; pointer-events: none; display: none;
+    text-align: center;
+  }
+  #message.show { display: block; }
+  #instructions {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9); border: 2px solid #0f0; padding: 30px;
+    color: #0f0; font-size: 16px; z-index: 30; text-align: center;
+    text-shadow: 0 0 5px #0f0;
+  }
+  #instructions h1 { margin-bottom: 20px; font-size: 28px; }
+  #instructions button {
+    margin-top: 20px; padding: 10px 30px; font-size: 18px;
+    background: #000; color: #0f0; border: 2px solid #0f0;
+    cursor: pointer; pointer-events: all;
+  }
+  #instructions button:hover { background: #0f0; color: #000; }
+  #instructions .key { color: #ff0; }
+  #fuelBar {
+    position: fixed; top: 120px; left: 20px; width: 100px; height: 10px;
+    border: 1px solid #0f0; z-index: 10; pointer-events: none;
+  }
+  #fuelFill {
+    height: 100%; background: #0f0; width: 100%;
+    transition: width 0.3s, background 0.3s;
+  }
+  #altitudeBar {
+    position: fixed; top: 20px; right: 20px; width: 10px; height: 200px;
+    border: 1px solid #0f0; z-index: 10; pointer-events: none;
+  }
+  #altitudeFill {
+    position: absolute; bottom: 0; width: 100%; background: #0f0;
+    transition: height 0.3s;
+  }
+  #speedBar {
+    position: fixed; top: 40px; right: 20px; width: 10px; height: 200px;
+    border: 1px solid #0f0; z-index: 10; pointer-events: none;
+  }
+  #speedFill {
+    position: absolute; bottom: 0; width: 100%; background: #0f0;
+    transition: width 0.3s;
+  }
+  #landingPad {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 60px; height: 60px; border: 2px dashed #0f0;
+    border-radius: 50%; z-index: 5; pointer-events: none;
+    display: none; opacity: 0.5;
+  }
+  #landingPad.show { display: block; animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.8; }
+  }
+  #weather {
+    position: fixed; top: 140px; left: 20px; z-index: 10; pointer-events: none;
+    color: #0f0; font-size: 12px; text-shadow: 0 0 5px #0f0;
+  }
+  #time {
+    position: fixed; top: 160px; left: 20px; z-index: 10; pointer-events: none;
+    color: #0f0; font-size: 12px; text-shadow: 0 0 5px #0f0;
+  }
+  #score {
+    position: fixed; top: 180px; left: 20px; z-index: 10; pointer-events: none;
+    color: #ff0; font-size: 14px; text-shadow: 0 0 5px #ff0;
+  }
+  #mission {
+    position: fixed; top: 200px; left: 20px; z-index: 10; pointer-events: none;
+    color: #f80; font-size: 12px; text-shadow: 0 0 5px #f80;
+  }
+  #engineSound {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 1; pointer-events: none; opacity: 0.3;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="alt">ALT: 0 ft</div>
+  <div id="spd">SPD: 0 kts</div>
+  <div id="hdg">HDG: 000°</div>
+  <div id="fuel">FUEL: 100%</div>
+  <div id="throttle">THR: 0%</div>
+  <div id="compass">N</div>
+  <div id="weather">VIS: 10mi</div>
+  <div id="time">TIME: 12:00</div>
+  <div id="score">SCORE: 0</div>
+  <div id="mission">LAND AT DAYTONA BEACH</div>
+  <div id="fuelBar"><div id="fuelFill"></div></div>
+  <div id="altitudeBar"><div id="altitudeFill"></div></div>
+  <div id="speedBar"><div id="speedFill"></div></div>
+  <div id="crosshair"></div>
+  <div id="landingPad"></div>
+  <div id="message"></div>
+  <div id="controls">
+    <p><span class="key">W/S</span> Pitch | <span class="key">A/D</span> Roll | <span class="key">Q/E</span> Yaw</p>
+    <p><span class="key">Shift/Ctrl</span> Throttle | <span class="key">Space</span> Brakes | <span class="key">F</span> Flaps | <span class="key">L</span> Lights</p>
+    <p><span class="key">R</span> Reset | <span class="key">M</span> Minimap | <span class="key">T</span> Time | <span class="key">X</span> Weather</p>
+  </div>
+  <canvas id="minimap"></canvas>
+</div>
+<div id="instructions">
+  <h1>✈ DAYTONA BEACH FLIGHT SIMULATOR ✈</h1>
+  <p>Experience full flight simulation at Daytona Beach International Airport (KDAB)</p>
+  <br>
+  <p><span class="key">W/S</span> - Pitch Up/Down</p>
+  <p><span class="key">A/D</span> - Roll Left/Right</p>
+  <p><span class="key">Q/E</span> - Yaw Left/Right</p>
+  <p><span class="key">Shift</span> - Increase Throttle</p>
+  <p><span class="key">Ctrl</span> - Decrease Throttle</p>
+  <p><span class="key">Space</span> - Landing Brakes</p>
+  <p><span class="key">F</span> - Toggle Flaps</p>
+  <p><span class="key">L</span> - Toggle Lights</p>
+  <p><span class="key">R</span> - Reset Aircraft</p>
+  <p><span class="key">M</span> - Toggle Minimap</p>
+  <p><span class="key">T</span> - Change Time of Day</p>
+  <p><span class="key">X</span> - Toggle Weather</p>
+  <p><span class="key">Mouse</span> - Look Around (Click to capture)</p>
+  <br>
+  <p>🎯 <strong>MISSION:</strong> Land safely at Daytona Beach International Airport!</p>
+  <p>Look for the runway and land within the marked zone.</p>
+  <br>
+  <button onclick="startGame()">START ENGINE</button>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const minimapCanvas = document.getElementById('minimap');
+const minimapCtx = minimapCanvas.getContext('2d');
+
+// Game state
+let gameRunning = false;
+let gameStarted = false;
+
+// Aircraft state
+const aircraft = {
+  x: 0, y: 100, z: 0, // position (x=east, y=altitude, z=north)
+  pitch: 0, roll: 0, yaw: 0, // attitude (radians)
+  speed: 0, throttle: 0, // speed (knots), throttle (0-100%)
+  fuel: 100, // fuel percentage
+  flaps: false, lights: false, brakes: false,
+  onGround: false,
+  landingGear: true,
+  score: 0,
+  missionsCompleted: 0
+};
+
+// Camera
+const camera = {
+  x: 0, y: 50, z: -100,
+  pitch: -0.3, yaw: 0,
+  fov: 75,
+  near: 0.1, far: 10000
+};
+
+// World objects
+const worldObjects = [];
+const buildings = [];
+const trees = [];
+const runway = {
+  x: 0, z: 0, width: 150, length: 3000,
+  heading: 0 // runway heading in degrees
+};
+
+// Weather
+let weather = 'clear'; // clear, clouds, rain, fog
+let timeOfDay = 12; // 0-24 hours
+let showMinimap = true;
+
+// Input
+const keys = {};
+let mouseX = 0, mouseY = 0;
+let mouseCaptured = false;
+
+// Audio context for engine sound
+let audioCtx = null;
+let engineOsc = null;
+let engineGain = null;
+
+// Initialize canvas
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  minimapCanvas.width = 150;
+  minimapCanvas.height = 150;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Generate world
+function generateWorld() {
+  // Clear existing objects
+  worldObjects.length = 0;
+  buildings.length = 0;
+  trees.length = 0;
+
+  // Create runway (Daytona Beach International Airport - KDAB)
+  const runwayStart = { x: -runway.width/2, z: -runway.length/2 };
+  const runwayEnd = { x: runway.width/2, z: runway.length/2 };
+
+  // Runway markings
+  for (let i = 0; i < 20; i++) {
+    const z = runwayStart.z + (runway.length * i / 20);
+    worldObjects.push({
+      type: 'runwayLine',
+      x: 0, y: 0.1, z: z,
+      width: 2, height: 0.1, depth: 30,
+      color: '#fff'
+    });
+  }
+
+  // Runway threshold markings
+  for (let i = -5; i <= 5; i++) {
+    worldObjects.push({
+      type: 'runwayThreshold',
+      x: i * 10, y: 0.1, z: runwayStart.z + 50,
+      width: 8, height: 0.1, depth: 10,
+      color: '#fff'
+    });
+    worldObjects.push({
+      type: 'runwayThreshold',
+      x: i * 10, y: 0.1, z: runwayEnd.z - 50,
+      width: 8, height: 0.1, depth: 10,
+      color: '#fff'
+    });
+  }
+
+  // Runway edge lights
+  for (let i = 0; i <= 60; i++) {
+    const z = runwayStart.z + (runway.length * i / 60);
+    worldObjects.push({
+      type: 'edgeLight',
+      x: -runway.width/2 + 5, y: 1, z: z,
+      width: 2, height: 2, depth: 2,
+      color: '#0f0', emissive: true
+    });
+    worldObjects.push({
+      type: 'edgeLight',
+      x: runway.width/2 - 5, y: 1, z: z,
+      width: 2, height: 2, depth: 2,
+      color: '#0f0', emissive: true
+    });
+  }
+
+  // Airport terminal building
+  buildings.push({
+    x: 200, y: 0, z: 200,
+    width: 150, height: 40, depth: 80,
+    color: '#888', name: 'Terminal'
+  });
+
+  // Control tower
+  buildings.push({
+    x: 150, y: 0, z: -100,
+    width: 20, height: 60, depth: 20,
+    color: '#aaa', name: 'Control Tower'
+  });
+
+  // Hangars
+  for (let i = 0; i < 5; i++) {
+    buildings.push({
+      x: 300 + i * 50, y: 0, z: -200 - i * 30,
+      width: 40, height: 25, depth: 60,
+      color: '#666', name: 'Hangar ' + (i+1)
+    });
+  }
+
+  // Parking area
+  buildings.push({
+    x: 250, y: 0, z: 100,
+    width: 100, height: 5, depth: 50,
+    color: '#555', name: 'Parking'
+  });
+
+  // Trees around airport
+  for (let i = 0; i < 100; i++) {
+    const x = (Math.random() - 0.5) * 2000;
+    const z = (Math.random() - 0.5) * 2000;
+    // Avoid runway area
+    if (Math.abs(x) < runway.width && Math.abs(z) < runway.length) continue;
+    trees.push({
+      x: x, y: 0, z: z,
+      height: 10 + Math.random() * 15,
+      width: 5 + Math.random() * 5,
+      color: `hsl(${100 + Math.random() * 40}, 70%, ${20 + Math.random() * 20}%)`
+    });
+  }
+
+  // Beach and ocean
+  worldObjects.push({
+    type: 'ocean',
+    x: 800, y: -2, z: 0,
+    width: 2000, height: 1, depth: 1000,
+    color: '#1a5276'
+  });
+
+  // Beach
+  worldObjects.push({
+    type: 'beach',
+    x: 600, y: -1, z: 0,
+    width: 200, height: 1, depth: 1500,
+    color: '#f4d03f'
+  });
+
+  // Daytona Beach landmarks
+  buildings.push({
+    x: 700, y: 0, z: 300,
+    width: 30, height: 20, depth: 30,
+    color: '#d35400', name: 'Speedway Sign'
+  });
+
+  // Ground plane
+  worldObjects.push({
+    type: 'ground',
+    x: 0, y: -5, z: 0,
+    width: 10000, height: 1, depth: 10000,
+    color: '#2ecc71'
+  });
+
+  // Clouds
+  for (let i = 0; i < 50; i++) {
+    worldObjects.push({
+      type: 'cloud',
+      x: (Math.random() - 0.5) * 3000,
+      y: 500 + Math.random() * 500,
+      z: (Math.random() - 0.5) * 3000,
+      width: 200 + Math.random() * 300,
+      height: 50 + Math.random() * 50,
+      depth: 150 + Math.random() * 200,
+      color: 'rgba(255,255,255,0.8)'
+    });
+  }
+}
+
+// 3D projection
+function project(x, y, z) {
+  // Camera transform
+  const dx = x - camera.x;
+  const dy = y - camera.y;
+  const dz = z - camera.z;
+
+  // Rotate around Y axis (yaw)
+  const cosYaw = Math.cos(-camera.yaw);
+  const sinYaw = Math.sin(-camera.yaw);
+  const rx = dx * cosYaw - dz * sinYaw;
+  const rz = dx * sinYaw + dz * cosYaw;
+
+  // Rotate around X axis (pitch)
+  const cosPitch = Math.cos(-camera.pitch);
+  const sinPitch = Math.sin(-camera.pitch);
+  const ry = dy * cosPitch - rz * sinPitch;
+  const rz2 = dy * sinPitch + rz * cosPitch;
+
+  // Perspective projection
+  if (rz2 <= camera.near || rz2 >= camera.far) return null;
+
+  const aspect = canvas.width / canvas.height;
+  const fovRad = camera.fov * Math.PI / 180;
+  const scale = canvas.height / (2 * Math.tan(fovRad / 2));
+
+  const screenX = canvas.width / 2 + (rx / rz2) * scale;
+  const screenY = canvas.height / 2 - (ry / rz2) * scale;
+
+  return { x: screenX, y: screenY, z: rz2 };
+}
+
+// Draw 3D box
+function drawBox(obj) {
+  const points = [
+    { x: obj.x - obj.width/2, y: obj.y - obj.height/2, z: obj.z - obj.depth/2 },
+    { x: obj.x + obj.width/2, y: obj.y - obj.height/2, z: obj.z - obj.depth/2 },
+    { x: obj.x + obj.width/2, y: obj.y + obj.height/2, z: obj.z - obj.depth/2 },
+    { x: obj.x - obj.width/2, y: obj.y + obj.height/2, z: obj.z - obj.depth/2 },
+    { x: obj.x - obj.width/2, y: obj.y - obj.height/2, z: obj.z + obj.depth/2 },
+    { x: obj.x + obj.width/2, y: obj.y - obj.height/2, z: obj.z + obj.depth/2 },
+    { x: obj.x + obj.width/2, y: obj.y + obj.height/2, z: obj.z + obj.depth/2 },
+    { x: obj.x - obj.width/2, y: obj.y + obj.height/2, z: obj.z + obj.depth/2 }
+  ];
+
+  const projected = points.map(p => project(p.x, p.y, p.z)).filter(p => p !== null);
+  if (projected.length < 3) return;
+
+  // Draw faces
+  ctx.fillStyle = obj.color;
+  ctx.beginPath();
+  ctx.moveTo(projected[0].x, projected[0].y);
+  for (let i = 1; i < projected.length; i++) {
+    ctx.lineTo(projected[i].x, projected[i].y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw edges
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Draw aircraft model
+function drawAircraft() {
+  const scale = 0.5;
+
+  // Fuselage
+  ctx.fillStyle = '#ddd';
+  ctx.beginPath();
+  ctx.ellipse(canvas.width/2, canvas.height/2, 30 * scale, 10 * scale, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wings
+  ctx.fillStyle = '#bbb';
+  ctx.fillRect(canvas.width/2 - 60 * scale, canvas.height/2 - 5 * scale, 120 * scale, 15 * scale);
+
+  // Tail
+  ctx.fillStyle = '#999';
+  ctx.fillRect(canvas.width/2 - 40 * scale, canvas.height/2 - 25 * scale, 20 * scale, 20 * scale);
+
+  // Propeller
+  if (aircraft.speed > 10) {
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    const propAngle = Date.now() * 0.01;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2 + 35 * scale, canvas.height/2);
+    ctx.lineTo(canvas.width/2 + 45 * scale, canvas.height/2 - 15 * scale);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2 + 35 * scale, canvas.height/2);
+    ctx.lineTo(canvas.width/2 + 45 * scale, canvas.height/2 + 15 * scale);
+    ctx.stroke();
+  }
+}
+
+// Draw minimap
+function drawMinimap() {
+  if (!showMinimap) {
+    minimapCanvas.style.display = 'none';
+    return;
+  }
+  minimapCanvas.style.display = 'block';
+
+  minimapCtx.fillStyle = 'rgba(0,0,0,0.7)';
+  minimapCtx.fillRect(0, 0, 150, 150);
+
+  const scale = 0.05;
+  const centerX = 75;
+  const centerY = 75;
+
+  // Draw runway on minimap
+  minimapCtx.strokeStyle = '#fff';
+  minimapCtx.lineWidth = 2;
+  minimapCtx.beginPath();
+  minimapCtx.moveTo(centerX + runway.x - runway.width/2 * scale, centerY + runway.z * scale);
+  minimapCtx.lineTo(centerX + runway.x + runway.width/2 * scale, centerY + (runway.z + runway.length) * scale);
+  minimapCtx.stroke();
+
+  // Draw aircraft position
+  minimapCtx.fillStyle = '#0f0';
+  minimapCtx.beginPath();
+  minimapCtx.arc(centerX + aircraft.x * scale, centerY + aircraft.z * scale, 3, 0, Math.PI * 2);
+  minimapCtx.fill();
+
+  // Draw buildings
+  buildings.forEach(b => {
+    minimapCtx.fillStyle = '#888';
+    minimapCtx.fillRect(
+      centerX + b.x * scale - 2,
+      centerY + b.z * scale - 2,
+      4, 4
+    );
+  });
+
+  // Draw north indicator
+  minimapCtx.fillStyle = '#f00';
+  minimapCtx.font = '10px monospace';
+  minimapCtx.fillText('N', 5, 15);
+}
+
+// Update HUD
+function updateHUD() {
+  document.getElementById('alt').textContent = `ALT: ${Math.max(0, Math.round(aircraft.y))} ft`;
+  document.getElementById('spd').textContent = `SPD: ${Math.round(aircraft.speed)} kts`;
+  document.getElementById('hdg').textContent = `HDG: ${Math.round(((aircraft.yaw * 180 / Math.PI) % 360 + 360) % 360).toString().padStart(3, '0')}°`;
+  document.getElementById('fuel').textContent = `FUEL: ${Math.round(aircraft.fuel)}%`;
+  document.getElementById('throttle').textContent = `THR: ${Math.round(aircraft.throttle)}%`;
+
+  const compass = document.getElementById('compass');
+  const heading = Math.round(((aircraft.yaw * 180 / Math.PI) % 360 + 360) % 360);
+  const compassLabels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  compass.textContent = compassLabels[Math.round(heading / 45) % 8];
+
+  // Fuel bar
+  const fuelFill = document.getElementById('fuelFill');
+  fuelFill.style.width = `${aircraft.fuel}%`;
+  fuelFill.style.background = aircraft.fuel < 20 ? '#f00' : '#0f0';
+
+  // Altitude bar
+  const altitudeFill = document.getElementById('altitudeFill');
+  altitudeFill.style.height = `${Math.min(100, aircraft.y / 10)}%`;
+
+  // Speed bar
+  const speedFill = document.getElementById('speedFill');
+  speedFill.style.width = `${Math.min(100, aircraft.speed / 2)}%`;
+
+  // Weather
+  document.getElementById('weather').textContent = `VIS: ${weather === 'clear' ? '10mi' : weather === 'clouds' ? '5mi' : weather === 'rain' ? '2mi' : '1mi'}`;
+
+  // Time
+  const hours = Math.floor(timeOfDay);
+  const minutes = Math.floor((timeOfDay - hours) * 60);
+  document.getElementById('time').textContent = `TIME: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+
+  // Score
+  document.getElementById('score').textContent = `SCORE: ${aircraft.score}`;
+
+  // Mission
+  document.getElementById('mission').textContent = aircraft.missionsCompleted > 0 ?
+    `MISSION ${aircraft.missionsCompleted}: LAND AT DAYTONA BEACH` :
+    'LAND AT DAYTONA BEACH';
+
+  // Landing pad indicator
+  const landingPad = document.getElementById('landingPad');
+  const runwayCenterZ = runway.length / 2;
+  const distToRunway = Math.sqrt(aircraft.x * aircraft.x + (aircraft.z - runwayCenterZ) * (aircraft.z - runwayCenterZ));
+  if (distToRunway < 100 && aircraft.y < 200 && aircraft.y > 0) {
+    landingPad.classList.add('show');
+  } else {
+    landingPad.classList.remove('show');
+  }
+}
+
+// Update physics
+function updatePhysics(dt) {
+  // Throttle control
+  if (keys['Shift'] || keys['shift']) {
+    aircraft.throttle = Math.min(100, aircraft.throttle + 50 * dt);
+  }
+  if (keys['Control'] || keys['control']) {
+    aircraft.throttle = Math.max(0, aircraft.throttle - 50 * dt);
+  }
+
+  // Speed based on throttle
+  const targetSpeed = aircraft.throttle * 2; // max 200 knots
+  aircraft.speed += (targetSpeed - aircraft.speed) * dt * 2;
+
+  // Fuel consumption
+  aircraft.fuel -= aircraft.throttle * dt * 0.01;
+  if (aircraft.fuel <= 0) {
+    aircraft.fuel = 0;
+    aircraft.throttle = Math.max(0, aircraft.throttle - 20 * dt);
+  }
+
+  // Pitch control
+  if (keys['w'] || keys['W']) {
+    aircraft.pitch -= 1.5 * dt;
+  }
+  if (keys['s'] || keys['S']) {
+    aircraft.pitch += 1.5 * dt;
+  }
+
+  // Roll control
+  if (keys['a'] || keys['A']) {
+    aircraft.roll -= 2.0 * dt;
+  }
+  if (keys['d'] || keys['D']) {
+    aircraft.roll += 2.0 * dt;
+  }
+
+  // Yaw control
+  if (keys['q'] || keys['Q']) {
+    aircraft.yaw -= 1.0 * dt;
+  }
+  if (keys['e'] || keys['E']) {
+    aircraft.yaw += 1.0 * dt;
+  }
+
+  // Auto-leveling
+  aircraft.roll *= 0.98;
+  aircraft.pitch *= 0.99;
+
+  // Calculate velocity
+  const speedMs = aircraft.speed * 0.514444; // knots to m/s
+  const vx = Math.sin(aircraft.yaw) * Math.cos(aircraft.pitch) * speedMs;
+  const vy = Math.sin(aircraft.pitch) * speedMs;
+  const vz = Math.cos(aircraft.yaw) * Math.cos(aircraft.pitch) * speedMs;
+
+  // Update position
+  aircraft.x += vx * dt;
+  aircraft.y += vy * dt;
+  aircraft.z += vz * dt;
+
+  // Ground collision
+  if (aircraft.y <= 0) {
+    aircraft.y = 0;
+    aircraft.onGround = true;
+
+    // Check if on runway
+    const onRunway = Math.abs(aircraft.x) < runway.width/2 &&
+                     aircraft.z > runway.z &&
+                     aircraft.z < runway.z + runway.length;
+
+    if (onRunway && aircraft.speed < 100 && !aircraft.landingGear) {
+      // Successful landing
+      aircraft.score += 1000;
+      aircraft.missionsCompleted++;
+      showMessage('SUCCESSFUL LANDING! +' + 1000 + ' POINTS');
+    } else if (aircraft.speed > 150) {
+      // Crash
+      showMessage('CRASH! TOO FAST FOR LANDING');
+      aircraft.speed *= 0.5;
+    } else {
+      showMessage('ROUGH LANDING - GEAR DOWN!');
+    }
+
+    aircraft.landingGear = false;
+  } else {
+    aircraft.onGround = false;
+  }
+
+  // Update camera
+  camera.x = aircraft.x - Math.sin(aircraft.yaw) * 50;
+  camera.y = aircraft.y + 20;
+  camera.z = aircraft.z - Math.cos(aircraft.yaw) * 50;
+  camera.pitch = aircraft.pitch - 0.1;
+  camera.yaw = aircraft.yaw;
+
+  // Update engine sound
+  if (engineOsc) {
+    engineOsc.frequency.value = 100 + aircraft.throttle * 5;
+    engineGain.gain.value = aircraft.throttle / 200;
+  }
+}
+
+// Show message
+function showMessage(text) {
+  const message = document.getElementById('message');
+  message.textContent = text;
+  message.classList.add('show');
+  setTimeout(() => {
+    message.classList.remove('show');
+  }, 3000);
+}
+
+// Render scene
+function render() {
+  // Sky gradient based on time of day
+  let skyColor1, skyColor2;
+  if (timeOfDay >= 6 && timeOfDay < 18) {
+    skyColor1 = '#87CEEB';
+    skyColor2 = '#E0F6FF';
+  } else if (timeOfDay >= 18 && timeOfDay < 20) {
+    skyColor1 = '#FF6B35';
+    skyColor2 = '#FFD700';
+  } else {
+    skyColor1 = '#000033';
+    skyColor2 = '#000066';
+  }
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, skyColor1);
+  gradient.addColorStop(1, skyColor2);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Sort objects by distance
+  const sortedObjects = [...worldObjects].sort((a, b) => {
+    const distA = (a.x - camera.x)**2 + (a.y - camera.y)**2 + (a.z - camera.z)**2;
+    const distB = (b.x - camera.x)**2 + (b.y - camera.y)**2 + (b.z - camera.z)**2;
+    return distB - distA;
+  });
+
+  // Draw world objects
+  sortedObjects.forEach(obj => {
+    if (obj.type === 'ground' || obj.type === 'ocean' || obj.type === 'beach') {
+      // Large flat surfaces
+      const p1 = project(obj.x - obj.width/2, obj.y, obj.z - obj.depth/2);
+      const p2 = project(obj.x + obj.width/2, obj.y, obj.z - obj.depth/2);
+      const p3 = project(obj.x + obj.width/2, obj.y, obj.z + obj.depth/2);
+      const p4 = project(obj.x - obj.width/2, obj.y, obj.z + obj.depth/2);
+
+      if (p1 && p2 && p3 && p4) {
+        ctx.fillStyle = obj.color;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.lineTo(p4.x, p4.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (obj.type === 'cloud') {
+      // Clouds
+      const p = project(obj.x, obj.y, obj.z);
+      if (p) {
+        ctx.fillStyle = obj.color;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, obj.width/2, obj.height/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (obj.type === 'edgeLight') {
+      // Runway lights
+      const p = project(obj.x, obj.y, obj.z);
+      if (p) {
+        ctx.fillStyle = obj.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        if (obj.emissive) {
+          ctx.shadowColor = obj.color;
+          ctx.shadowBlur = 10;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+    } else if (obj.type === 'runwayLine' || obj.type === 'runwayThreshold') {
+      // Runway markings
+      const p = project(obj.x, obj.y, obj.z);
+      if (p) {
+        ctx.fillStyle = obj.color;
+        ctx.fillRect(p.x - obj.width/2, p.y - obj.depth/2, obj.width, obj.depth);
+      }
+    } else {
+      // Regular 3D objects
+      drawBox(obj);
+    }
+  });
+
+  // Draw buildings
+  buildings.forEach(b => {
+    drawBox({
+      x: b.x, y: b.y + b.height/2, z: b.z,
+      width: b.width, height: b.height, depth: b.depth,
+      color: b.color
+    });
+  });
+
+  // Draw trees
+  trees.forEach(t => {
+    const p = project(t.x, t.y + t.height, t.z);
+    if (p) {
+      ctx.fillStyle = t.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, t.width/2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // Draw aircraft
+  drawAircraft();
+
+  // Weather effects
+  if (weather === 'clouds') {
+    ctx.fillStyle = 'rgba(100,100,100,0.3)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (weather === 'rain') {
+    ctx.strokeStyle = 'rgba(100,100,255,0.5)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 100; i++) {
+      const x = Math.random() * canvas.width;
+      const y = Math.random() * canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 2, y + 10);
+      ctx.stroke();
+    }
+  } else if (weather === 'fog') {
+    ctx.fillStyle = 'rgba(200,200,200,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Night effects
+  if (timeOfDay < 6 || timeOfDay > 18) {
+    ctx.fillStyle = 'rgba(0,0,50,0.3)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Stars
+    if (timeOfDay < 5 || timeOfDay > 19) {
+      ctx.fillStyle = '#fff';
+      for (let i = 0; i < 50; i++) {
+        const x = (Math.sin(i * 123.456) * 0.5 + 0.5) * canvas.width;
+        const y = (Math.cos(i * 789.012) * 0.5 + 0.5) * canvas.height * 0.6;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // Draw lights if enabled
+  if (aircraft.lights) {
+    ctx.fillStyle = 'rgba(255,255,200,0.3)';
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2, canvas.height/2);
+    ctx.lineTo(canvas.width/2 - 100, canvas.height/2 - 50);
+    ctx.lineTo(canvas.width/2 + 100, canvas.height/2 - 50);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// Game loop
+let lastTime = 0;
+function gameLoop(timestamp) {
+  if (!gameRunning) return;
+
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+  lastTime = timestamp;
+
+  updatePhysics(dt);
+  render();
+  drawMinimap();
+  updateHUD();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Input handling
+document.addEventListener('keydown', (e) => {
+  keys[e.key] = true;
+
+  if (e.key === 'f' || e.key === 'F') {
+    aircraft.flaps = !aircraft.flaps;
+  }
+  if (e.key === 'l' || e.key === 'L') {
+    aircraft.lights = !aircraft.lights;
+  }
+  if (e.key === ' ') {
+    aircraft.brakes = true;
+    aircraft.speed *= 0.95;
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    // Reset aircraft
+    aircraft.x = 0;
+    aircraft.y = 100;
+    aircraft.z = -runway.length/2 + 100;
+    aircraft.pitch = 0;
+    aircraft.roll = 0;
+    aircraft.yaw = 0;
+    aircraft.speed = 0;
+    aircraft.throttle = 0;
+    aircraft.fuel = 100;
+    aircraft.landingGear = true;
+    aircraft.onGround = false;
+    showMessage('AIRCRAFT RESET');
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    showMinimap = !showMinimap;
+  }
+  if (e.key === 't' || e.key === 'T') {
+    timeOfDay = (timeOfDay + 1) % 24;
+  }
+  if (e.key === 'x' || e.key === 'X') {
+    const weathers = ['clear', 'clouds', 'rain', 'fog'];
+    const currentIndex = weathers.indexOf(weather);
+    weather = weathers[(currentIndex + 1) % weathers.length];
+  }
+  if (e.key === 'g' || e.key === 'G') {
+    aircraft.landingGear = !aircraft.landingGear;
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.key] = false;
+  if (e.key === ' ') {
+    aircraft.brakes = false;
+  }
+});
+
+// Mouse controls
+canvas.addEventListener('click', () => {
+  if (!mouseCaptured) {
+    canvas.requestPointerLock();
+    mouseCaptured = true;
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  mouseCaptured = document.pointerLockElement === canvas;
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (mouseCaptured) {
+    camera.yaw += e.movementX * 0.002;
+    camera.pitch -= e.movementY * 0.002;
+    camera.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.pitch));
+  }
+});
+
+// Start game
+function startGame() {
+  document.getElementById('instructions').style.display = 'none';
+  gameRunning = true;
+  gameStarted = true;
+
+  // Initialize world
+  generateWorld();
+
+  // Start game loop
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+
+  // Initialize audio
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    engineOsc = audioCtx.createOscillator();
+    engineGain = audioCtx.createGain();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.value = 100;
+    engineGain.gain.value = 0;
+    engineOsc.connect(engineGain);
+    engineGain.connect(audioCtx.destination);
+    engineOsc.start();
+  } catch(e) {
+    console.log('Audio not available');
+  }
+}
+
+// Initialize
+generateWorld();
+render();
+drawMinimap();
+updateHUD();
+</script>
+</body>
+</html>
