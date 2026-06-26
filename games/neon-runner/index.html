@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Neon Runner 3D</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a1a;font-family:'Segoe UI',system-ui,sans-serif}
+canvas{display:block;width:100%;height:100%}
+.overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,26,.92);z-index:10;opacity:0;pointer-events:none;transition:opacity .3s}
+.overlay.active{opacity:1;pointer-events:auto}
+.overlay h1{font-size:clamp(2rem,8vw,4rem);color:#0ff;text-shadow:0 0 20px #0ff,0 0 40px #08f;margin-bottom:.5rem}
+.overlay h2{font-size:clamp(1.2rem,5vw,2rem);color:#f0f;text-shadow:0 0 15px #f0f;margin-bottom:1rem}
+.overlay p{color:#aaf;font-size:clamp(.9rem,3vw,1.2rem);margin-bottom:1.5rem;text-align:center;padding:0 1rem}
+.overlay .score{font-size:clamp(1.5rem,6vw,3rem);color:#ff0;text-shadow:0 0 15px #ff0;margin:.5rem 0}
+.btn{padding:.75rem 2rem;font-size:clamp(1rem,4vw,1.3rem);font-weight:700;border:2px solid #0ff;background:transparent;color:#0ff;border-radius:999px;cursor:pointer;text-transform:uppercase;letter-spacing:.1em;transition:all .2s;margin:.5rem}
+.btn:hover,.btn:active{background:#0ff;color:#0a0a1a;box-shadow:0 0 20px #0ff}
+.btn.magenta{border-color:#f0f;color:#f0f}
+.btn.magenta:hover,.btn.magenta:active{background:#f0f;color:#0a0a1a;box-shadow:0 0 20px #f0f}
+.controls-hint{color:#668;font-size:clamp(.7rem,2.5vw,.9rem);margin-top:1.5rem}
+.subtitle{color:#f0f;font-size:clamp(1rem,4vw,1.5rem);text-shadow:0 0 12px #f0f;margin-top:-.3rem;margin-bottom:1rem;letter-spacing:.3em}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="startScreen" class="overlay active">
+  <h1>NEON RUNNER</h1>
+  <div class="subtitle">3D</div>
+  <p>Race down an infinite neon corridor. Dodge the geometric threats. How deep can you go?</p>
+  <button class="btn" id="startBtn">START</button>
+  <div class="controls-hint">Arrow keys / A,D to move · Tap left/right on mobile</div>
+</div>
+
+<div id="gameOverScreen" class="overlay">
+  <h2>GAME OVER</h2>
+  <div class="score" id="finalScore">0</div>
+  <p>Best: <span id="bestScore">0</span></p>
+  <button class="btn magenta" id="restartBtn">PLAY AGAIN</button>
+</div>
+
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,dpr;
+
+// ── 3D Projection ──
+const FOCAL=520;          // focal length
+const VANISH_X=W/2;       // vanish point x
+const CORRIDOR_HALF=180;  // half-width of corridor at z=0
+const NEAR_Z=200;         // clip near plane (objects closer than this are skipped)
+const FAR_Z=2400;         // clip far plane
+const GROUND_Y=380;       // screen y of corridor floor at z=NEAR_Z
+const CEIL_Y=80;          // screen y of ceiling at z=NEAR_Z
+
+function project(x,y,z){
+  // x: lateral position in world (-CORRIDOR_HALF..+CORRIDOR_HALF at z=0)
+  // y: vertical (0=floor, increases up). We treat world Y as ground=0, camera at +120
+  // z: depth (positive = away from camera)
+  if(z<=1)z=1;
+  const k=FOCAL/z;
+  const sx=VANISH_X + x*k;
+  // y in world: floor=0, ceiling=200. Map to screen with horizon at y=HORIZON_Y
+  const HORIZON_Y=GROUND_Y - (GROUND_Y-CeilY())*0.0; // horizon at GROUND_Y floor line
+  const sy=GROUND_Y - y*k;
+  return {sx,sy,scale:k};
+}
+function CeilY(){return CEIL_Y;}
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();
+window.addEventListener('resize',resize);
+
+// ── Game State ──
+let state='menu';
+let player,obstacles,particles,starField;
+let score,difficulty,speed,spawnTimer,frameCount;
+let bestScore=parseInt(localStorage.getItem('neonRunnerBest')||'0');
+let shakeX=0,shakeY=0,shakeTime=0;
+let combo=0,comboTimer=0;
+let powerups=[];
+let shieldActive=false,shieldTimer=0;
+let lastTime=0;
+let cameraZ=0;  // distance travelled (for parallax)
+
+// ── Input ──
+const keys={};
+let touchDir=0;
+
+window.addEventListener('keydown',e=>{keys[e.code]=true;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code))e.preventDefault()});
+window.addEventListener('keyup',e=>{keys[e.code]=false});
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];touchDir=t.clientX<W/2?-1:1},{passive:false});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];touchDir=t.clientX<W/2?-1:1},{passive:false});
+canvas.addEventListener('touchend',()=>{touchDir=0});
+canvas.addEventListener('mousedown',e=>{touchDir=e.clientX<W/2?-1:1});
+canvas.addEventListener('mouseup',()=>{touchDir=0});
+
+// ── Init ──
+function initGame(){
+  player={laneX:0,laneVx:0,speed:0,maxSpeed:7,accel:.6,friction:.85,trail:[]};
+  obstacles=[];particles=[];powerups=[];
+  score=0;difficulty=1;speed=3;spawnTimer=0;frameCount=0;
+  cameraZ=0;
+  shakeTime=0;combo=0;comboTimer=0;shieldActive=false;shieldTimer=0;
+  starField=[];
+  for(let i=0;i<140;i++)starField.push({
+    wall:Math.random()<.5?'L':'R',
+    h:Math.random(),          // 0..1 along wall height
+    yFrac:Math.random(),      // depth position 0..1 (0=far, 1=near)
+    s:Math.random()*1.8+.4,
+    b:Math.random(),
+    hue:Math.random()<.5?180:300
+  });
+  state='playing';
+  document.getElementById('startScreen').classList.remove('active');
+  document.getElementById('gameOverScreen').classList.remove('active');
+}
+
+// ── Spawn ──
+function spawnObstacle(){
+  const types=['barrier','spike','double','pillar'];
+  const type=types[Math.floor(Math.random()*Math.min(types.length,1+Math.floor(difficulty/3)))];
+  // Lane: -1, 0, or +1
+  const lane=Math.floor(Math.random()*3)-1;
+  let o={lane,x:CORRIDOR_HALF*lane,y:0,z:cameraZ+FAR_Z,w:0,h:0,d:0,type,speed:speed+Math.random()*1.5,rot:Math.random()*Math.PI};
+  if(type==='barrier'){o.w=70+Math.random()*50;o.h=40;o.d=18;o.color=`hsl(${180+Math.random()*60},100%,60%)`}
+  else if(type==='spike'){o.w=40;o.h=60;o.d=40;o.color='#f44'}
+  else if(type==='double'){o.w=30;o.h=80;o.d=30;o.color='#f0f'}
+  else{pillar:o.w=o.d=45;o.h=140;o.color='#ff0'}  // tall pillar
+  obstacles.push(o);
+}
+
+function spawnPowerup(){
+  const types=['shield','slow','score'];
+  const type=types[Math.floor(Math.random()*types.length)];
+  const lane=Math.floor(Math.random()*3)-1;
+  powerups.push({lane,x:CORRIDOR_HALF*lane,y:40,z:cameraZ+FAR_Z,r:18,type,speed:speed*.8,glow:0});
+}
+
+// ── Update ──
+function update(dt){
+  if(state!=='playing')return;
+  frameCount++;
+  score=Math.floor(frameCount/6);
+  difficulty=1+Math.floor(frameCount/600);
+  speed=3+difficulty*.4;
+  cameraZ+=speed*2;
+
+  // Player movement
+  let dir=0;
+  if(keys['ArrowLeft']||keys['KeyA']||touchDir===-1)dir=-1;
+  if(keys['ArrowRight']||keys['KeyD']||touchDir===1)dir=1;
+  player.laneVx+=dir*player.accel;
+  player.laneVx*=player.friction;
+  player.laneVx=Math.max(-player.maxSpeed,Math.min(player.maxSpeed,player.laneVx));
+  player.laneX+=player.laneVx;
+  player.laneX=Math.max(-1.4,Math.min(1.4,player.laneX));
+
+  // Trail (recent player positions for after-image)
+  player.trail.unshift({laneX:player.laneX});
+  if(player.trail.length>8)player.trail.pop();
+
+  // Spawn
+  spawnTimer++;
+  const spawnRate=Math.max(25,60-difficulty*4);
+  if(spawnTimer>=spawnRate){spawnTimer=0;spawnObstacle()}
+  if(frameCount%300===0&&Math.random()<.3)spawnPowerup();
+
+  // Obstacles move toward camera (z decreases)
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];
+    o.z-=o.speed*2;
+    o.rot+=.04;
+    if(o.z<cameraZ-100){obstacles.splice(i,1);combo++;comboTimer=120;continue}
+    // Collision: check at player z position with player lane
+    if(Math.abs(o.z-(cameraZ+NEAR_Z))<80){
+      const playerWorldX=player.laneX*CORRIDOR_HALF;
+      const ox=o.x;
+      // Lane collision: lateral overlap
+      const halfW=o.w/2+22;
+      if(Math.abs(playerWorldX-ox)<halfW && o.h>20){
+        if(shieldActive){shieldActive=false;shieldTimer=0;spawnBurst(playerWorldX,40,cameraZ+NEAR_Z,'#0ff',18);obstacles.splice(i,1);continue}
+        gameOver();return;
+      }
+    }
+  }
+
+  // Powerups
+  for(let i=powerups.length-1;i>=0;i--){
+    const p=powerups[i];
+    p.z-=p.speed*2;p.glow+=.1;
+    if(p.z<cameraZ-100){powerups.splice(i,1);continue}
+    if(Math.abs(p.z-(cameraZ+NEAR_Z))<80){
+      const playerWorldX=player.laneX*CORRIDOR_HALF;
+      if(Math.abs(playerWorldX-p.x)<p.r+22 && p.r>5){
+        if(p.type==='shield'){shieldActive=true;shieldTimer=300;spawnBurst(p.x,40,p.z,'#0ff',12)}
+        else if(p.type==='slow'){speed*=.5;setTimeout(()=>{speed=3+difficulty*.4},3000);spawnBurst(p.x,40,p.z,'#ff0',12)}
+        else{score+=500;spawnBurst(p.x,40,p.z,'#f0f',12)}
+        powerups.splice(i,1);
+      }
+    }
+  }
+
+  if(shieldActive){shieldTimer--;if(shieldTimer<=0)shieldActive=false}
+  if(comboTimer>0)comboTimer--;else combo=0;
+
+  // Particles
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+    if(p.life<=0)particles.splice(i,1);
+  }
+
+  // Shake
+  if(shakeTime>0){shakeTime--;shakeX=(Math.random()-.5)*shakeTime*.5;shakeY=(Math.random()-.5)*shakeTime*.5}
+  else{shakeX=shakeY=0}
+}
+
+function spawnBurst(wx,wy,wz,color,count){
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    const spd=Math.random()*4+2;
+    particles.push({x:wx,y:wy,z:wz,vx:Math.cos(angle)*spd,vy:Math.sin(angle)*spd+1,vz:(Math.random()-.5)*2,life:1,decay:.02+Math.random()*.02,color,size:Math.random()*4+2});
+  }
+}
+
+function gameOver(){
+  state='over';
+  shakeTime=20;
+  spawnBurst(player.laneX*CORRIDOR_HALF,40,cameraZ+NEAR_Z,'#f44',36);
+  spawnBurst(player.laneX*CORRIDOR_HALF,40,cameraZ+NEAR_Z,'#ff0',24);
+  if(score>bestScore){bestScore=score;localStorage.setItem('neonRunnerBest',bestScore)}
+  document.getElementById('finalScore').textContent=score;
+  document.getElementById('bestScore').textContent=bestScore;
+  document.getElementById('gameOverScreen').classList.add('active');
+}
+
+// ── 3D Drawing Helpers ──
+function drawCorridor(){
+  // Floor grid receding to vanishing point
+  ctx.lineWidth=1;
+  // Floor lines: z slices from NEAR_Z to FAR_Z
+  const zRange=FAR_Z-NEAR_Z;
+  for(let i=0;i<=24;i++){
+    const t=i/24;
+    const z=NEAR_Z+t*zRange;
+    const p=project(0,0,z);
+    const alpha=(1-t)*.4+.05;
+    ctx.strokeStyle=`rgba(0,255,255,${alpha})`;
+    ctx.beginPath();ctx.moveTo(0,p.sy);ctx.lineTo(W,p.sy);ctx.stroke();
+  }
+  // Lateral floor lines (lanes at x=-1, 0, +1, and edges)
+  const xs=[-1.3,-1,-0.5,0,0.5,1,1.3];
+  xs.forEach(x=>{
+    const pFar=project(x*CORRIDOR_HALF,0,FAR_Z);
+    const pNear=project(x*CORRIDOR_HALF,0,NEAR_Z);
+    ctx.strokeStyle=`rgba(0,255,255,${x===-1||x===1?.35:.15})`;
+    ctx.lineWidth=x===-1||x===1?2:1;
+    ctx.beginPath();ctx.moveTo(pFar.sx,pFar.sy);ctx.lineTo(pNear.sx,pNear.sy);ctx.stroke();
+  });
+  // Ceiling lines
+  for(let i=0;i<=12;i++){
+    const t=i/12;
+    const z=NEAR_Z+t*zRange;
+    const p=project(0,200,z);
+    const alpha=(1-t)*.25+.02;
+    ctx.strokeStyle=`rgba(255,0,255,${alpha})`;
+    ctx.beginPath();ctx.moveTo(0,p.sy);ctx.lineTo(W,p.sy);ctx.stroke();
+  }
+  // Ceiling lateral lines
+  xs.forEach(x=>{
+    const pFar=project(x*CORRIDOR_HALF,200,FAR_Z);
+    const pNear=project(x*CORRIDOR_HALF,200,NEAR_Z);
+    ctx.strokeStyle='rgba(255,0,255,0.12)';
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(pFar.sx,pFar.sy);ctx.lineTo(pNear.sx,pNear.sy);ctx.stroke();
+  });
+}
+
+function drawStars(){
+  starField.forEach(s=>{
+    const z=NEAR_Z+s.yFrac*(FAR_Z-NEAR_Z);
+    const yWorld=s.wall==='L'?60:60;
+    const xWorld=s.wall==='L'?-1.1*CORRIDOR_HALF:1.1*CORRIDOR_HALF;
+    const p=project(xWorld,yWorld,z);
+    const twinkle=.4+Math.sin(frameCount*.04+s.b*8)*.4;
+    ctx.fillStyle=`hsla(${s.h},100%,70%,${twinkle})`;
+    ctx.fillRect(p.sx-s.s/2,p.sy-s.s/2,s.s,s.s);
+  });
+}
+
+function drawObstacle(o){
+  // Project 8 corners of a box
+  const z=o.z-cameraZ;
+  if(z<NEAR_Z-50||z>FAR_Z+100)return;
+  const c=o.color;
+  // Top face (y=h)
+  const corners=[
+    {x:o.x-o.w/2,y:0,z:z-o.d/2},
+    {x:o.x+o.w/2,y:0,z:z-o.d/2},
+    {x:o.x+o.w/2,y:0,z:z+o.d/2},
+    {x:o.x-o.w/2,y:0,z:z+o.d/2},
+    {x:o.x-o.w/2,y:o.h,z:z-o.d/2},
+    {x:o.x+o.w/2,y:o.h,z:z-o.d/2},
+    {x:o.x+o.w/2,y:o.h,z:z+o.d/2},
+    {x:o.x-o.w/2,y:o.h,z:z+o.d/2}
+  ].map(p=>project(p.x,p.y,p.z));
+
+  // Visible faces (toward camera): front, top, right (if x>0), left (if x<0)
+  // Front face: corners 1,2,6,5
+  const visFaces=[];
+  // Front
+  visFaces.push({pts:[corners[1],corners[2],corners[6],corners[5]],shade:1});
+  // Right (if camera can see it, always yes for forward-facing box)
+  visFaces.push({pts:[corners[2],corners[3],corners[7],corners[6]],shade:.6});
+  // Top
+  visFaces.push({pts:[corners[4],corners[5],corners[6],corners[7]],shade:.85});
+
+  visFaces.forEach(f=>{
+    ctx.beginPath();
+    f.pts.forEach((pt,i)=>{if(i===0)ctx.moveTo(pt.sx,pt.sy);else ctx.lineTo(pt.sx,pt.sy)});
+    ctx.closePath();
+    // Bright glow + gradient
+    const g=ctx.createLinearGradient(f.pts[0].sx,f.pts[0].sy,f.pts[2].sx,f.pts[2].sy);
+    g.addColorStop(0,c);
+    g.addColorStop(1,shadeColor(c,f.shade));
+    ctx.fillStyle=g;
+    ctx.shadowBlur=20/z*180;ctx.shadowColor=c;
+    ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.strokeStyle=`rgba(255,255,255,${.4/z*200})`;
+    ctx.lineWidth=Math.max(1,3/z*200);
+    ctx.stroke();
+  });
+}
+
+function drawPowerup(p){
+  const z=p.z-cameraZ;
+  if(z<NEAR_Z-50||z>FAR_Z+100)return;
+  const pulse=Math.sin(p.glow)*.3+.7;
+  const r=p.r;
+  const c=p.type==='shield'?'#0ff':p.type==='slow'?'#ff0':'#f0f';
+  // Diamond shape projected
+  const pts=[
+    {x:p.x,y:0,z:z},
+    {x:p.x+r,y:0,z:z},
+    {x:p.x,y:r*2,z:z},
+    {x:p.x-r,y:0,z:z},
+    {x:p.x,y:-r,z:z}
+  ].map(pt=>project(pt.x,pt.y,pt.z));
+  // Draw as rotating icosahedron-ish: 3 quads
+  ctx.shadowBlur=25/z*180;ctx.shadowColor=c;ctx.globalAlpha=pulse;
+  const top=pts[2],bot=pts[4],right=pts[1],left=pts[3];
+  // Side quads
+  ctx.fillStyle=c;
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(right.sx,right.sy);ctx.lineTo(bot.sx,bot.sy);ctx.lineTo(left.sx,left.sy);ctx.closePath();ctx.fill();
+  ctx.fillStyle=shadeColor(c,1.4);
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(right.sx,right.sy);ctx.lineTo(pts[0].sx,pts[0].sy);ctx.lineTo(left.sx,left.sy);ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+}
+
+function drawPlayer(){
+  // Player at z=NEAR_Z (just in front of camera), with bobbing
+  const z=NEAR_Z;
+  const bob=Math.sin(frameCount*.2)*4;
+  const px=player.laneX*CORRIDOR_HALF;
+  const py=40+bob;
+  // Trail (after-image in 3D)
+  player.trail.forEach((t,i)=>{
+    if(i===0)return;
+    const a=1-i/player.trail.length;
+    const tx=t.laneX*CORRIDOR_HALF;
+    const tp=project(tx,py,z+i*8);
+    ctx.fillStyle=`rgba(0,255,255,${a*.25})`;
+    ctx.beginPath();ctx.arc(tp.sx,tp.sy,18*a+.5,0,Math.PI*2);ctx.fill();
+  });
+  // Ship body — 3D pyramid (point up)
+  const size=22;
+  const basePts=[
+    {x:px-size,y:0,z:z-size},
+    {x:px+size,y:0,z:z-size},
+    {x:px+size,y:0,z:z+size},
+    {x:px-size,y:0,z:z+size}
+  ].map(p=>project(p.x,p.y,p.z));
+  const top=project(px,py+size*2,z);
+  // 4 side triangles
+  ctx.shadowBlur=30;ctx.shadowColor=shieldActive?'#fff':'#0ff';
+  ctx.fillStyle=shieldActive?`hsl(${frameCount*5%360},100%,70%)`:'#0ff';
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(basePts[0].sx,basePts[0].sy);ctx.lineTo(basePts[1].sx,basePts[1].sy);ctx.closePath();ctx.fill();
+  ctx.fillStyle=shadeColor('#0ff',.7);
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(basePts[1].sx,basePts[1].sy);ctx.lineTo(basePts[2].sx,basePts[2].sy);ctx.closePath();ctx.fill();
+  ctx.fillStyle=shadeColor('#0ff',.5);
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(basePts[2].sx,basePts[2].sy);ctx.lineTo(basePts[3].sx,basePts[3].sy);ctx.closePath();ctx.fill();
+  ctx.fillStyle=shadeColor('#0ff',.85);
+  ctx.beginPath();ctx.moveTo(top.sx,top.sy);ctx.lineTo(basePts[3].sx,basePts[3].sy);ctx.lineTo(basePts[0].sx,basePts[0].sy);ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Shield visual: rotating ring
+  if(shieldActive){
+    const ringPts=[];
+    for(let i=0;i<24;i++){
+      const a=i/24*Math.PI*2+frameCount*.05;
+      ringPts.push(project(px+Math.cos(a)*30,py+Math.sin(a)*30,z));
+    }
+    ctx.strokeStyle=`rgba(0,255,255,${.4+Math.sin(frameCount*.1)*.2})`;
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ringPts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.sx,p.sy);else ctx.lineTo(p.sx,p.sy)});
+    ctx.closePath();ctx.stroke();
+  }
+}
+
+function drawParticles(){
+  particles.forEach(p=>{
+    const z=p.z-cameraZ;
+    if(z<NEAR_Z-50||z>FAR_Z+100)return;
+    const pp=project(p.x,p.y,z);
+    const alpha=p.life;
+    ctx.globalAlpha=alpha;ctx.fillStyle=p.color;
+    ctx.shadowBlur=10;ctx.shadowColor=p.color;
+    ctx.fillRect(pp.sx-p.size/2,pp.sy-p.size/2,p.size,p.size);
+  });
+  ctx.globalAlpha=1;ctx.shadowBlur=0;
+}
+
+function shadeColor(hex,factor){
+  // Simple hex shade
+  const m=hex.match(/^#([0-9a-f]{6})$/i);
+  if(!m)return hex;
+  const n=parseInt(m[1],16);
+  let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  r=Math.min(255,Math.floor(r*factor));
+  g=Math.min(255,Math.floor(g*factor));
+  b=Math.min(255,Math.floor(b*factor));
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── Draw ──
+function draw(){
+  ctx.save();
+  ctx.translate(shakeX,shakeY);
+
+  // Background gradient
+  const bgGrad=ctx.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0,'#000005');
+  bgGrad.addColorStop(.5,'#0a0a2e');
+  bgGrad.addColorStop(1,'#1a0a2e');
+  ctx.fillStyle=bgGrad;
+  ctx.fillRect(-10,-10,W+20,H+20);
+
+  drawStars();
+
+  if(state==='playing'||state==='over'){
+    drawCorridor();
+
+    // Sort drawables by z (far to near) for painter's algorithm
+    const drawables=[];
+    obstacles.forEach(o=>drawables.push({z:o.z-cameraZ,kind:'o',obj:o}));
+    powerups.forEach(p=>drawables.push({z:p.z-cameraZ,kind:'p',obj:p}));
+    drawables.sort((a,b)=>b.z-a.z);
+    drawables.forEach(d=>{if(d.kind==='o')drawObstacle(d.obj);else drawPowerup(d.obj)});
+
+    drawPlayer();
+    drawParticles();
+
+    // HUD
+    ctx.fillStyle='#fff';ctx.font=`bold ${Math.min(24,W*.05)}px sans-serif`;ctx.textAlign='left';ctx.textBaseline='top';
+    ctx.shadowBlur=10;ctx.shadowColor='#0ff';
+    ctx.fillText(score,15,15);ctx.shadowBlur=0;
+
+    if(combo>2&&comboTimer>0){
+      ctx.fillStyle=`rgba(255,255,0,${comboTimer/120})`;
+      ctx.font=`bold ${Math.min(18,W*.04)}px sans-serif`;
+      ctx.fillText(`COMBO x${combo}`,15,42);
+    }
+
+    if(shieldActive){
+      ctx.fillStyle='#0ff';ctx.font=`${Math.min(14,W*.03)}px sans-serif`;
+      ctx.fillText(`SHIELD ${Math.ceil(shieldTimer/60)}s`,W-100,15);
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── Loop ──
+function loop(time){
+  const dt=Math.min(time-lastTime,33);lastTime=time;
+  update(dt);draw();
+  requestAnimationFrame(loop);
+}
+
+// ── Events ──
+document.getElementById('startBtn').addEventListener('click',initGame);
+document.getElementById('restartBtn').addEventListener('click',initGame);
+
+window.addEventListener('keydown',e=>{
+  if((e.code==='Space'||e.code==='Enter')&&(state==='menu'||state==='over')){e.preventDefault();initGame()}
+});
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
