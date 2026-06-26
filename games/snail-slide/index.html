@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Snail Slide</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0a0a12;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+  #overlay {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(10,10,18,0.92);
+    z-index: 10;
+    pointer-events: auto;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(28px, 7vw, 56px);
+    color: #00ffcc;
+    text-shadow: 0 0 20px #00ffcc88, 0 0 40px #00ffcc44;
+    margin-bottom: 8px;
+    letter-spacing: 4px;
+  }
+  #overlay .subtitle {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(11px, 2.5vw, 16px);
+    color: #ff00aa;
+    text-shadow: 0 0 10px #ff00aa66;
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+  }
+  #overlay .score-display {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(14px, 3vw, 22px);
+    color: #ffffff;
+    margin-bottom: 20px;
+    text-shadow: 0 0 8px #ffffff44;
+  }
+  #startBtn {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(16px, 4vw, 24px);
+    padding: 14px 40px;
+    background: transparent;
+    border: 2px solid #00ffcc;
+    color: #00ffcc;
+    cursor: pointer;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: auto;
+    transition: all 0.2s;
+  }
+  #startBtn:hover { background: #00ffcc22; }
+  #startBtn:active { background: #00ffcc44; }
+  .controls-hint {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(10px, 2vw, 13px);
+    color: #555;
+    margin-top: 20px;
+  }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between;
+    padding: 10px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(12px, 3vw, 18px);
+    color: #00ffcc;
+    text-shadow: 0 0 8px #00ffcc88;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #gameOver {
+    position: fixed; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(10,10,18,0.88);
+    z-index: 15;
+    pointer-events: auto;
+  }
+  #gameOver h2 {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(24px, 6vw, 48px);
+    color: #ff0044;
+    text-shadow: 0 0 20px #ff004488;
+    margin-bottom: 10px;
+    letter-spacing: 3px;
+  }
+  #restartBtn {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(14px, 3.5vw, 20px);
+    padding: 12px 32px;
+    background: transparent;
+    border: 2px solid #ff00aa;
+    color: #ff00aa;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: auto;
+    margin-top: 16px;
+  }
+  #restartBtn:hover { background: #ff00aa22; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay">
+  <h1>SNAIL SLIDE</h1>
+  <div class="subtitle">DROP THROUGH THE NEON MAZE</div>
+  <div class="score-display" id="highScoreText"></div>
+  <button id="startBtn">START</button>
+  <div class="controls-hint">← → or TAP SIDES to slide</div>
+</div>
+
+<div id="hud">
+  <span id="hudScore">SCORE: 0</span>
+  <span id="hudLevel">DEPTH: 1</span>
+</div>
+
+<div id="gameOver">
+  <h2>CRASHED</h2>
+  <div class="score-display" id="finalScore"></div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const hudScore = document.getElementById('hudScore');
+const hudLevel = document.getElementById('hudLevel');
+const gameOverScreen = document.getElementById('gameOver');
+const finalScore = document.getElementById('finalScore');
+const highScoreText = document.getElementById('highScoreText');
+
+// --- State ---
+let W, H, cellSize, cols, rows;
+let snail, obstacles, collectibles, particles, bgPipes;
+let score, level, speed, gameRunning, gameOver;
+let keys = { left: false, right: false };
+let touchX = null;
+let lastTime = 0;
+let scrollOffset = 0;
+let grainCanvas, grainCtx;
+let highScore = parseInt(localStorage.getItem('snailSlideHigh') || '0');
+let shakeTimer = 0;
+let flashTimer = 0;
+let comboCount = 0;
+let comboTimer = 0;
+let spawnTimer = 0;
+let bgStars = [];
+
+const LANE_COUNT = 7;
+const SNAIL_SIZE_RATIO = 0.7;
+
+// --- Resize ---
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  cols = LANE_COUNT;
+  cellSize = Math.floor(W / cols);
+  rows = Math.ceil(H / cellSize) + 2;
+
+  if (!snail) {
+    snail = {
+      lane: Math.floor(cols / 2),
+      x: cols / 2,
+      y: 0.5,
+      targetX: cols / 2,
+      trail: [],
+      bobPhase: 0
+    };
+  } else {
+    snail.x = snail.lane;
+    snail.targetX = snail.lane;
+  }
+  initGrain();
+}
+
+function initGrain() {
+  grainCanvas = document.createElement('canvas');
+  grainCanvas.width = 256;
+  grainCanvas.height = 256;
+  grainCtx = grainCanvas.getContext('2d');
+  const imgData = grainCtx.createImageData(256, 256);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    const v = Math.random() * 30;
+    imgData.data[i] = v;
+    imgData.data[i+1] = v;
+    imgData.data[i+2] = v;
+    imgData.data[i+3] = 25;
+  }
+  grainCtx.putImageData(imgData, 0, 0);
+}
+
+function initBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 40; i++) {
+    bgStars.push({
+      x: Math.random() * cols,
+      y: Math.random() * rows,
+      speed: 0.2 + Math.random() * 0.5,
+      size: 0.5 + Math.random() * 1.5,
+      alpha: 0.2 + Math.random() * 0.5
+    });
+  }
+}
+
+function initBgPipes() {
+  bgPipes = [];
+  for (let i = 0; i < 12; i++) {
+    bgPipes.push({
+      lane: Math.floor(Math.random() * cols),
+      y: Math.random() * rows,
+      speed: 0.15 + Math.random() * 0.3,
+      height: 1 + Math.floor(Math.random() * 3),
+      alpha: 0.04 + Math.random() * 0.06
+    });
+  }
+}
+
+function reset() {
+  score = 0;
+  level = 1;
+  speed = 0.8;
+  gameRunning = false;
+  gameOver = false;
+  obstacles = [];
+  collectibles = [];
+  particles = [];
+  scrollOffset = 0;
+  spawnTimer = 0;
+  comboCount = 0;
+  comboTimer = 0;
+  shakeTimer = 0;
+  flashTimer = 0;
+  snail.lane = Math.floor(cols / 2);
+  snail.x = cols / 2;
+  snail.targetX = cols / 2;
+  snail.trail = [];
+  snail.bobPhase = 0;
+  initBgStars();
+  initBgPipes();
+  updateHUD();
+  highScoreText.textContent = highScore > 0 ? `BEST: ${highScore}` : '';
+}
+
+function spawnRow() {
+  const type = Math.random();
+  if (type < 0.55) {
+    // Obstacle row
+    const gap = Math.max(1, 2 - Math.floor(level / 3));
+    const gapLanes = [];
+    const used = new Set();
+    while (gapLanes.length < gap) {
+      const l = Math.floor(Math.random() * cols);
+      if (!used.has(l)) { used.add(l); gapLanes.push(l); }
+    }
+    for (let l = 0; l < cols; l++) {
+      if (!gapLanes.includes(l)) {
+        obstacles.push({ lane: l, y: -1, hit: false, type: Math.random() < 0.3 ? 'spike' : 'wall' });
+      }
+    }
+  } else if (type < 0.85) {
+    // Collectible row
+    const count = 1 + Math.floor(Math.random() * 2);
+    const used = new Set();
+    for (let i = 0; i < count; i++) {
+      let l;
+      do { l = Math.floor(Math.random() * cols); } while (used.has(l));
+      used.add(l);
+      collectibles.push({ lane: l, y: -1, collected: false, type: Math.random() < 0.15 ? 'gem' : 'data' });
+    }
+  } else {
+    // Empty row (just scroll for score)
+  }
+}
+
+function updateHUD() {
+  hudScore.textContent = `SCORE: ${score}`;
+  hudLevel.textContent = `DEPTH: ${level}`;
+}
+
+function addParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x: x * cellSize + cellSize / 2,
+      y: y * cellSize + cellSize / 2,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      life: 0.5 + Math.random() * 0.5,
+      maxLife: 0.5 + Math.random() * 0.5,
+      color: color,
+      size: 2 + Math.random() * 3
+    });
+  }
+}
+
+function addTrail(x, y) {
+  snail.trail.push({ x: x, y: y, alpha: 0.6 });
+  if (snail.trail.length > 20) snail.trail.shift();
+}
+
+// --- Update ---
+function update(dt) {
+  if (!gameRunning || gameOver) return;
+
+  // Speed up over time
+  const newLevel = Math.floor(score / 50) + 1;
+  if (newLevel !== level) {
+    level = newLevel;
+    speed = 0.8 + (level - 1) * 0.12;
+    speed = Math.min(speed, 3.0);
+    addParticles(snail.lane, snail.y, '#00ffcc', 15);
+  }
+
+  // Move snail
+  if (keys.left) snail.lane = Math.max(0, snail.lane - Math.floor(dt * 8));
+  if (keys.right) snail.lane = Math.min(cols - 1, snail.lane + Math.floor(dt * 8));
+
+  // Touch control
+  if (touchX !== null) {
+    const tapLeft = touchX < W * 0.35;
+    const tapRight = touchX > W * 0.65;
+    if (tapLeft) snail.lane = Math.max(0, snail.lane - Math.floor(dt * 10));
+    if (tapRight) snail.lane = Math.min(cols - 1, snail.lane + Math.floor(dt * 10));
+  }
+
+  // Smooth x interpolation
+  snail.targetX = snail.lane + 0.5;
+  snail.x += (snail.targetX - snail.x) * Math.min(1, dt * 12);
+
+  // Scroll world down
+  scrollOffset += speed * dt * 2;
+  snail.y += speed * dt * 0.015;
+  snail.bobPhase += dt * 5;
+
+  addTrail(snail.x, snail.y);
+
+  // Move obstacles down
+  for (const o of obstacles) {
+    o.y += speed * dt * 1.2;
+  }
+  for (const c of collectibles) {
+    c.y += speed * dt * 1.2;
+  }
+
+  // Move bg pipes
+  for (const p of bgPipes) {
+    p.y += speed * dt * p.speed;
+    if (p.y > rows + 2) {
+      p.y = -2;
+      p.lane = Math.floor(Math.random() * cols);
+    }
+  }
+
+  // Move bg stars
+  for (const s of bgStars) {
+    s.y += speed * dt * s.speed;
+    if (s.y > rows + 1) { s.y = -0.5; s.x = Math.random() * cols; }
+  }
+
+  // Collision with obstacles
+  const snailCellY = snail.y;
+  const snailCellX = Math.round(snail.x);
+  for (const o of obstacles) {
+    if (o.hit) continue;
+    if (Math.abs(o.y - snailCellY) < 0.45 && Math.abs(o.lane - snailCellX) < 0.6) {
+      o.hit = true;
+      if (comboCount > 0) {
+        // Shielded by combo
+        comboCount = 0;
+        addParticles(o.lane, o.y, '#ff00aa', 20);
+      } else {
+        addParticles(snail.lane, snail.y, '#ff0044', 30);
+        triggerGameOver();
+        return;
+      }
+    }
+  }
+
+  // Collectibles
+  for (const c of collectibles) {
+    if (c.collected) continue;
+    if (Math.abs(c.y - snailCellY) < 0.45 && Math.abs(c.lane - snailCellX) < 0.6) {
+      c.collected = true;
+      if (c.type === 'gem') {
+        score += 10;
+        addParticles(c.lane, c.y, '#ff00ff', 12);
+        flashTimer = 0.15;
+      } else {
+        score += 5;
+        addParticles(c.lane, c.y, '#00ffcc', 8);
+      }
+      comboCount++;
+      comboTimer = 2.0;
+      updateHUD();
+    }
+  }
+
+  // Combo timer
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) { comboCount = 0; }
+  }
+
+  // Particles
+  for (const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= dt;
+    p.vy += dt * 2;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  // Trail fade
+  for (const t of snail.trail) {
+    t.alpha -= dt * 2;
+  }
+  snail.trail = snail.trail.filter(t => t.alpha > 0);
+
+  // Spawn
+  spawnTimer -= dt * speed;
+  if (spawnTimer <= 0) {
+    spawnRow();
+    spawnTimer = 1.5 / Math.sqrt(level);
+  }
+
+  // Remove off-screen
+  obstacles = obstacles.filter(o => o.y < rows + 2);
+  collectibles = collectibles.filter(c => c.y < rows + 2);
+
+  // Score from scrolling
+  if (scrollOffset % 0.5 < dt * speed * 2) {
+    score += 1;
+    updateHUD();
+  }
+
+  // Shake decay
+  if (shakeTimer > 0) shakeTimer -= dt;
+  if (flashTimer > 0) flashTimer -= dt;
+}
+
+function triggerGameOver() {
+  gameOver = true;
+  gameRunning = false;
+  shakeTimer = 0.5;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('snailSlideHigh', highScore.toString());
+  }
+  finalScore.textContent = `SCORE: ${score}  |  BEST: ${highScore}`;
+  setTimeout(() => {
+    gameOverScreen.style.display = 'flex';
+  }, 500);
+}
+
+// --- Render ---
+function render() {
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Shake
+  let sx = 0, sy = 0;
+  if (shakeTimer > 0) {
+    sx = (Math.random() - 0.5) * shakeTimer * 20;
+    sy = (Math.random() - 0.5) * shakeTimer * 20;
+  }
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Flash
+  if (flashTimer > 0) {
+    ctx.fillStyle = `rgba(255,0,170,${flashTimer * 0.3})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Grid lines (subtle)
+  ctx.strokeStyle = 'rgba(0,255,204,0.04)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= cols; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * cellSize, 0);
+    ctx.lineTo(i * cellSize, H);
+    ctx.stroke();
+  }
+
+  // Background pipes
+  for (const p of bgPipes) {
+    const px = p.lane * cellSize + cellSize * 0.15;
+    const py = p.y * cellSize - scrollOffset * cellSize * 0.1;
+    const ph = p.height * cellSize;
+    ctx.fillStyle = `rgba(0,255,204,${p.alpha})`;
+    ctx.fillRect(px, py % H, cellSize * 0.7, ph);
+  }
+
+  // Background stars
+  for (const s of bgStars) {
+    const sy2 = ((s.y * cellSize - scrollOffset * cellSize * 0.05) % H + H) % H;
+    ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+    ctx.fillRect(s.x * cellSize, sy2, s.size, s.size);
+  }
+
+  // Lane glow under snail
+  const snailScreenX = snail.x * cellSize;
+  const snailScreenY = snail.y * cellSize - scrollOffset * cellSize * 0.15;
+  const glowGrad = ctx.createRadialGradient(snailScreenX, snailScreenY, 0, snailScreenX, snailScreenY, cellSize * 2);
+  glowGrad.addColorStop(0, 'rgba(0,255,204,0.08)');
+  glowGrad.addColorStop(1, 'rgba(0,255,204,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(snailScreenX - cellSize * 2, snailScreenY - cellSize * 2, cellSize * 4, cellSize * 4);
+
+  // Trail
+  for (const t of snail.trail) {
+    const tx = t.x * cellSize;
+    const ty = t.y * cellSize - scrollOffset * cellSize * 0.15;
+    ctx.fillStyle = `rgba(0,255,204,${t.alpha * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(tx, ty, cellSize * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Obstacles
+  for (const o of obstacles) {
+    const ox = o.lane * cellSize;
+    const oy = o.y * cellSize - scrollOffset * cellSize * 0.8;
+    if (oy < -cellSize || oy > H + cellSize) continue;
+
+    if (o.type === 'spike') {
+      // Red spike
+      ctx.fillStyle = '#ff0044';
+      ctx.shadowColor = '#ff0044';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(ox + cellSize * 0.5, oy);
+      ctx.lineTo(ox + cellSize * 0.9, oy + cellSize);
+      ctx.lineTo(ox + cellSize * 0.1, oy + cellSize);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    } else {
+      // Wall block
+      ctx.fillStyle = '#ff004488';
+      ctx.shadowColor = '#ff0044';
+      ctx.shadowBlur = 6;
+      ctx.fillRect(ox + 2, oy + 2, cellSize - 4, cellSize - 4);
+      ctx.strokeStyle = '#ff0044';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ox + 2, oy + 2, cellSize - 4, cellSize - 4);
+      ctx.shadowBlur = 0;
+
+      // X mark
+      ctx.strokeStyle = '#ff004488';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ox + cellSize * 0.25, oy + cellSize * 0.25);
+      ctx.lineTo(ox + cellSize * 0.75, oy + cellSize * 0.75);
+      ctx.moveTo(ox + cellSize * 0.75, oy + cellSize * 0.25);
+      ctx.lineTo(ox + cellSize * 0.25, oy + cellSize * 0.75);
+      ctx.stroke();
+    }
+  }
+
+  // Collectibles
+  for (const c of collectibles) {
+    if (c.collected) continue;
+    const cx = c.lane * cellSize + cellSize / 2;
+    const cy = c.y * cellSize - scrollOffset * cellSize * 0.8;
+    if (cy < -cellSize || cy > H + cellSize) continue;
+
+    const pulse = 0.8 + Math.sin(Date.now() * 0.005) * 0.2;
+    const r = cellSize * 0.25 * pulse;
+
+    if (c.type === 'gem') {
+      // Magenta diamond
+      ctx.fillStyle = '#ff00ff';
+      ctx.shadowColor = '#ff00ff';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    } else {
+      // Cyan data packet (circle)
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Inner dot
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Snail
+  drawSnail(snail.x * cellSize, snailScreenY);
+
+  // Combo indicator
+  if (comboCount > 0) {
+    const comboAlpha = Math.min(1, comboTimer);
+    ctx.fillStyle = `rgba(255,0,170,${comboAlpha})`;
+    ctx.font = `bold ${cellSize * 0.4}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#ff00aa';
+    ctx.shadowBlur = 10;
+    ctx.fillText(`×${comboCount}`, snailScreenX, snailScreenY - cellSize * 0.8);
+    ctx.shadowBlur = 0;
+  }
+
+  // Particles
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 4;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  // Film grain overlay
+  if (grainCanvas) {
+    ctx.globalAlpha = 0.03;
+    for (let gx = 0; gx < W; gx += 256) {
+      for (let gy = 0; gy < H; gy += 256) {
+        ctx.drawImage(grainCanvas, gx, gy);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let sy2 = 0; sy2 < H; sy2 += 3) {
+    ctx.fillRect(0, sy2, W, 1);
+  }
+
+  // Vignette
+  const vigGrad = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.8);
+  vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vigGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vigGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.restore();
+}
+
+function drawSnail(x, y) {
+  const sz = cellSize * SNAIL_SIZE_RATIO;
+  const bob = Math.sin(snail.bobPhase) * 2;
+
+  // Shell (main body) — cyan spiral
+  ctx.save();
+  ctx.translate(x, y + bob);
+
+  // Glow
+  ctx.shadowColor = '#00ffcc';
+  ctx.shadowBlur = 15;
+
+  // Shell circle
+  ctx.fillStyle = '#0a1a1a';
+  ctx.strokeStyle = '#00ffcc';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, sz * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Spiral pattern
+  ctx.strokeStyle = '#00ffcc88';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI * 4; a += 0.1) {
+    const r = sz * 0.08 + a * sz * 0.06;
+    const px = Math.cos(a) * r;
+    const py = Math.sin(a) * r;
+    if (a === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Eyes
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#00ffcc';
+  ctx.beginPath();
+  ctx.arc(-sz * 0.15, -sz * 0.5, sz * 0.07, 0, Math.PI * 2);
+  ctx.arc(sz * 0.15, -sz * 0.5, sz * 0.07, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye highlights
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(-sz * 0.12, -sz * 0.52, sz * 0.03, 0, Math.PI * 2);
+  ctx.arc(sz * 0.18, -sz * 0.52, sz * 0.03, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Antennae
+  ctx.strokeStyle = '#00ffcc88';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-sz * 0.12, -sz * 0.55);
+  ctx.quadraticCurveTo(-sz * 0.25, -sz * 0.8, -sz * 0.2, -sz * 0.85);
+  ctx.moveTo(sz * 0.12, -sz * 0.55);
+  ctx.quadraticCurveTo(sz * 0.25, -sz * 0.8, sz * 0.2, -sz * 0.85);
+  ctx.stroke();
+
+  // Antenna tips
+  ctx.fillStyle = '#ff00aa';
+  ctx.beginPath();
+  ctx.arc(-sz * 0.2, -sz * 0.85, sz * 0.04, 0, Math.PI * 2);
+  ctx.arc(sz * 0.2, -sz * 0.85, sz * 0.04, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// --- Game Loop ---
+function gameLoop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// --- Input ---
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') keys.left = true;
+  if (e.key === 'ArrowRight') keys.right = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft') keys.left = false;
+  if (e.key === 'ArrowRight') keys.right = false;
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    touchX = e.touches[0].clientX;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    touchX = e.touches[0].clientX;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touchX = null;
+}, { passive: false });
+
+// Mouse fallback for desktop testing
+canvas.addEventListener('mousedown', e => {
+  touchX = e.clientX;
+});
+canvas.addEventListener('mousemove', e => {
+  if (e.buttons === 1) touchX = e.clientX;
+});
+canvas.addEventListener('mouseup', e => {
+  touchX = null;
+});
+
+// --- Start / Restart ---
+startBtn.addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  overlay.style.display = 'none';
+  reset();
+  gameRunning = true;
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  gameOverScreen.style.display = 'none';
+  reset();
+  gameRunning = true;
+});
+
+// --- Init ---
+window.addEventListener('resize', resize);
+resize();
+reset();
+lastTime = performance.now();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
