@@ -46,12 +46,12 @@ let W,H,dpr;
 
 // ── 3D Projection ──
 const FOCAL=520;          // focal length
-const VANISH_X=W/2;       // vanish point x
 const CORRIDOR_HALF=180;  // half-width of corridor at z=0
 const NEAR_Z=200;         // clip near plane (objects closer than this are skipped)
 const FAR_Z=2400;         // clip far plane
-const GROUND_Y=380;       // screen y of corridor floor at z=NEAR_Z
-const CEIL_Y=80;          // screen y of ceiling at z=NEAR_Z
+let VANISH_X=200;         // vanish point x — set in resize()
+let GROUND_Y=380;         // screen y of corridor floor — set in resize()
+let CEIL_Y=80;            // screen y of ceiling — set in resize()
 
 function project(x,y,z){
   // x: lateral position in world (-CORRIDOR_HALF..+CORRIDOR_HALF at z=0)
@@ -72,6 +72,9 @@ function resize(){
   canvas.width=W*dpr;canvas.height=H*dpr;
   canvas.style.width=W+'px';canvas.style.height=H+'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  VANISH_X=W/2;
+  GROUND_Y=H*.65;
+  CEIL_Y=H*.25;
 }
 resize();
 window.addEventListener('resize',resize);
@@ -132,7 +135,7 @@ function spawnObstacle(){
   if(type==='barrier'){o.w=70+Math.random()*50;o.h=40;o.d=18;o.color=`hsl(${180+Math.random()*60},100%,60%)`}
   else if(type==='spike'){o.w=40;o.h=60;o.d=40;o.color='#f44'}
   else if(type==='double'){o.w=30;o.h=80;o.d=30;o.color='#f0f'}
-  else{pillar:o.w=o.d=45;o.h=140;o.color='#ff0'}  // tall pillar
+  else{o.w=45;o.d=45;o.h=140;o.color='#ff0'}  // tall pillar
   obstacles.push(o);
 }
 
