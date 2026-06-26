@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Snail's Glitchy Odyssey</title>
+    <title>Snail's Glitchy Odyssey 3D</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; touch-action: none; }
+        body { margin: 0; overflow: hidden; background: #050010; font-family: 'Courier New', monospace; touch-action: none; }
         canvas { display: block; cursor: crosshair; }
-        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; pointer-events: none; text-shadow: 2px 2px #000; font-size: 16px; }
-        #hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: rgba(0,255,0,0.5); pointer-events: none; }
+        #ui { position: absolute; top: 10px; left: 10px; color: #0f0; pointer-events: none; text-shadow: 2px 2px #000; font-size: 14px; letter-spacing: 0.1em; z-index: 10; }
+        #ui div { margin-bottom: 4px; }
+        #glitch { color: #f0f; text-shadow: 0 0 8px #f0f; }
+        #hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: rgba(0,255,0,0.5); pointer-events: none; font-size: 12px; letter-spacing: 0.2em; }
+        #subtitle { position: absolute; top: 10px; right: 14px; color: #f0f; font-size: 12px; letter-spacing: 0.4em; text-shadow: 0 0 6px #f0f; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -16,6 +19,7 @@
         <div id="score">LETTUCE: 0</div>
         <div id="glitch">REALITY: STABLE</div>
     </div>
+    <div id="subtitle">3D ODYSSEY</div>
     <div id="hint">TAP/DRAG TO MOVE</div>
     <canvas id="gameCanvas"></canvas>
 
@@ -25,33 +29,58 @@
         const scoreEl = document.getElementById('score');
         const glitchEl = document.getElementById('glitch');
 
-        // localStorage key: 'snail-glitch-best'
-let bestScore = parseInt(localStorage.getItem('snail-glitch-best') || '0');
+        let bestScore = parseInt(localStorage.getItem('snail-glitch-3d-best') || '0');
 
-let width, height, score = 0, glitchLevel = 0, frame = 0;
-        let snail = { x: 100, y: 100, vx: 0, vy: 0, radius: 15, trail: [] };
+        let width, height, score = 0, glitchLevel = 0, frame = 0;
+        let snail = { x: 0, z: 0, vx: 0, vz: 0, radius: 18, trail: [] };
         let items = [], particles = [], keys = {}, touchTarget = null;
+
+        // World dimensions (in world units, larger than screen)
+        const WORLD_W = 1600;
+        const WORLD_H = 1600;
+
+        // Isometric projection (true isometric: 30° angles)
+        const COS_A = 0.866; // cos(30°)
+        const SIN_A = 0.5;   // sin(30°)
+        let tileSize = 60;
+        let viewCx, viewCy;
 
         function resize() {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
+            viewCx = width / 2;
+            viewCy = height * 0.6;
+            // Scale tile size so ~16 tiles fit across the smaller dim
+            tileSize = Math.min(width, height) / 14;
+        }
+
+        function project(wx, wy, wz) {
+            // wx, wz: world coords. wy: height (0=floor, up=positive)
+            const sx = viewCx + (wx - wz) * COS_A * 0.5;
+            const sy = viewCy + (wx + wz) * SIN_A * 0.5 - wy;
+            return { x: sx, y: sy };
         }
 
         function spawnItem() {
-            const type = Math.random() > 0.8 ? 'GLITCH' : 'LETTUCE';
+            const type = Math.random() > 0.78 ? 'GLITCH' : 'LETTUCE';
+            const x = (Math.random() - 0.5) * WORLD_W * 0.9;
+            const z = (Math.random() - 0.5) * WORLD_H * 0.9;
             items.push({
-                x: Math.random() * width,
-                y: Math.random() * height,
-                radius: 10,
+                x, z,
+                y: 0,
+                bobPhase: Math.random() * Math.PI * 2,
+                radius: type === 'GLITCH' ? 14 : 12,
                 type: type,
-                color: type === 'GLITCH' ? '#ff00ff' : '#00ff00'
+                color: type === 'GLITCH' ? '#ff00ff' : '#00ff88'
             });
         }
 
         function init() {
             resize();
-            for(let i=0; i<5; i++) spawnItem();
-            
+            snail.x = -WORLD_W * 0.3;
+            snail.z = -WORLD_H * 0.3;
+            for (let i = 0; i < 7; i++) spawnItem();
+
             window.addEventListener('resize', resize);
             window.addEventListener('keydown', e => keys[e.code] = true);
             window.addEventListener('keyup', e => keys[e.code] = false);
@@ -59,129 +88,453 @@ let width, height, score = 0, glitchLevel = 0, frame = 0;
             const handleInput = (e) => {
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-                touchTarget = { x: clientX, y: clientY };
+                // Convert screen to world coords (inverse projection)
+                // dx = (sx - viewCx) / (COS_A * 0.5)
+                // dz = ((sy - viewCy) - dx) / SIN_A * 0.5 — too coupled, use direct:
+                // screen dx along x-axis-world: 1 world unit moves COS_A * 0.5 px right per x, COS_A * 0.5 px right per -z
+                // Simplify: track relative offset from snail
+                if (!touchTarget) {
+                    touchTarget = { dx: 0, dz: 0 };
+                }
+                // project a screen point at (clientX, clientY) to ground by trial
+                // Use approximation: convert (clientX - viewCx, clientY - viewCy) to (x,z)
+                const dx = (clientX - viewCx) / (COS_A * 0.5);
+                const dy = (clientY - viewCy) / (SIN_A * 0.5);
+                // dy = x + z; dx = x - z; so x = (dy + dx)/2, z = (dy - dx)/2
+                const worldX = (dy + dx) / 2;
+                const worldZ = (dy - dx) / 2;
+                touchTarget = { x: worldX, z: worldZ };
                 if (e.cancelable) e.preventDefault();
             };
 
             canvas.addEventListener('mousedown', handleInput);
-            canvas.addEventListener('mousemove', (e) => { if(touchTarget) handleInput(e); });
+            canvas.addEventListener('mousemove', (e) => { if (touchTarget) handleInput(e); });
             window.addEventListener('mouseup', () => touchTarget = null);
-            
-            canvas.addEventListener('touchstart', handleInput, {passive: false});
-            canvas.addEventListener('touchmove', handleInput, {passive: false});
+
+            canvas.addEventListener('touchstart', handleInput, { passive: false });
+            canvas.addEventListener('touchmove', handleInput, { passive: false });
             canvas.addEventListener('touchend', () => touchTarget = null);
 
             requestAnimationFrame(gameLoop);
         }
 
         function update() {
-            const accel = 0.6, friction = 0.94;
-            // Glitch affects physics: higher glitch = more erratic movement
-            const erratic = glitchLevel / 100 * 0.3;
+            const accel = 0.5, friction = 0.93;
+            const erratic = glitchLevel / 100 * 0.4;
 
             if (touchTarget) {
                 const dx = touchTarget.x - snail.x;
-                const dy = touchTarget.y - snail.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist > 5) {
+                const dz = touchTarget.z - snail.z;
+                const dist = Math.sqrt(dx*dx + dz*dz);
+                if (dist > 4) {
                     snail.vx += (dx / dist) * accel + (Math.random()-0.5)*erratic;
-                    snail.vy += (dy / dist) * accel + (Math.random()-0.5)*erratic;
+                    snail.vz += (dz / dist) * accel + (Math.random()-0.5)*erratic;
                 }
             } else {
-                if (keys['ArrowUp'] || keys['KeyW']) snail.vy -= accel;
-                if (keys['ArrowDown'] || keys['KeyS']) snail.vy += accel;
+                if (keys['ArrowUp'] || keys['KeyW']) snail.vz -= accel;
+                if (keys['ArrowDown'] || keys['KeyS']) snail.vz += accel;
                 if (keys['ArrowLeft'] || keys['KeyA']) snail.vx -= accel;
                 if (keys['ArrowRight'] || keys['KeyD']) snail.vx += accel;
-                // Glitch wobble on keys
                 if (erratic > 0.1) {
                     snail.vx += (Math.random()-0.5) * erratic;
-                    snail.vy += (Math.random()-0.5) * erratic;
+                    snail.vz += (Math.random()-0.5) * erratic;
                 }
             }
 
             snail.vx *= friction;
-            snail.vy *= friction;
+            snail.vz *= friction;
             snail.x += snail.vx;
-            snail.y += snail.vy;
+            snail.z += snail.vz;
 
-            if (snail.x < 0) snail.x = width;
-            if (snail.x > width) snail.x = 0;
-            if (snail.y < 0) snail.y = height;
-            if (snail.y > height) snail.y = 0;
+            // Toroidal world wrap
+            const halfW = WORLD_W / 2;
+            const halfH = WORLD_H / 2;
+            if (snail.x < -halfW) snail.x = halfW;
+            if (snail.x > halfW) snail.x = -halfW;
+            if (snail.z < -halfH) snail.z = halfH;
+            if (snail.z > halfH) snail.z = -halfH;
 
-            snail.trail.push({x: snail.x, y: snail.y, a: 1.0});
-            if (snail.trail.length > 30) snail.trail.shift();
-            snail.trail.forEach(t => t.a -= 0.03);
+            // Trail (3D ribbon)
+            snail.trail.push({ x: snail.x, z: snail.z, a: 1.0 });
+            if (snail.trail.length > 25) snail.trail.shift();
+            snail.trail.forEach(t => t.a -= 0.04);
             snail.trail = snail.trail.filter(t => t.a > 0);
 
+            // Items
             items.forEach((item, i) => {
+                item.bobPhase += 0.06;
                 const dx = snail.x - item.x;
-                const dy = snail.y - item.y;
-                if (Math.sqrt(dx*dx + dy*dy) < snail.radius + item.radius) {
+                const dz = snail.z - item.z;
+                if (Math.sqrt(dx*dx + dz*dz) < snail.radius + item.radius) {
                     if (item.type === 'GLITCH') {
                         glitchLevel = Math.min(100, glitchLevel + 20);
-                        // At max glitch, screen flips: collect 3 more glitch items to restore
-                        if (glitchLevel >= 100 && Math.random() < 0.3) {
-                            glitchLevel = 50; // partial recovery
+                        if (glitchLevel >= 100 && Math.random() < 0.3) glitchLevel = 50;
+                        // Spawn glitch particles
+                        for (let j = 0; j < 20; j++) {
+                            particles.push({
+                                x: item.x, z: item.z, y: 20,
+                                vx: (Math.random()-0.5)*8, vz: (Math.random()-0.5)*8, vy: Math.random()*5+2,
+                                life: 1.0, color: '#f0f', size: Math.random()*5+2
+                            });
                         }
                     } else {
                         score += 10;
-                        // Reduce glitch slightly when collecting lettuce
                         glitchLevel = Math.max(0, glitchLevel - 2);
+                        for (let j = 0; j < 12; j++) {
+                            particles.push({
+                                x: item.x, z: item.z, y: 15,
+                                vx: (Math.random()-0.5)*6, vz: (Math.random()-0.5)*6, vy: Math.random()*4+2,
+                                life: 1.0, color: '#0f8', size: Math.random()*4+2
+                            });
+                        }
                     }
                     if (score > bestScore) {
                         bestScore = score;
-                        localStorage.setItem('snail-glitch-best', bestScore);
+                        localStorage.setItem('snail-glitch-3d-best', bestScore);
                     }
                     items.splice(i, 1);
                     spawnItem();
-                    for(let j=0; j<8; j++) particles.push({x: item.x, y: item.y, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5, life: 1.0, color: item.color});
                 }
             });
 
-            particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.03; });
-            particles = particles.filter(p => p.life > 0);
+            // Update particles (with gravity)
+            particles.forEach(p => {
+                p.x += p.vx; p.z += p.vz; p.y += p.vy;
+                p.vy -= 0.3;
+                p.life -= 0.025;
+            });
+            particles = particles.filter(p => p.life > 0 && p.y > 0);
 
             scoreEl.innerText = `LETTUCE: ${score}`;
             glitchEl.innerText = glitchLevel > 70 ? "REALITY: ERROR" : (glitchLevel > 40 ? "REALITY: UNSTABLE" : "REALITY: STABLE");
             frame++;
         }
 
-        function draw() {
-            ctx.fillStyle = '#1a1a1a';
-            ctx.fillRect(0, 0, width, height);
+        // ── 3D Drawing ──
+        function shadeColor(hex, factor) {
+            const m = hex.match(/^#([0-9a-f]{6})$/i);
+            if (!m) return hex;
+            const n = parseInt(m[1], 16);
+            let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+            r = Math.min(255, Math.floor(r * factor));
+            g = Math.min(255, Math.floor(g * factor));
+            b = Math.min(255, Math.floor(b * factor));
+            return `rgb(${r},${g},${b})`;
+        }
 
-            if (glitchLevel > 0 && Math.random() < glitchLevel/100) {
-                ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.1})`;
-                ctx.fillRect(0, Math.random()*height, width, 2);
+        function drawFloor() {
+            // Checkerboard tiles receding into isometric perspective
+            const numTiles = 18; // per side
+            const tSize = WORLD_W / numTiles;
+            const halfW = WORLD_W / 2;
+            const halfH = WORLD_H / 2;
+
+            // Collect all visible tiles, sort by depth (x+z descending = closer)
+            const tiles = [];
+            for (let i = 0; i < numTiles; i++) {
+                for (let j = 0; j < numTiles; j++) {
+                    const wx = -halfW + i * tSize;
+                    const wz = -halfH + j * tSize;
+                    tiles.push({ wx, wz, depth: wx + wz });
+                }
+            }
+            // Sort back-to-front for proper painter's algorithm
+            tiles.sort((a, b) => b.depth - a.depth);
+
+            tiles.forEach(t => {
+                const p1 = project(t.wx, 0, t.wz);
+                const p2 = project(t.wx + tSize, 0, t.wz);
+                const p3 = project(t.wx + tSize, 0, t.wz + tSize);
+                const p4 = project(t.wx, 0, t.wz + tSize);
+
+                // Cull if way off screen
+                if (Math.max(p1.x, p2.x, p3.x, p4.x) < -200 ||
+                    Math.min(p1.x, p2.x, p3.x, p4.x) > width + 200) return;
+                if (Math.max(p1.y, p2.y, p3.y, p4.y) < -200 ||
+                    Math.min(p1.y, p2.y, p3.y, p4.y) > height + 200) return;
+
+                const checker = (Math.floor(t.wx / tSize) + Math.floor(t.wz / tSize)) % 2 === 0;
+                const baseAlpha = 0.3 + glitchLevel / 100 * 0.3;
+                const tileColor = checker ? '#0a0a2e' : '#0d0520';
+                ctx.fillStyle = tileColor;
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.lineTo(p3.x, p3.y);
+                ctx.lineTo(p4.x, p4.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = `rgba(0,255,200,${baseAlpha * 0.5})`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            });
+
+            // Glow grid lines along world axes for orientation
+            ctx.strokeStyle = 'rgba(0,255,200,0.15)';
+            ctx.lineWidth = 2;
+            for (let i = -halfW; i <= halfW; i += tSize * 3) {
+                const a = project(i, 0.2, -halfH);
+                const b = project(i, 0.2, halfH);
+                ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+                const c = project(-halfW, 0.2, i);
+                const d = project(halfW, 0.2, i);
+                ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke();
+            }
+        }
+
+        function drawItem(item) {
+            const bob = Math.sin(item.bobPhase) * 8;
+            const p = project(item.x, item.y + bob, item.z);
+
+            // Cull
+            if (p.x < -100 || p.x > width + 100 || p.y < -100 || p.y > height + 100) return;
+
+            const r = item.radius;
+            // Shadow on floor
+            const shadowP = project(item.x, 0.2, item.z);
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.beginPath();
+            ctx.ellipse(shadowP.x, shadowP.y, r * 1.3, r * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 3D floating shape (octahedron-ish)
+            const spin = frame * 0.05;
+            const c = item.color;
+            const pts3D = [
+                { x: 0, y: r * 1.5, z: 0 },     // top
+                { x: r, y: 0, z: 0 },            // right
+                { x: 0, y: 0, z: r },            // front
+                { x: -r, y: 0, z: 0 },           // left
+                { x: 0, y: 0, z: -r },           // back
+                { x: 0, y: -r * 1.5, z: 0 }      // bottom
+            ];
+            const projected = pts3D.map(pt => project(item.x + pt.x, item.y + bob + pt.y, item.z + pt.z));
+
+            ctx.save();
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = c;
+            ctx.fillStyle = c;
+
+            // Top half (4 triangles)
+            for (let i = 0; i < 4; i++) {
+                const a = projected[0];
+                const b = projected[1 + i];
+                const c2 = projected[1 + ((i + 1) % 4)];
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.lineTo(c2.x, c2.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = `rgba(255,255,255,0.4)`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+            ctx.fillStyle = shadeColor(c, 0.5);
+            // Bottom half
+            for (let i = 0; i < 4; i++) {
+                const a = projected[5];
+                const b = projected[1 + i];
+                const c2 = projected[1 + ((i + 1) % 4)];
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.lineTo(c2.x, c2.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function drawSnail() {
+            const p = project(snail.x, 0, snail.z);
+
+            // Cull (with margin)
+            if (p.x < -150 || p.x > width + 150 || p.y < -150 || p.y > height + 150) return;
+
+            const r = snail.radius;
+            const baseColor = glitchLevel > 50 ? '#f0f' : '#aaffaa';
+            const shellColor = glitchLevel > 50 ? '#0ff' : '#44cc66';
+
+            // Shadow
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y + 2, r * 1.6, r * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // 3D Snail: body (rounded extruded base) + spiral shell on top
+            // Body — 8 points around ellipse + extruded up
+            const bodyH = r * 0.8;
+            const bodyPts = [];
+            for (let i = 0; i < 8; i++) {
+                const a = i / 8 * Math.PI * 2;
+                bodyPts.push({ x: Math.cos(a) * r, z: Math.sin(a) * r * 0.7 });
+            }
+            // Draw body as oval
+            ctx.save();
+            ctx.fillStyle = baseColor;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = baseColor;
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y - bodyH * 0.5, r * 1.1, r * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Body top (lighter)
+            ctx.fillStyle = shadeColor(baseColor, 1.3);
+            ctx.beginPath();
+            ctx.ellipse(p.x, p.y - bodyH, r * 1.1, r * 0.6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Shell — 3D sphere-ish with spiral
+            const shellR = r * 0.9;
+            const shellCenter = { x: p.x - r * 0.2, y: p.y - bodyH - shellR * 0.4 };
+            ctx.save();
+            ctx.shadowBlur = 18;
+            ctx.shadowColor = shellColor;
+            ctx.fillStyle = shellColor;
+            ctx.beginPath();
+            ctx.arc(shellCenter.x, shellCenter.y, shellR, 0, Math.PI * 2);
+            ctx.fill();
+            // Spiral pattern (rotating with frame)
+            ctx.strokeStyle = shadeColor(shellColor, 0.5);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let t = 0; t < Math.PI * 4; t += 0.1) {
+                const rad = (t / (Math.PI * 4)) * shellR;
+                const ang = t + frame * 0.03;
+                const sx = shellCenter.x + Math.cos(ang) * rad;
+                const sy = shellCenter.y + Math.sin(ang) * rad * 0.7;
+                if (t === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+            }
+            ctx.stroke();
+            // Highlight
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.beginPath();
+            ctx.arc(shellCenter.x - shellR * 0.3, shellCenter.y - shellR * 0.3, shellR * 0.25, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Eye stalks (2)
+            const stalkWiggle = Math.sin(frame * 0.1) * 2;
+            ctx.save();
+            ctx.strokeStyle = baseColor;
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = baseColor;
+            ctx.beginPath();
+            ctx.moveTo(p.x + r * 0.3, p.y - bodyH);
+            ctx.lineTo(p.x + r * 0.5 + stalkWiggle, p.y - bodyH - r * 0.8);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(p.x + r * 0.5, p.y - bodyH);
+            ctx.lineTo(p.x + r * 0.8 + stalkWiggle, p.y - bodyH - r * 0.9);
+            ctx.stroke();
+            // Eyes
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(p.x + r * 0.5 + stalkWiggle, p.y - bodyH - r * 0.85, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(p.x + r * 0.8 + stalkWiggle, p.y - bodyH - r * 0.95, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawTrail() {
+            // Draw a fading ribbon behind the snail (projected to 3D)
+            for (let i = 1; i < snail.trail.length; i++) {
+                const t = snail.trail[i];
+                const prev = snail.trail[i - 1];
+                const a = t.a;
+                const p = project(t.x, 4, t.z);
+                const pp = project(prev.x, 4, prev.z);
+                ctx.strokeStyle = `rgba(170,255,170,${a * 0.6})`;
+                ctx.lineWidth = a * 5;
+                ctx.beginPath();
+                ctx.moveTo(pp.x, pp.y);
+                ctx.lineTo(p.x, p.y);
+                ctx.stroke();
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach(p => {
+                const pp = project(p.x, p.y, p.z);
+                if (pp.x < -50 || pp.x > width + 50) return;
+                ctx.save();
+                ctx.globalAlpha = p.life;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = p.color;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(pp.x, pp.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+            ctx.globalAlpha = 1;
+        }
+
+        function drawGlitchOverlay() {
+            if (glitchLevel <= 0) return;
+
+            // Horizontal glitch bands
+            if (Math.random() < glitchLevel / 80) {
+                ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.08 * glitchLevel / 50})`;
+                const by = Math.random() * height;
+                ctx.fillRect(0, by, width, 2 + Math.random() * 8);
             }
 
-            ctx.beginPath();
-            snail.trail.forEach((t, i) => {
-                ctx.strokeStyle = `rgba(170, 255, 170, ${t.a})`;
-                ctx.lineWidth = 6;
-                if(i===0) ctx.moveTo(t.x, t.y); else ctx.lineTo(t.x, t.y);
-            });
-            ctx.stroke();
+            // RGB shift effect on edges
+            if (glitchLevel > 40 && Math.random() < glitchLevel / 200) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                ctx.globalAlpha = glitchLevel / 200;
+                ctx.fillStyle = '#f0f';
+                ctx.fillRect(Math.random() * 20, 0, width, height);
+                ctx.restore();
+            }
 
-            items.forEach(item => {
-                ctx.fillStyle = item.color;
-                ctx.beginPath();
-                ctx.arc(item.x, item.y, item.radius, 0, Math.PI*2);
-                ctx.fill();
-            });
+            // Random shape noise
+            if (Math.random() < glitchLevel / 300) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(255,0,255,${glitchLevel / 100})`;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(
+                    Math.random() * width,
+                    Math.random() * height,
+                    Math.random() * 100,
+                    Math.random() * 100
+                );
+                ctx.restore();
+            }
+        }
 
-            particles.forEach(p => {
-                ctx.fillStyle = p.color;
-                ctx.globalAlpha = p.life;
-                ctx.fillRect(p.x, p.y, 4, 4);
-            });
-            ctx.globalAlpha = 1.0;
+        function draw() {
+            // Background gradient
+            const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+            bgGrad.addColorStop(0, '#000005');
+            bgGrad.addColorStop(1, '#10001a');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, width, height);
 
-            ctx.fillStyle = '#aaffaa';
-            ctx.beginPath();
-            ctx.arc(snail.x, snail.y, snail.radius, 0, Math.PI*2);
-            ctx.fill();
+            drawFloor();
+
+            // Sort items by depth (x+z) for proper rendering
+            const sortedItems = [...items].sort((a, b) => (b.x + b.z) - (a.x + a.z));
+            sortedItems.forEach(drawItem);
+
+            drawTrail();
+
+            // Draw snail (always on top of items at same depth)
+            drawSnail();
+
+            drawParticles();
+            drawGlitchOverlay();
         }
 
         function gameLoop() {
