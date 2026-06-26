@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Prompt Dodge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a1a;
+    overflow: hidden;
+    touch-action: none;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas { display: block; }
+  #overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10,10,26,0.95);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; pointer-events: auto;
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(2rem, 6vw, 4rem);
+    color: #0ff;
+    text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+    margin-bottom: 1rem;
+    letter-spacing: 0.1em;
+  }
+  #overlay .subtitle {
+    color: #f0f;
+    font-size: clamp(0.8rem, 2.5vw, 1.2rem);
+    margin-bottom: 2rem;
+    text-shadow: 0 0 10px #f0f;
+  }
+  #startBtn, #restartBtn {
+    background: transparent;
+    border: 2px solid #0ff;
+    color: #0ff;
+    padding: 1rem 2.5rem;
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    transition: all 0.3s;
+    pointer-events: auto;
+  }
+  #startBtn:hover, #startBtn:active, #restartBtn:hover, #restartBtn:active {
+    background: #0ff;
+    color: #0a0a1a;
+    box-shadow: 0 0 30px #0ff;
+  }
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%;
+    display: none; justify-content: space-between;
+    padding: 0.5rem 1rem;
+    z-index: 5; pointer-events: none;
+  }
+  #hud .hud-item {
+    color: #0ff;
+    font-size: clamp(0.7rem, 2vw, 1rem);
+    text-shadow: 0 0 10px #0ff;
+  }
+  #hud .score { color: #f0f; text-shadow: 0 0 10px #f0f; }
+  #hud .lives { color: #ff0; text-shadow: 0 0 10px #ff0; }
+  #gameOver {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(10,10,26,0.9);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; pointer-events: auto;
+  }
+  #gameOver h2 {
+    font-size: clamp(1.5rem, 5vw, 3rem);
+    color: #f00;
+    text-shadow: 0 0 20px #f00;
+    margin-bottom: 0.5rem;
+  }
+  #gameOver .final-score {
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    color: #0ff;
+    margin-bottom: 2rem;
+  }
+  #gameOver #restartBtn {
+    background: transparent;
+    border: 2px solid #f0f;
+    color: #f0f;
+    padding: 1rem 2.5rem;
+    font-size: clamp(1rem, 3vw, 1.2rem);
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    pointer-events: auto;
+  }
+  #gameOver #restartBtn:hover, #gameOver #restartBtn:active {
+    background: #f0f;
+    color: #0a0a1a;
+    box-shadow: 0 0 30px #f0f;
+  }
+  .instructions {
+    color: #888;
+    font-size: clamp(0.6rem, 1.8vw, 0.9rem);
+    margin-top: 1.5rem;
+    text-align: center;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay">
+  <h1>PROMPT DODGE</h1>
+  <div class="subtitle">AI Token Survival v1.0</div>
+  <button id="startBtn">START</button>
+  <div class="instructions">
+    ← → or drag to move<br>
+    Dodge RED prompts · Collect CYAN prompts<br>
+    Don't let the AI hallucinate!
+  </div>
+</div>
+
+<div id="hud">
+  <span class="hud-item score">SCORE: <span id="scoreVal">0</span></span>
+  <span class="hud-item">LEVEL: <span id="levelVal">1</span></span>
+  <span class="hud-item lives">♥ <span id="livesVal">3</span></span>
+</div>
+
+<div id="gameOver">
+  <h2>SYSTEM CRASHED</h2>
+  <div class="final-score">Final Score: <span id="finalScore">0</span></div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<script>
+// ── Canvas Setup ──
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Game State ──
+let player, prompts, particles, score, lives, level, gameRunning, animFrame;
+let spawnTimer, spawnInterval, difficultyTimer, speedMultiplier;
+let keys = {};
+let touchX = null;
+let highScore = parseInt(localStorage.getItem('pd_highscore') || '0');
+
+const BAD_PROMPTS = [
+  "NaN output", "Infinite loop", "Segfault", "Stack overflow",
+  "Buffer overflow", "Null ptr", "Race condition", "Deadlock",
+  "Memory leak", "Type error", "Syntax err", "Timeout",
+  "OOM killed", "Core dump", "Kernel panic", "BSOD",
+  "404 not found", "DNS fail", "SSL expired", "Connection reset",
+  "Permission denied", "Access denied", "Forbidden", "Unauthorized",
+  "Hallucination", "Troll prompt", "Jailbreak", "Adversarial"
+];
+
+const GOOD_PROMPTS = [
+  "Optimal", "Fast ✓", "Clean", "Valid",
+  "Compiled", "Tested", "Deployed", "Secure",
+  "Optimized", "Refactored", "Merged", "Passed",
+  "Working", "Perfect", "Flawless", "Elegant",
+  "Minimal", "Correct", "Solved", "Fixed"
+];
+
+// ── Player ──
+function createPlayer() {
+  return {
+    x: canvas.width / 2,
+    y: canvas.height - 80,
+    w: 40,
+    h: 40,
+    speed: 6,
+    trail: [],
+    glow: 0,
+    glowDir: 1
+  };
+}
+
+// ── Prompt Objects ──
+function createPrompt() {
+  const isBad = Math.random() < 0.4;
+  const text = isBad
+    ? BAD_PROMPTS[Math.floor(Math.random() * BAD_PROMPTS.length)]
+    : GOOD_PROMPTS[Math.floor(Math.random() * GOOD_PROMPTS.length)];
+  const fontSize = Math.max(10, Math.min(14, canvas.width / 50));
+  ctx.font = `bold ${fontSize}px Courier New`;
+  const tw = ctx.measureText(text).width;
+  const margin = 10;
+  const x = margin + Math.random() * (canvas.width - tw - margin * 2);
+  return {
+    x, y: -30,
+    text, isBad,
+    speed: (1.5 + Math.random() * 1.5) * speedMultiplier,
+    fontSize,
+    alpha: 1,
+    rotation: (Math.random() - 0.5) * 0.3
+  };
+}
+
+// ── Particles ──
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.03,
+      size: 2 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+// ── Input ──
+document.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault(); });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchX = e.touches[0].clientX;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    touchX = e.touches[0].clientX;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touchX = null;
+}, { passive: false });
+
+// ── Collision ──
+function collides(a, b) {
+  return a.x < b.x + 80 && a.x + a.w > b.x &&
+         a.y < b.y + 20 && a.y + a.h > b.y;
+}
+
+// ── Draw Player ──
+function drawPlayer(p) {
+  // Trail
+  for (let i = 0; i < p.trail.length; i++) {
+    const t = p.trail[i];
+    const alpha = t.life;
+    ctx.fillStyle = `rgba(0,255,255,${alpha * 0.3})`;
+    ctx.fillRect(t.x - 5, t.y - 5, 10, 10);
+  }
+
+  // Glow
+  p.glow += 0.05 * p.glowDir;
+  if (p.glow > 1) p.glowDir = -1;
+  if (p.glow < 0) p.glowDir = 1;
+
+  ctx.save();
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 15 + p.glow * 10;
+
+  // Body (diamond shape)
+  ctx.fillStyle = '#0ff';
+  ctx.beginPath();
+  ctx.moveTo(p.x + p.w / 2, p.y);
+  ctx.lineTo(p.x + p.w, p.y + p.h / 2);
+  ctx.lineTo(p.x + p.w / 2, p.y + p.h);
+  ctx.lineTo(p.x, p.y + p.h / 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Inner
+  ctx.fillStyle = '#0a0a1a';
+  ctx.beginPath();
+  ctx.moveTo(p.x + p.w / 2, p.y + 8);
+  ctx.lineTo(p.x + p.w - 8, p.y + p.h / 2);
+  ctx.lineTo(p.x + p.w / 2, p.y + p.h - 8);
+  ctx.lineTo(p.x + 8, p.y + p.h / 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Snail icon (simple)
+  ctx.fillStyle = '#f0f';
+  ctx.font = 'bold 14px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('S', p.x + p.w / 2, p.y + p.h / 2);
+
+  ctx.restore();
+}
+
+// ── Draw Prompt ──
+function drawPrompt(p) {
+  ctx.save();
+  ctx.font = `bold ${p.fontSize}px Courier New`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  if (p.isBad) {
+    ctx.shadowColor = '#f00';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = `rgba(255,50,50,${p.alpha})`;
+  } else {
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = `rgba(0,255,255,${p.alpha})`;
+  }
+  ctx.fillText(p.text, p.x, p.y);
+  ctx.restore();
+}
+
+// ── Draw Particles ──
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── Draw Background ──
+function drawBackground() {
+  // Grid
+  ctx.strokeStyle = 'rgba(0,255,255,0.05)';
+  ctx.lineWidth = 1;
+  const gridSize = 40;
+  for (let x = 0; x < canvas.width; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
+  }
+  for (let y = 0; y < canvas.height; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+
+  // Film grain effect
+  ctx.fillStyle = 'rgba(255,255,255,0.01)';
+  for (let i = 0; i < 50; i++) {
+    const gx = Math.random() * canvas.width;
+    const gy = Math.random() * canvas.height;
+    ctx.fillRect(gx, gy, 1, 1);
+  }
+}
+
+// ── Update ──
+function update() {
+  // Player movement
+  if (keys['ArrowLeft'] || keys['a']) player.x -= player.speed;
+  if (keys['ArrowRight'] || keys['d']) player.x += player.speed;
+
+  // Touch control
+  if (touchX !== null) {
+    const diff = touchX - (player.x + player.w / 2);
+    if (Math.abs(diff) > 5) {
+      player.x += Math.sign(diff) * Math.min(Math.abs(diff) * 0.15, player.speed);
+    }
+  }
+
+  // Clamp player
+  player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+
+  // Trail
+  player.trail.push({ x: player.x + player.w / 2, y: player.y + player.h / 2, life: 1 });
+  if (player.trail.length > 15) player.trail.shift();
+  for (const t of player.trail) t.life -= 0.07;
+  player.trail = player.trail.filter(t => t.life > 0);
+
+  // Spawn prompts
+  spawnTimer++;
+  if (spawnTimer >= spawnInterval) {
+    spawnTimer = 0;
+    prompts.push(createPrompt());
+  }
+
+  // Update prompts
+  for (const p of prompts) {
+    p.y += p.speed;
+  }
+
+  // Collision check
+  for (let i = prompts.length - 1; i >= 0; i--) {
+    const p = prompts[i];
+    if (collides(player, p)) {
+      if (p.isBad) {
+        lives--;
+        spawnParticles(p.x + 40, p.y + 10, '#f00', 15);
+        document.getElementById('livesVal').textContent = lives;
+        if (lives <= 0) {
+          gameOver();
+          return;
+        }
+      } else {
+        score += 10 * level;
+        spawnParticles(p.x + 40, p.y + 10, '#0ff', 10);
+        document.getElementById('scoreVal').textContent = score;
+      }
+      prompts.splice(i, 1);
+    } else if (p.y > canvas.height + 30) {
+      prompts.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+  }
+  particles = particles.filter(p => p.life > 0);
+
+  // Difficulty scaling
+  difficultyTimer++;
+  if (difficultyTimer >= 600) { // every ~10 seconds
+    difficultyTimer = 0;
+    level++;
+    speedMultiplier += 0.1;
+    spawnInterval = Math.max(15, spawnInterval - 3);
+    document.getElementById('levelVal').textContent = level;
+  }
+}
+
+// ── Render ──
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  for (const p of prompts) drawPrompt(p);
+  drawParticles();
+  drawPlayer(player);
+
+  // Scanline effect
+  ctx.fillStyle = 'rgba(0,0,0,0.03)';
+  for (let y = 0; y < canvas.height; y += 3) {
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+}
+
+// ── Game Loop ──
+function gameLoop() {
+  if (!gameRunning) return;
+  update();
+  if (gameRunning) render();
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+// ── Start Game ──
+function startGame() {
+  player = createPlayer();
+  prompts = [];
+  particles = [];
+  score = 0;
+  lives = 3;
+  level = 1;
+  speedMultiplier = 1;
+  spawnTimer = 0;
+  spawnInterval = 40;
+  difficultyTimer = 0;
+  gameRunning = true;
+
+  document.getElementById('scoreVal').textContent = '0';
+  document.getElementById('livesVal').textContent = '3';
+  document.getElementById('levelVal').textContent = '1';
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('gameOver').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+
+  gameLoop();
+}
+
+// ── Game Over ──
+function gameOver() {
+  gameRunning = false;
+  cancelAnimationFrame(animFrame);
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('pd_highscore', highScore);
+  }
+
+  document.getElementById('finalScore').textContent = score;
+  document.getElementById('gameOver').style.display = 'flex';
+  document.getElementById('hud').style.display = 'none';
+}
+
+// ── Event Listeners ──
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// Also allow Enter/Space to start
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && !gameRunning) {
+    e.preventDefault();
+    startGame();
+  }
+});
+
+// Initial render
+render();
+</script>
+</body>
+</html>
