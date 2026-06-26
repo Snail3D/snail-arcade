@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Filament Flow — 3D Printing Puzzle</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'Courier New',monospace;color:#fff;touch-action:none}
+  #stage{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  #gameWrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px}
+  #hud{display:flex;justify-content:space-between;align-items:center;width:100%;max-width:500px;padding:8px 14px;background:rgba(8,12,20,.85);border:1px solid #00f0ff;border-radius:8px;box-shadow:0 0 18px rgba(0,240,255,.35)}
+  #hud .title{font-size:14px;color:#00f0ff;letter-spacing:2px;text-shadow:0 0 8px #00f0ff}
+  #hud .stats{display:flex;gap:14px;font-size:13px}
+  #hud .stats span{color:#ff2e88;text-shadow:0 0 6px #ff2e88}
+  #canvas{display:block;background:#0d1117;border:2px solid #00f0ff;border-radius:10px;box-shadow:0 0 24px rgba(0,240,255,.5),inset 0 0 30px rgba(255,46,136,.15);touch-action:none;cursor:pointer}
+  #controls{display:flex;gap:10px;margin-top:4px}
+  button{background:rgba(0,240,255,.12);color:#00f0ff;border:1px solid #00f0ff;padding:8px 16px;font-family:inherit;font-size:12px;letter-spacing:1.5px;border-radius:6px;cursor:pointer;transition:all .15s}
+  button:hover{background:rgba(0,240,255,.25);box-shadow:0 0 12px rgba(0,240,255,.5)}
+  button:active{transform:scale(.95)}
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,8,16,.92);z-index:20;padding:20px;text-align:center;border-radius:10px}
+  #overlay.hidden{display:none}
+  #overlay h1{font-size:28px;color:#00f0ff;text-shadow:0 0 16px #00f0ff;margin-bottom:6px;letter-spacing:3px}
+  #overlay h2{font-size:16px;color:#ff2e88;text-shadow:0 0 10px #ff2e88;margin-bottom:18px;letter-spacing:2px;font-weight:normal}
+  #overlay p{font-size:12px;line-height:1.6;max-width:380px;color:#aac;margin-bottom:18px}
+  #overlay .keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:11px;color:#88c;margin-bottom:18px;text-align:left}
+  #overlay .keys b{color:#00f0ff}
+  #winMsg{position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);color:#0f0;font-size:20px;text-shadow:0 0 14px #0f0;background:rgba(0,0,0,.75);padding:14px 22px;border:2px solid #0f0;border-radius:8px;z-index:15;pointer-events:none;opacity:0;transition:opacity .35s}
+  #winMsg.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="stage">
+<div id="gameWrap">
+  <div id="hud">
+    <div class="title">FILAMENT FLOW</div>
+    <div class="stats">
+      <div>LVL <span id="hudLevel">1</span></div>
+      <div>PATH <span id="hudPct">0%</span></div>
+    </div>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="controls">
+    <button id="btnReset">RESET</button>
+    <button id="btnNext">NEXT ▶</button>
+  </div>
+  <div id="winMsg">PUZZLE COMPLETE!</div>
+  <div id="overlay">
+    <h1>FILAMENT FLOW</h1>
+    <h2>// 3D Print Path Puzzle //</h2>
+    <p>Route the colored filament lines to connect matching endpoints. <b>No crossing paths!</b> Fill the entire grid to complete the print.</p>
+    <div class="keys">
+      <b>DESKTOP</b><div>Click &amp; drag between matching colored dots</div>
+      <b>MOBILE</b><div>Touch &amp; drag on the grid</div>
+      <b>UNDO</b><div>Drag back over your own line, or hit RESET</div>
+    </div>
+    <button id="btnStart">▶ START PRINT</button>
+  </div>
+</div>
+</div>
+
+<script>
+(()=>{
+  // ---------- Audio ----------
+  let audioCtx=null;
+  function ensureAudio(){
+    if(audioCtx) return;
+    try{audioCtx=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  }
+  function blip(freq,dur=.08,type='sine',vol=.18){
+    if(!audioCtx)return;
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type=type;o.frequency.value=freq;
+    g.gain.value=vol;g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }
+  function chord(){
+    if(!audioCtx)return;
+    [440,660,880].forEach((f,i)=>setTimeout(()=>blip(f,.12,'triangle',.14),i*60));
+  }
+
+  // ---------- Colors (filament types) ----------
+  const FILAMENTS=[
+    {name:'cyan',   color:'#00f0ff', glow:'rgba(0,240,255,.55)'},
+    {name:'magenta',color:'#ff2e88', glow:'rgba(255,46,136,.55)'},
+    {name:'lime',   color:'#9eff3c', glow:'rgba(158,255,60,.55)'},
+    {name:'amber',  color:'#ffb02e', glow:'rgba(255,176,46,.55)'},
+    {name:'violet', color:'#b76bff', glow:'rgba(183,107,255,.55)'},
+    {name:'coral',  color:'#ff5a4d', glow:'rgba(255,90,77,.55)'}
+  ];
+
+  // ---------- Canvas setup ----------
+  const cvs=document.getElementById('canvas');
+  const ctx=cvs.getContext('2d');
+  let DPR=Math.min(window.devicePixelRatio||1,2);
+  let gridSize=8;
+  let cell=0;
+  let originX=0,originY=0;
+  function resizeCanvas(){
+    const isMobile=window.innerWidth<600;
+    const maxW=Math.min(window.innerWidth-32,500);
+    const maxH=Math.min(window.innerHeight-220,560);
+    gridSize=isMobile?6:8;
+    const size=Math.min(maxW,maxH,isMobile?340:500);
+    cvs.style.width=size+'px';
+    cvs.style.height=size+'px';
+    cvs.width=Math.round(size*DPR);
+    cvs.height=Math.round(size*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    cell=size/gridSize;
+    originX=0;originY=0;
+  }
+
+  // ---------- Puzzle generation ----------
+  // We build paths from pairs of endpoints. Each cell is owned by exactly one color.
+  // Strategy: place N color pairs on random edge cells. For each pair, generate a
+  // random simple path from A to B filling cells not yet owned. If conflict, retry.
+  function randInt(n){return Math.floor(Math.random()*n)}
+  function shuffle(a){for(let i=a.length-1;i>0;i--){const j=randInt(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+
+  function generateLevel(size,numColors){
+    const total=size*size;
+    // pick number of colors 3..numColors based on size
+    const N=Math.min(numColors, Math.max(3, Math.floor(total/12)));
+    for(let attempt=0; attempt<200; attempt++){
+      const result=tryGenerate(size,N);
+      if(result) return result;
+    }
+    // fallback: a guaranteed-solvable simple layout
+    return fallbackGenerate(size,N);
+  }
+
+  function tryGenerate(size,N){
+    const total=size*size;
+    const edgeCells=[];
+    for(let x=0;x<size;x++){edgeCells.push([x,0]);edgeCells.push([x,size-1])}
+    for(let y=1;y<size-1;y++){edgeCells.push([0,y]);edgeCells.push([size-1,y])}
+    shuffle(edgeCells);
+    const colorsUsed=FILAMENTS.slice(0,N);
+    const endpoints=[];
+    for(let i=0;i<N;i++){
+      endpoints.push({pos:edgeCells[i*2], color:colorsUsed[i]});
+      endpoints.push({pos:edgeCells[i*2+1], color:colorsUsed[i]});
+    }
+    const owned=new Map(); // "x,y" -> colorIndex
+    const occupied=new Set(); // "x,y"
+    const paths=[]; // [{color, cells:[[x,y],...]}]
+
+    // Sort pairs so longer distances try first (harder)
+    const pairs=[];
+    for(let i=0;i<N;i++){
+      pairs.push({a:endpoints[i*2].pos, b:endpoints[i*2+1].pos, ci:i});
+    }
+    pairs.sort((p,q)=>dist(q.a,q.b)-dist(p.a,q.b));
+
+    for(const pair of pairs){
+      const path=bfsPath(pair.a,pair.b,occupied,size);
+      if(!path) return null;
+      for(const [x,y] of path){
+        if(owned.has(x+','+y) && owned.get(x+','+y)!==pair.ci) return null; // crossing
+      }
+      for(const [x,y] of path){
+        occupied.add(x+','+y);
+        owned.set(x+','+y,pair.ci);
+      }
+      paths.push({color:colorsUsed[pair.ci], ci:pair.ci, cells:path});
+    }
+    // If we didn't fill grid enough, try filling gaps with extensions
+    return {size, paths, owned, total};
+  }
+
+  function dist(a,b){return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])}
+
+  function bfsPath(start,goal,blocked,size){
+    // BFS shortest path on grid avoiding blocked cells
+    const key=p=>p[0]+','+p[1];
+    if(blocked.has(key(start))||blocked.has(key(goal))) return null;
+    const queue=[[start]];
+    const visited=new Set([key(start)]);
+    while(queue.length){
+      const path=queue.shift();
+      const [x,y]=path[path.length-1];
+      if(x===goal[0]&&y===goal[1]) return path;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=size||ny>=size) continue;
+        const nk=nx+','+ny;
+        if(visited.has(nk)) continue;
+        if(nk!==key(goal) && blocked.has(nk)) continue;
+        visited.add(nk);
+        queue.push([...path,[nx,ny]]);
+      }
+    }
+    return null;
+  }
+
+  function fallbackGenerate(size,N){
+    // Spiral pre-fill, guaranteed no crossing
+    const colors=FILAMENTS.slice(0,N);
+    const paths=[];
+    const owned=new Map();
+    const used=new Set();
+    let ci=0;
+    // Create snake-like paths that wrap around
+    let x=0,y=0,dx=1,dy=0;
+    const segments=[];
+    let len=size;
+    while(segments.flat().length<size*size){
+      segments.push(Array.from({length:len},(_,i)=>[x+i*dx,y+i*dy]));
+      x+= (len-1)*dx + dy; // wrong but we'll just iterate
+      break; // not used
+    }
+    // simple fallback: spiral from outside in
+    const spiral=[];
+    let top=0,bot=size-1,left=0,right=size-1;
+    while(top<=bot&&left<=right){
+      for(let x=left;x<=right;x++) spiral.push([x,top]);
+      top++;
+      for(let y=top;y<=bot;y++) spiral.push([y,right]);
+      right--;
+      if(top<=bot){for(let x=right;x>=left;x--) spiral.push([x,bot]);bot--}
+      if(left<=right){for(let y=bot;y>=top;y--) spiral.push([y,left]);left++}
+    }
+    // Split spiral into N segments alternating direction to connect endpoints
+    const chunks=[];
+    const chunkSize=Math.ceil(spiral.length/N);
+    for(let i=0;i<N;i++){
+      const seg=spiral.slice(i*chunkSize, (i+1)*chunkSize);
+      if(seg.length<2) continue;
+      chunks.push(seg);
+    }
+    for(let i=0;i<chunks.length;i++){
+      const c=colors[i%colors.length];
+      for(const p of chunks[i]){
+        owned.set(p[0]+','+p[1],i);
+        used.add(p[0]+','+p[1]);
+      }
+      paths.push({color:c, ci:i, cells:chunks[i]});
+    }
+    return {size, paths, owned, total:size*size};
+  }
+
+  // ---------- State ----------
+  let level=1;
+  let puzzle=null;
+  let drawnPaths=[]; // user-drawn paths: [{ci, cells:[[x,y],...]}]
+  let drawing=null;  // {ci, cells:[...]}
+  let dragCell=null;
+  let animFrame=null;
+  let pulse=0;
+
+  function startLevel(){
+    const numColors=Math.min(6, 3+Math.floor((level-1)/3));
+    puzzle=generateLevel(gridSize, numColors);
+    drawnPaths=[];
+    drawing=null;
+    document.getElementById('hudLevel').textContent=level;
+    updateHud();
+  }
+
+  function updateHud(){
+    const filled=new Set();
+    for(const p of drawnPaths) for(const c of p.cells) filled.add(c[0]+','+c[1]);
+    let pct=puzzle?Math.round(filled.size/puzzle.total*100):0;
+    if(pct>100)pct=100;
+    document.getElementById('hudPct').textContent=pct+'%';
+  }
+
+  function checkWin(){
+    if(!puzzle) return false;
+    const filled=new Set();
+    for(const p of drawnPaths) for(const c of p.cells) filled.add(c[0]+','+c[1]);
+    if(filled.size<puzzle.total) return false;
+    // No crossing check
+    const owners=new Map();
+    for(const p of drawnPaths){
+      for(const c of p.cells){
+        const k=c[0]+','+c[1];
+        if(owners.has(k) && owners.get(k)!==p.ci) return false;
+        owners.set(k,p.ci);
+      }
+    }
+    return true;
+  }
+
+  // ---------- Rendering ----------
+  function render(){
+    const size=parseFloat(cvs.style.width);
+    ctx.clearRect(0,0,size,size);
+    pulse=(pulse+.04)%(Math.PI*2);
+
+    // background grid
+    ctx.strokeStyle='rgba(0,240,255,.08)';
+    ctx.lineWidth=1;
+    for(let i=0;i<=gridSize;i++){
+      ctx.beginPath();
+      ctx.moveTo(i*cell,0);ctx.lineTo(i*cell,gridSize*cell);ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0,i*cell);ctx.lineTo(gridSize*cell,i*cell);ctx.stroke();
+    }
+
+    // solved preview (faint)
+    if(puzzle){
+      ctx.save();
+      ctx.globalAlpha=.13;
+      for(const path of puzzle.paths){
+        ctx.strokeStyle=path.color.color;
+        ctx.lineWidth=cell*.45;
+        ctx.lineCap='round';
+        ctx.lineJoin='round';
+        ctx.beginPath();
+        for(let i=0;i<path.cells.length;i++){
+          const [x,y]=path.cells[i];
+          const px=x*cell+cell/2, py=y*cell+cell/2;
+          if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // endpoint markers
+      for(const path of puzzle.paths){
+        const [ax,ay]=path.cells[0];
+        const [bx,by]=path.cells[path.cells.length-1];
+        drawEndpoint(ax,ay,path.color);
+        drawEndpoint(bx,by,path.color);
+      }
+    }
+
+    // drawn paths
+    for(const path of drawnPaths){
+      drawPathLine(path.cells, path.ci, 1, false);
+    }
+
+    // active drawing
+    if(drawing){
+      drawPathLine(drawing.cells, drawing.ci, 1, true);
+    }
+
+    // animated filament spool icon overlay (corner)
+    drawSpool(size-30, size-30, 14);
+  }
+
+  function drawPathLine(cells, ci, alpha, animated){
+    if(!cells||cells.length<1) return;
+    const color=FILAMENTS[ci % FILAMENTS.length];
+    ctx.save();
+    ctx.strokeStyle=color.color;
+    ctx.shadowColor=color.glow;
+    ctx.shadowBlur=14;
+    ctx.lineWidth=cell*.5;
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.globalAlpha=alpha;
+    if(animated){
+      ctx.lineDashOffset=-pulse*20;
+      ctx.setLineDash([cell*.4, cell*.15]);
+    }
+    ctx.beginPath();
+    for(let i=0;i<cells.length;i++){
+      const [x,y]=cells[i];
+      const px=x*cell+cell/2, py=y*cell+cell/2;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  function drawEndpoint(x,y,color){
+    const px=x*cell+cell/2, py=y*cell+cell/2;
+    const r=cell*.32;
+    ctx.save();
+    ctx.shadowColor=color.glow;
+    ctx.shadowBlur=12;
+    ctx.fillStyle=color.color;
+    ctx.beginPath();
+    ctx.arc(px,py,r,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle='#0a0a0f';
+    ctx.beginPath();
+    ctx.arc(px,py,r*.4,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSpool(x,y,r){
+    const t=pulse;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.strokeStyle='#00f0ff';
+    ctx.lineWidth=1.5;
+    ctx.shadowColor='rgba(0,240,255,.7)';
+    ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.arc(0,0,r,0,Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0,0,r*.5,0,Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r,0);ctx.lineTo(r,0);
+    ctx.moveTo(0,-r);ctx.lineTo(0,r);
+    ctx.stroke();
+    // rotating tick
+    const a=t*1.5;
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(a)*r*.7, Math.sin(a)*r*.7);
+    ctx.strokeStyle='#ff2e88';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- Input handling ----------
+  function cellAt(clientX, clientY){
+    const rect=cvs.getBoundingClientRect();
+    const x=clientX-rect.left;
+    const y=clientY-rect.top;
+    if(x<0||y<0||x>=rect.width||y>=rect.height) return null;
+    return [Math.floor(x/cell), Math.floor(y/cell)];
+  }
+
+  function endpointAt(x,y){
+    if(!puzzle) return null;
+    for(let i=0;i<puzzle.paths.length;i++){
+      const p=puzzle.paths[i];
+      const a=p.cells[0], b=p.cells[p.cells.length-1];
+      if((a[0]===x&&a[1]===y)||(b[0]===x&&b[1]===y)){
+        return {ci:i, color:p.color};
+      }
+    }
+    return null;
+  }
+
+  function startDraw(x,y){
+    ensureAudio();
+    const ep=endpointAt(x,y);
+    if(!ep) return;
+    // remove any existing drawn path of same color
+    drawnPaths=drawnPaths.filter(p=>p.ci!==ep.ci);
+    drawing={ci:ep.ci, color:ep.color, cells:[[x,y]]};
+    blip(520,.06,'square',.14);
+  }
+
+  function continueDraw(x,y){
+    if(!drawing) return;
+    const cells=drawing.cells;
+    const last=cells[cells.length-1];
+    if(last[0]===x&&last[1]===y) return;
+    // adjacent?
+    const dx=Math.abs(last[0]-x), dy=Math.abs(last[1]-y);
+    if(dx+dy!==1) return; // only orth adjacent
+    // check ownership conflict
+    const key=x+','+y;
+    const occupiedByOther=drawnPaths.some(p=>p.ci!==drawing.ci && p.cells.some(c=>c[0]===x&&c[1]===y));
+    if(occupiedByOther){
+      blip(180,.1,'sawtooth',.16);
+      return;
+    }
+    // undo: if cell is part of our current path (not the head), truncate
+    const existingIdx=cells.findIndex(c=>c[0]===x&&c[1]===y);
+    if(existingIdx>=0){
+      cells.length=existingIdx+1;
+      blip(340,.04,'sine',.1);
+      return;
+    }
+    cells.push([x,y]);
+    blip(640+cells.length*30,.04,'sine',.1);
+
+    // reached the other endpoint?
+    const ep=endpointAt(x,y);
+    if(ep && ep.ci===drawing.ci){
+      // commit
+      drawnPaths.push({ci:drawing.ci, color:drawing.color, cells:[...cells]});
+      drawing=null;
+      chord();
+      updateHud();
+      if(checkWin()){
+        document.getElementById('winMsg').classList.add('show');
+        setTimeout(()=>{
+          document.getElementById('winMsg').classList.remove('show');
+          level++;
+          startLevel();
+        }, 1400);
+      }
+      return;
+    }
+    updateHud();
+  }
+
+  function endDraw(){
+    if(!drawing) return;
+    // didn't reach other endpoint — abandon partial
+    drawing=null;
+  }
+
+  // Mouse
+  cvs.addEventListener('mousedown', e=>{
+    e.preventDefault();
+    const c=cellAt(e.clientX,e.clientY); if(!c) return;
+    startDraw(c[0],c[1]);
+  });
+  cvs.addEventListener('mousemove', e=>{
+    if(!drawing) return;
+    const c=cellAt(e.clientX,e.clientY); if(!c) return;
+    continueDraw(c[0],c[1]);
+  });
+  window.addEventListener('mouseup', endDraw);
+
+  // Touch
+  cvs.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    if(e.touches.length===0) return;
+    const t=e.touches[0];
+    const c=cellAt(t.clientX,t.clientY); if(!c) return;
+    startDraw(c[0],c[1]);
+  },{passive:false});
+  cvs.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    if(!drawing) return;
+    const t=e.touches[0];
+    const c=cellAt(t.clientX,t.clientY); if(!c) return;
+    continueDraw(c[0],c[1]);
+  },{passive:false});
+  cvs.addEventListener('touchend', e=>{e.preventDefault();endDraw()},{passive:false});
+  cvs.addEventListener('touchcancel', endDraw);
+
+  // ---------- UI ----------
+  document.getElementById('btnStart').addEventListener('click', ()=>{
+    ensureAudio();
+    const overlay=document.getElementById('overlay');
+    overlay.style.display='none';
+    overlay.classList.remove('hidden');
+    if(!puzzle) startLevel();
+  });
+  document.getElementById('btnReset').addEventListener('click', ()=>{
+    drawnPaths=[];
+    drawing=null;
+    updateHud();
+    blip(220,.08,'sawtooth',.12);
+  });
+  document.getElementById('btnNext').addEventListener('click', ()=>{
+    level++;
+    startLevel();
+    blip(880,.1,'triangle',.14);
+  });
+
+  // ---------- Resize ----------
+  window.addEventListener('resize', ()=>{
+    resizeCanvas();
+    render();
+  });
+
+  // ---------- Init ----------
+  resizeCanvas();
+  startLevel();
+  function loop(){render();animFrame=requestAnimationFrame(loop)}
+  loop();
+
+  // expose for debugging
+  window._ff={startLevel, getPuzzle:()=>puzzle, getDrawn:()=>drawnPaths};
+})();
+</script>
+</body>
+</html>
