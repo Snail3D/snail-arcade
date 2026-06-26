@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Print & Sprint — Snail Arcade</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  background: #0a0a12;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.92);
+  z-index: 10;
+  pointer-events: auto;
+}
+#overlay.hidden { display: none; }
+#overlay h1 {
+  font-size: clamp(28px, 6vw, 56px);
+  color: #00f0ff;
+  text-shadow: 0 0 20px #00f0ff88, 0 0 40px #00f0ff44;
+  margin-bottom: 8px;
+  letter-spacing: 4px;
+}
+#overlay .subtitle {
+  font-size: clamp(12px, 2.5vw, 18px);
+  color: #ff00aa;
+  text-shadow: 0 0 10px #ff00aa88;
+  margin-bottom: 30px;
+}
+#overlay .info {
+  font-size: clamp(11px, 2vw, 14px);
+  color: #8888aa;
+  margin-bottom: 20px;
+  text-align: center;
+  line-height: 1.6;
+}
+#startBtn {
+  padding: 14px 48px;
+  font-size: clamp(16px, 3vw, 22px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #00f0ff;
+  border: 2px solid #00f0ff;
+  cursor: pointer;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  pointer-events: auto;
+  transition: all 0.2s;
+}
+#startBtn:hover, #startBtn:active {
+  background: #00f0ff22;
+  box-shadow: 0 0 20px #00f0ff44;
+}
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between;
+  padding: 10px 16px;
+  z-index: 5;
+  pointer-events: none;
+}
+#hud span {
+  font-size: clamp(13px, 2.5vw, 18px);
+  color: #00f0ff;
+  text-shadow: 0 0 8px #00f0ff88;
+}
+#gameOver {
+  position: fixed; inset: 0;
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.9);
+  z-index: 20;
+  pointer-events: auto;
+}
+#gameOver h2 {
+  font-size: clamp(24px, 5vw, 48px);
+  color: #ff00aa;
+  text-shadow: 0 0 20px #ff00aa88;
+  margin-bottom: 10px;
+}
+#gameOver .final-score {
+  font-size: clamp(16px, 3vw, 28px);
+  color: #00f0ff;
+  margin-bottom: 24px;
+}
+#restartBtn {
+  padding: 12px 40px;
+  font-size: clamp(14px, 2.5vw, 20px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #ff00aa;
+  border: 2px solid #ff00aa;
+  cursor: pointer;
+  letter-spacing: 2px;
+  pointer-events: auto;
+}
+#restartBtn:hover, #restartBtn:active {
+  background: #ff00aa22;
+  box-shadow: 0 0 20px #ff00aa44;
+}
+#touchControls {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: 40%;
+  z-index: 4;
+  display: none;
+  pointer-events: auto;
+}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay">
+  <h1>PRINT & SPRINT</h1>
+  <div class="subtitle">🐌 A SNAIL ON THE BUILD PLATE 🖨️</div>
+  <div class="info">
+    SPACE / TAP — Jump &nbsp;|&nbsp; ↓ / SWIPE DOWN — Slide<br>
+    Dodge obstacles. Collect filament. Survive the print.
+  </div>
+  <button id="startBtn">START PRINT</button>
+</div>
+
+<div id="hud">
+  <span id="hudScore">SCORE: 0</span>
+  <span id="hudLayer">LAYER 1</span>
+  <span id="hudSpeed">SPEED: 1x</span>
+</div>
+
+<div id="gameOver">
+  <h2>PRINT FAILED</h2>
+  <div class="final-score" id="finalScore">SCORE: 0</div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<div id="touchControls"></div>
+
+<script>
+// ─── CANVAS SETUP ───
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const gameOverScreen = document.getElementById('gameOver');
+const hudScore = document.getElementById('hudScore');
+const hudLayer = document.getElementById('hudLayer');
+const hudSpeed = document.getElementById('hudSpeed');
+const finalScore = document.getElementById('finalScore');
+
+let W, H, scale;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  scale = Math.min(W, H) / 800;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── AUDIO ENGINE ───
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, dur, type='square', vol=0.08) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+function sfxJump() { playTone(440, 0.15, 'square', 0.06); playTone(660, 0.1, 'square', 0.04); }
+function sfxCollect() { playTone(880, 0.1, 'sine', 0.06); playTone(1100, 0.15, 'sine', 0.05); }
+function sfxDie() { playTone(200, 0.4, 'sawtooth', 0.1); playTone(100, 0.5, 'sawtooth', 0.08); }
+function sfxSlide() { playTone(150, 0.2, 'triangle', 0.05); }
+
+// ─── GAME STATE ───
+let gameRunning = false;
+let score = 0;
+let layer = 1;
+let speed = 3;
+let frameCount = 0;
+let particles = [];
+let obstacles = [];
+let collectibles = [];
+let bgElements = [];
+let shakeTimer = 0;
+let shakeIntensity = 0;
+
+// ─── SNAIL PLAYER ───
+const snail = {
+  x: 120,
+  y: 0,
+  w: 48,
+  h: 40,
+  vy: 0,
+  grounded: true,
+  sliding: false,
+  slideTimer: 0,
+  jumpHeld: false,
+  animFrame: 0,
+  animTimer: 0,
+  trail: [],
+  get groundY() { return H * 0.72; },
+  get drawH() { return this.sliding ? this.h * 0.5 : this.h; },
+  get drawY() { return this.sliding ? this.groundY - this.h * 0.5 + 4 : this.y - this.h; },
+};
+
+function resetSnail() {
+  snail.y = snail.groundY;
+  snail.vy = 0;
+  snail.grounded = true;
+  snail.sliding = false;
+  snail.slideTimer = 0;
+  snail.trail = [];
+}
+
+// ─── OBSTACLE TYPES ───
+const OBSTACLE_TYPES = [
+  { name: 'support', w: 30, h: 60, color: '#ff4444', yOff: 0 },       // tall pillar — must slide under
+  { name: 'blob', w: 50, h: 30, color: '#ff8800', yOff: 0 },           // low blob — must jump over
+  { name: 'stringing', w: 80, h: 20, color: '#ff00aa', yOff: -50 },    // hanging thread — must slide under
+  { name: 'debris', w: 35, h: 35, color: '#ffaa00', yOff: 0 },         // medium debris — jump or slide
+];
+
+// ─── PARTICLE SYSTEM ───
+function spawnParticles(x, y, color, count, spread, life) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * spread,
+      vy: (Math.random() - 1) * spread * 0.7,
+      life: life || 30 + Math.random() * 20,
+      maxLife: life || 30 + Math.random() * 20,
+      color,
+      size: 2 + Math.random() * 3,
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ─── BACKGROUND ───
+function initBg() {
+  bgElements = [];
+  for (let i = 0; i < 20; i++) {
+    bgElements.push({
+      x: Math.random() * W * 2,
+      y: Math.random() * H * 0.7,
+      size: 1 + Math.random() * 2,
+      speed: 0.2 + Math.random() * 0.5,
+      alpha: 0.1 + Math.random() * 0.3,
+    });
+  }
+}
+
+function drawBackground() {
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a1a');
+  grad.addColorStop(0.6, '#0f0f20');
+  grad.addColorStop(1, '#151528');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines (build plate pattern)
+  ctx.strokeStyle = '#1a1a3a';
+  ctx.lineWidth = 1;
+  const gridSize = 40 * scale;
+  const offsetX = -(frameCount * speed * 0.3) % gridSize;
+  for (let x = offsetX; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, H * 0.6);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = H * 0.6; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Floating particles
+  for (const p of bgElements) {
+    p.x -= p.speed * speed * 0.5;
+    if (p.x < -10) p.x = W + 10;
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillRect(p.x, p.y, p.size * scale, p.size * scale);
+  }
+  ctx.globalAlpha = 1;
+
+  // Build plate surface
+  const plateY = H * 0.72;
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, plateY, W, H - plateY);
+  ctx.strokeStyle = '#00f0ff33';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, plateY);
+  ctx.lineTo(W, plateY);
+  ctx.stroke();
+
+  // Layer lines on plate
+  const layerOffset = (frameCount * speed * 0.5) % (20 * scale);
+  ctx.strokeStyle = '#00f0ff11';
+  ctx.lineWidth = 1;
+  for (let x = -layerOffset; x < W; x += 20 * scale) {
+    ctx.beginPath();
+    ctx.moveTo(x, plateY);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+}
+
+// ─── DRAW SNAIL ───
+function drawSnail() {
+  const sx = snail.x;
+  const sy = snail.drawY;
+  const sw = snail.w * scale;
+  const sh = snail.drawH * scale;
+
+  // Shell trail
+  if (snail.grounded && frameCount % 3 === 0) {
+    snail.trail.push({ x: sx, y: sy + sh, alpha: 0.4 });
+    if (snail.trail.length > 20) snail.trail.shift();
+  }
+  for (let i = 0; i < snail.trail.length; i++) {
+    const t = snail.trail[i];
+    t.alpha -= 0.015;
+    if (t.alpha > 0) {
+      ctx.globalAlpha = t.alpha;
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(t.x - 2, t.y - 1, 4, 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Trail cleanup
+  snail.trail = snail.trail.filter(t => t.alpha > 0);
+
+  // Body
+  ctx.fillStyle = '#00cc88';
+  const bodyY = sy + sh * 0.3;
+  const bodyH = sh * 0.4;
+  const bodyW = sw * 0.8;
+  ctx.beginPath();
+  ctx.ellipse(sx + sw * 0.3, bodyY + bodyH / 2, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shell (spiral)
+  const shellX = sx + sw * 0.1;
+  const shellY = bodyY - sh * 0.1;
+  const shellR = sw * 0.35;
+  ctx.fillStyle = '#00f0ff';
+  ctx.beginPath();
+  ctx.arc(shellX, shellY, shellR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shell spiral pattern
+  ctx.strokeStyle = '#0a0a12';
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI * 4; a += 0.1) {
+    const r = shellR * 0.15 + a * shellR * 0.08;
+    const px = shellX + Math.cos(a + frameCount * 0.02) * r;
+    const py = shellY + Math.sin(a + frameCount * 0.02) * r;
+    if (a === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Shell glow
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 10 * scale;
+  ctx.fillStyle = '#00f0ff44';
+  ctx.beginPath();
+  ctx.arc(shellX, shellY, shellR + 2 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Eyes / antennae
+  const eyeX = sx + sw * 0.6;
+  const eyeY = bodyY - sh * 0.15;
+  ctx.strokeStyle = '#00cc88';
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.moveTo(eyeX, bodyY);
+  ctx.lineTo(eyeX + sw * 0.1, eyeY - sh * 0.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(eyeX + sw * 0.05, bodyY);
+  ctx.lineTo(eyeX + sw * 0.15, eyeY - sh * 0.15);
+  ctx.stroke();
+
+  // Eye dots
+  ctx.fillStyle = '#ff00aa';
+  ctx.beginPath();
+  ctx.arc(eyeX + sw * 0.12, eyeY - sh * 0.22, 2.5 * scale, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(eyeX + sw * 0.17, eyeY - sh * 0.17, 2 * scale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Sliding effect
+  if (snail.sliding) {
+    ctx.fillStyle = '#00f0ff33';
+    ctx.fillRect(sx - 5, sy + sh - 5 * scale, sw + 10, 5 * scale);
+  }
+}
+
+// ─── OBSTACLES ───
+function spawnObstacle() {
+  const type = OBSTACLE_TYPES[Math.floor(Math.random() * OBSTACLE_TYPES.length)];
+  const groundY = H * 0.72;
+  const obsY = type.yOff !== 0 ? groundY + type.yOff * scale : groundY - type.h * scale;
+
+  obstacles.push({
+    x: W + 50,
+    y: obsY,
+    w: type.w * scale,
+    h: type.h * scale,
+    color: type.color,
+    type: type.name,
+    passed: false,
+  });
+}
+
+function drawObstacle(obs) {
+  ctx.fillStyle = obs.color;
+  ctx.shadowColor = obs.color;
+  ctx.shadowBlur = 8 * scale;
+
+  if (obs.type === 'support') {
+    // Tall pillar with grid pattern
+    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+    ctx.strokeStyle = '#00000066';
+    ctx.lineWidth = 1;
+    for (let y = obs.y; y < obs.y + obs.h; y += 8 * scale) {
+      ctx.beginPath();
+      ctx.moveTo(obs.x, y);
+      ctx.lineTo(obs.x + obs.w, y);
+      ctx.stroke();
+    }
+  } else if (obs.type === 'blob') {
+    // Rounded blob
+    ctx.beginPath();
+    ctx.ellipse(obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w / 2, obs.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (obs.type === 'stringing') {
+    // Hanging thread
+    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+    // Drip lines
+    ctx.strokeStyle = obs.color;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const dx = obs.x + (obs.w / 4) * (i + 0.5);
+      ctx.beginPath();
+      ctx.moveTo(dx, obs.y + obs.h);
+      ctx.lineTo(dx + (Math.random() - 0.5) * 10, obs.y + obs.h + 15 * scale);
+      ctx.stroke();
+    }
+  } else {
+    // Debris — irregular shape
+    ctx.beginPath();
+    ctx.moveTo(obs.x + obs.w * 0.2, obs.y);
+    ctx.lineTo(obs.x + obs.w, obs.y + obs.h * 0.3);
+    ctx.lineTo(obs.x + obs.w * 0.8, obs.y + obs.h);
+    ctx.lineTo(obs.x, obs.y + obs.h * 0.7);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+// ─── COLLECTIBLES ───
+function spawnCollectible() {
+  const groundY = H * 0.72;
+  const types = ['filament', 'temp', 'shield'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const y = type === 'shield'
+    ? groundY - 90 * scale
+    : groundY - (30 + Math.random() * 50) * scale;
+
+  collectibles.push({
+    x: W + 30,
+    y,
+    size: 18 * scale,
+    type,
+    bobOffset: Math.random() * Math.PI * 2,
+    collected: false,
+  });
+}
+
+function drawCollectible(c) {
+  if (c.collected) return;
+  const bob = Math.sin(frameCount * 0.08 + c.bobOffset) * 4 * scale;
+  const cx = c.x;
+  const cy = c.y + bob;
+  const s = c.size;
+
+  let color, glow;
+  if (c.type === 'filament') { color = '#00f0ff'; glow = '#00f0ff'; }
+  else if (c.type === 'temp') { color = '#ff00aa'; glow = '#ff00aa'; }
+  else { color = '#ffaa00'; glow = '#ffaa00'; }
+
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 12 * scale;
+
+  // Outer ring
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.arc(cx, cy, s, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner fill
+  ctx.fillStyle = color + '44';
+  ctx.beginPath();
+  ctx.arc(cx, cy, s * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Symbol
+  ctx.fillStyle = color;
+  ctx.font = `${s}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (c.type === 'filament') ctx.fillText('F', cx, cy);
+  else if (c.type === 'temp') ctx.fillText('T', cx, cy);
+  else ctx.fillText('S', cx, cy);
+
+  ctx.shadowBlur = 0;
+}
+
+// ─── COLLISION ───
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+// ─── INPUT ───
+let touchStartY = 0;
+let touchStartX = 0;
+
+function doJump() {
+  if (!gameRunning) return;
+  if (snail.grounded && !snail.sliding) {
+    snail.vy = -13 * scale;
+    snail.grounded = false;
+    sfxJump();
+    spawnParticles(snail.x + 20 * scale, snail.drawY + snail.drawH, '#00f0ff', 5, 3, 15);
+  }
+}
+
+function doSlide() {
+  if (!gameRunning) return;
+  if (snail.grounded && !snail.sliding) {
+    snail.sliding = true;
+    snail.slideTimer = 30;
+    sfxSlide();
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); doJump(); }
+  if (e.code === 'ArrowDown') { e.preventDefault(); doSlide(); }
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchStartY = e.touches[0].clientY;
+  touchStartX = e.touches[0].clientX;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!gameRunning) return;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dy) > 20 && dy > 0) {
+    doSlide();
+  } else {
+    doJump();
+  }
+}, { passive: false });
+
+// ─── GAME FLOW ───
+function startGame() {
+  initAudio();
+  gameRunning = true;
+  score = 0;
+  layer = 1;
+  speed = 3;
+  frameCount = 0;
+  obstacles = [];
+  collectibles = [];
+  particles = [];
+  shakeTimer = 0;
+  resetSnail();
+  initBg();
+  overlay.style.display = 'none';
+  gameOverScreen.style.display = 'none';
+  hudScore.textContent = 'SCORE: 0';
+  hudLayer.textContent = 'LAYER 1';
+  hudSpeed.textContent = 'SPEED: 1x';
+}
+
+function endGame() {
+  gameRunning = false;
+  sfxDie();
+  shakeTimer = 20;
+  shakeIntensity = 8 * scale;
+  spawnParticles(snail.x + 20 * scale, snail.drawY, '#ff00aa', 20, 6, 40);
+  spawnParticles(snail.x + 20 * scale, snail.drawY, '#ff4444', 15, 5, 35);
+
+  setTimeout(() => {
+    finalScore.textContent = `SCORE: ${score}  |  LAYER: ${layer}`;
+    gameOverScreen.style.display = 'flex';
+  }, 500);
+}
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+
+// ─── MAIN LOOP ───
+let lastObstacle = 0;
+let lastCollect = 0;
+
+function update() {
+  if (!gameRunning) return;
+  frameCount++;
+
+  // Speed scaling
+  speed = 3 + (layer - 1) * 0.5;
+  const speedMult = (1 + (layer - 1) * 0.15).toFixed(1);
+  hudSpeed.textContent = `SPEED: ${speedMult}x`;
+
+  // Score
+  score += Math.floor(speed * 0.5);
+  hudScore.textContent = `SCORE: ${score}`;
+
+  // Layer progression
+  const newLayer = Math.floor(score / 500) + 1;
+  if (newLayer !== layer) {
+    layer = newLayer;
+    hudLayer.textContent = `LAYER ${layer}`;
+    spawnParticles(W / 2, H / 2, '#00f0ff', 30, 8, 40);
+    playTone(600, 0.2, 'sine', 0.06);
+    playTone(900, 0.3, 'sine', 0.05);
+  }
+
+  // Snail physics
+  if (!snail.grounded) {
+    snail.vy += 0.6 * scale;
+    snail.y += snail.vy;
+    if (snail.y >= snail.groundY) {
+      snail.y = snail.groundY;
+      snail.vy = 0;
+      snail.grounded = true;
+    }
+  }
+
+  // Slide timer
+  if (snail.sliding) {
+    snail.slideTimer--;
+    if (snail.slideTimer <= 0) snail.sliding = false;
+  }
+
+  // Spawn obstacles
+  const obstacleInterval = Math.max(50, 120 - layer * 8);
+  if (frameCount - lastObstacle > obstacleInterval) {
+    spawnObstacle();
+    lastObstacle = frameCount;
+  }
+
+  // Spawn collectibles
+  const collectInterval = Math.max(80, 160 - layer * 5);
+  if (frameCount - lastCollect > collectInterval) {
+    spawnCollectible();
+    lastCollect = frameCount;
+  }
+
+  // Move obstacles
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const obs = obstacles[i];
+    obs.x -= speed * scale;
+    if (obs.x + obs.w < -50) {
+      obstacles.splice(i, 1);
+      continue;
+    }
+
+    // Collision
+    const snailBox = {
+      x: snail.x + 5 * scale,
+      y: snail.drawY + 3 * scale,
+      w: snail.w * scale - 10 * scale,
+      h: snail.drawH * scale - 6 * scale,
+    };
+    if (rectsOverlap(snailBox.x, snailBox.y, snailBox.w, snailBox.h, obs.x, obs.y, obs.w, obs.h)) {
+      endGame();
+      return;
+    }
+  }
+
+  // Move collectibles
+  for (let i = collectibles.length - 1; i >= 0; i--) {
+    const c = collectibles[i];
+    c.x -= speed * scale;
+    if (c.x < -50) {
+      collectibles.splice(i, 1);
+      continue;
+    }
+    if (c.collected) continue;
+
+    const dist = Math.hypot(snail.x + 20 * scale - c.x, (snail.drawY + snail.drawH / 2) - c.y);
+    if (dist < c.size + 20 * scale) {
+      c.collected = true;
+      sfxCollect();
+      if (c.type === 'filament') {
+        score += 50;
+        spawnParticles(c.x, c.y, '#00f0ff', 10, 4, 20);
+      } else if (c.type === 'temp') {
+        score += 100;
+        spawnParticles(c.x, c.y, '#ff00aa', 10, 4, 20);
+      } else {
+        score += 200;
+        spawnParticles(c.x, c.y, '#ffaa00', 15, 5, 25);
+      }
+      collectibles.splice(i, 1);
+    }
+  }
+
+  updateParticles();
+
+  // Screen shake
+  if (shakeTimer > 0) shakeTimer--;
+}
+
+function render() {
+  ctx.save();
+
+  // Screen shake
+  if (shakeTimer > 0) {
+    const sx = (Math.random() - 0.5) * shakeIntensity;
+    const sy = (Math.random() - 0.5) * shakeIntensity;
+    ctx.translate(sx, sy);
+  }
+
+  drawBackground();
+
+  // Draw obstacles
+  for (const obs of obstacles) drawObstacle(obs);
+
+  // Draw collectibles
+  for (const c of collectibles) drawCollectible(c);
+
+  // Draw snail
+  if (gameRunning || shakeTimer > 0) drawSnail();
+
+  // Draw particles
+  drawParticles();
+
+  ctx.restore();
+}
+
+function gameLoop() {
+  update();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── INIT ───
+initBg();
+gameLoop();
+</script>
+</body>
+</html>
