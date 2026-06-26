@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>NEON PONG</title>
+  <title>NEON PONG 3D</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -13,7 +13,7 @@
       touch-action: none;
     }
     body {
-      background: #0a0a0f;
+      background: #000005;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -34,29 +34,29 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      border: 2px solid #0ff;
-      box-shadow: 0 0 20px #0ff, 0 0 40px #0ff, inset 0 0 20px rgba(0,255,255,0.1);
     }
     #score {
       position: absolute;
-      top: 10px;
+      top: 14px;
       left: 50%;
       transform: translateX(-50%);
       color: #fff;
-      font-size: 24px;
+      font-size: 22px;
       text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
       z-index: 10;
+      letter-spacing: 0.2em;
     }
     #instructions {
       position: absolute;
-      bottom: -80px;
+      bottom: 14px;
       left: 50%;
       transform: translateX(-50%);
       color: #0ff;
-      font-size: 12px;
+      font-size: 11px;
       text-align: center;
       text-shadow: 0 0 5px #0ff;
       white-space: nowrap;
+      opacity: 0.7;
     }
     #startMsg {
       position: absolute;
@@ -65,17 +65,30 @@
       transform: translate(-50%, -50%);
       color: #fff;
       font-size: 28px;
-      text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+      text-shadow: 0 0 20px #0ff, 0 0 40px #0ff, 0 0 60px #f0f;
       z-index: 10;
       text-align: center;
+      pointer-events: none;
+      animation: pulse 1.5s ease-in-out infinite;
     }
-    #touchHint {
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    #subtitle {
+      font-size: 14px;
+      color: #f0f;
+      text-shadow: 0 0 10px #f0f;
+      margin-top: 8px;
+      letter-spacing: 0.5em;
+    }
+    .overlay-screen {
       position: absolute;
-      bottom: 20px;
-      left: 20px;
-      color: rgba(0,255,255,0.5);
-      font-size: 11px;
-      z-index: 10;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,5,0.7);
+      z-index: 9;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -83,9 +96,10 @@
   <div id="gameContainer">
     <div id="score">YOU: 0 | AI: 0</div>
     <canvas id="game"></canvas>
-    <div id="startMsg">TAP TO START</div>
-    <div id="bestScore"></div>
-    <div id="touchHint">↑↓ SWIPE: LEFT | ←→ SWIPE: BOTTOM</div>
+    <div id="startMsg">
+      <div>TAP TO START</div>
+      <div id="subtitle">3D ARENA</div>
+    </div>
     <div id="instructions">DESKTOP: Arrow keys | MOBILE: Swipe on edges</div>
   </div>
 
@@ -93,16 +107,33 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const scoreDisplay = document.getElementById('score');
+    const startMsg = document.getElementById('startMsg');
 
-    const W = 700;
-    const H = 700;
-    canvas.width = W;
-    canvas.height = H;
+    // World arena dimensions (logical). Camera looks down at angle — we use
+    // oblique projection (cabinet-style): world (x,y,z) maps to screen as
+    //   sx = cx + x*COS - z*COS
+    //   sy = cy + y - (x + z)*SIN
+    // This gives a satisfying "isometric-ish" 3D effect that still keeps
+    // the game readable. Cube edges line up; ball casts a shadow on floor.
+    const WORLD = 700;
+    const FLOOR_OFFSET = 50; // pixels added to lift everything off the floor
 
-    const PADDLE_SIZE = 120;
-    const PADDLE_THICKNESS = 12;
-    const BALL_RADIUS = 10;
-    const BALL_SPEED = 7;
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    setTimeout(resizeCanvas, 0);
+
+    // Game constants (world units)
+    const PADDLE_SIZE = 130;
+    const PADDLE_THICKNESS = 14;
+    const PADDLE_HEIGHT = 40; // extruded 3D height
+    const BALL_RADIUS = 11;
+    const BALL_SPEED = 6.5;
     const PADDLE_SPEED = 8;
     const AI_SPEED = 6;
 
@@ -110,11 +141,12 @@
       player: '#0ff',
       ai: '#f0f',
       ball: '#fff',
-      glow: '#0ff'
+      accent: '#ff0',
+      floor1: '#0a0a2e',
+      floor2: '#1a0a2e'
     };
 
-    // localStorage key: 'neon-pong-best'
-    let bestScore = parseInt(localStorage.getItem('neon-pong-best') || '0');
+    let bestScore = parseInt(localStorage.getItem('neon-pong-3d-best') || '0');
 
     let gameState = 'waiting';
     let playerScore = 0;
@@ -122,38 +154,71 @@
 
     const keys = {};
 
+    // Paddle positions in world space.
+    // World: x is horizontal (0..WORLD), z is depth (0..WORLD). y is up.
+    // 4 paddles on 4 sides, like original.
     const paddles = {
-      left: { x: 0, y: H/2 - PADDLE_SIZE/2, dir: 0, isPlayer: true },
-      bottom: { x: W/2 - PADDLE_SIZE/2, y: H - PADDLE_THICKNESS, dir: 0, isPlayer: true },
-      top: { x: W/2 - PADDLE_SIZE/2, y: 0, dir: 0, isPlayer: false },
-      right: { x: W - PADDLE_THICKNESS, y: H/2 - PADDLE_SIZE/2, dir: 0, isPlayer: false }
+      left: { x: 0, y: 0, z: WORLD/2 - PADDLE_SIZE/2, axis: 'z', dir: 0, isPlayer: true },
+      bottom: { x: WORLD/2 - PADDLE_SIZE/2, y: 0, z: WORLD - PADDLE_THICKNESS, axis: 'x', dir: 0, isPlayer: true },
+      top: { x: WORLD/2 - PADDLE_SIZE/2, y: 0, z: 0, axis: 'x', dir: 0, isPlayer: false },
+      right: { x: WORLD - PADDLE_THICKNESS, y: 0, z: WORLD/2 - PADDLE_SIZE/2, axis: 'z', dir: 0, isPlayer: false }
     };
 
     const ball = {
-      x: W/2,
-      y: H/2,
+      x: WORLD/2,
+      y: BALL_RADIUS + 2,
+      z: WORLD/2,
       vx: 0,
-      vy: 0,
-      trail: []
+      vz: 0,
+      trail: [] // [{x,y,z}]
     };
 
     const particles = [];
+    let scoreFlash = 0;
+    let cameraShake = 0;
 
+    // ── 3D projection: oblique cabinet projection ──
+    const COS = 0.866; // cos(30°)
+    const SIN = 0.5;   // sin(30°)
+    let viewCx, viewCy, viewScale;
+
+    function computeView() {
+      const rect = canvas.getBoundingClientRect();
+      const minDim = Math.min(rect.width, rect.height);
+      viewScale = minDim / (WORLD * 1.4);
+      viewCx = rect.width / 2;
+      // Center vertically with slight upward bias so floor appears below
+      viewCy = rect.height * 0.55 + FLOOR_OFFSET;
+    }
+
+    function project(wx, wy, wz) {
+      // origin (0,0,0) is floor center — but we want (0,0,0) to be floor corner
+      // Shift so x and z are 0..WORLD
+      const sx = viewCx + (wx - wz) * COS * viewScale;
+      const sy = viewCy - wy * viewScale - (wx + wz) * SIN * viewScale + WORLD * SIN * viewScale;
+      return { x: sx, y: sy };
+    }
+
+    // ── Reset ──
     function resetBall(dir = 1) {
-      ball.x = W/2;
-      ball.y = H/2;
+      ball.x = WORLD/2;
+      ball.y = BALL_RADIUS + 2;
+      ball.z = WORLD/2;
       const angle = (Math.random() - 0.5) * Math.PI / 2;
-      ball.vx = Math.cos(angle) * BALL_SPEED * dir;
-      ball.vy = Math.sin(angle) * BALL_SPEED * dir;
+      // dir: 1 = toward player bottom (positive z), -1 = toward AI top
+      ball.vx = Math.cos(angle) * BALL_SPEED * (Math.random() < 0.5 ? 1 : -1);
+      ball.vz = Math.sin(angle) * BALL_SPEED * dir;
       ball.trail = [];
     }
 
-    function spawnParticles(x, y, color, count = 10) {
+    // ── Particles ──
+    function spawnParticles(wx, wy, wz, color, count = 12) {
       for (let i = 0; i < count; i++) {
         particles.push({
-          x, y,
-          vx: (Math.random() - 0.5) * 10,
-          vy: (Math.random() - 0.5) * 10,
+          x: wx, y: wy, z: wz,
+          vx: (Math.random() - 0.5) * 8,
+          vy: Math.random() * 4 + 2,
+          vz: (Math.random() - 0.5) * 8,
           life: 1,
           color,
           size: Math.random() * 4 + 2
@@ -166,219 +231,391 @@
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.life -= 0.03;
-        p.vx *= 0.95;
-        p.vy *= 0.95;
-        if (p.life <= 0) particles.splice(i, 1);
+        p.z += p.vz;
+        p.vy -= 0.25; // gravity
+        p.life -= 0.025;
+        p.vx *= 0.96;
+        p.vz *= 0.96;
+        if (p.life <= 0 || p.y < 0) particles.splice(i, 1);
       }
     }
 
-    function drawParticles() {
-      particles.forEach(p => {
+    // ── Drawing helpers ──
+    function shadeColor(hex, factor) {
+      const m = hex.match(/^#([0-9a-f]{6})$/i);
+      if (!m) return hex;
+      const n = parseInt(m[1], 16);
+      let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      r = Math.min(255, Math.floor(r * factor));
+      g = Math.min(255, Math.floor(g * factor));
+      b = Math.min(255, Math.floor(b * factor));
+      return `rgb(${r},${g},${b})`;
+    }
+
+    function drawArena() {
+      computeView();
+
+      // Background
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      bgGrad.addColorStop(0, '#000010');
+      bgGrad.addColorStop(0.5, '#05001a');
+      bgGrad.addColorStop(1, '#10001a');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Floor tiles (checker pattern receding)
+      const tileSize = 70;
+      const tiles = Math.ceil(WORLD / tileSize);
+      for (let i = 0; i < tiles; i++) {
+        for (let j = 0; j < tiles; j++) {
+          const wx = i * tileSize;
+          const wz = j * tileSize;
+          // Diagonal sort not needed for flat floor — depth sort by wx+wz
+          const depth = (wx + wz) / (2 * WORLD);
+          const alpha = 0.12 + (1 - depth) * 0.25;
+          if ((i + j) % 2 === 0) {
+            const p1 = project(wx, 0, wz);
+            const p2 = project(wx + tileSize, 0, wz);
+            const p3 = project(wx + tileSize, 0, wz + tileSize);
+            const p4 = project(wx, 0, wz + tileSize);
+            ctx.fillStyle = `rgba(0,255,255,${alpha * 0.6})`;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.lineTo(p4.x, p4.y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = `rgba(0,255,255,${alpha * 1.5})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Arena walls (4 sides, extruded upward)
+      const WALL_H = 30;
+      drawWall(0, 0, 0, WORLD, 0, 0, '#0a0a2e'); // back wall (z=0)
+      drawWall(0, 0, WORLD - 4, WORLD, 0, 4, '#1a0a2e'); // front rim
+      // Side rails
+      drawWall(0, 0, 0, 4, 0, WORLD, '#1a0a2e');
+      drawWall(WORLD - 4, 0, 0, 4, 0, WORLD, '#1a0a2e');
+
+      // Center crosshair (glowing)
+      const cx = project(WORLD/2, 0.5, WORLD/2);
+      ctx.strokeStyle = `rgba(0,255,255,${0.2 + Math.sin(Date.now() * 0.005) * 0.1})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(WORLD/2, 0).lineTo; // (no-op placeholder)
+      // Draw center lines
+      ctx.beginPath();
+      const c1 = project(0, 0.2, WORLD/2);
+      const c2 = project(WORLD, 0.2, WORLD/2);
+      ctx.moveTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y);
+      const c3 = project(WORLD/2, 0.2, 0);
+      const c4 = project(WORLD/2, 0.2, WORLD);
+      ctx.moveTo(c3.x, c3.y); ctx.lineTo(c4.x, c4.y);
+      ctx.stroke();
+    }
+
+    function drawWall(x, y, z, w, h, d, color) {
+      // Simple extruded box; here we draw as a filled quad on the floor with
+      // a top edge to suggest height.
+      const p1 = project(x, y, z);
+      const p2 = project(x + w, y, z);
+      const p3 = project(x + w, y, z + d);
+      const p4 = project(x, y, z + d);
+      const pt1 = project(x, y + h, z);
+      const pt2 = project(x + w, y + h, z);
+      const pt3 = project(x + w, y + h, z + d);
+      const pt4 = project(x, y + h, z + d);
+
+      // Back wall face
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(pt2.x, pt2.y); ctx.lineTo(pt1.x, pt1.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = `rgba(0,255,255,0.5)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Top face (visible)
+      ctx.fillStyle = shadeColor(color, 1.3);
+      ctx.beginPath();
+      ctx.moveTo(pt1.x, pt1.y); ctx.lineTo(pt2.x, pt2.y);
+      ctx.lineTo(pt3.x, pt3.y); ctx.lineTo(pt4.x, pt4.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    function drawPaddle3D(p) {
+      const isH = p.axis === 'x';
+      let x, z, w, d;
+      if (isH) {
+        x = p.x; z = p.z; w = PADDLE_SIZE; d = PADDLE_THICKNESS;
+      } else {
+        x = p.x; z = p.z; w = PADDLE_THICKNESS; d = PADDLE_SIZE;
+      }
+      const color = p.isPlayer ? COLORS.player : COLORS.ai;
+      const y = 0;
+      const h = PADDLE_HEIGHT;
+
+      // 8 corners
+      const corners = [
+        project(x, y, z),
+        project(x + w, y, z),
+        project(x + w, y, z + d),
+        project(x, y, z + d),
+        project(x, y + h, z),
+        project(x + w, y + h, z),
+        project(x + w, y + h, z + d),
+        project(x, y + h, z + d)
+      ];
+
+      // Visible faces: top, front, side (depending on orientation)
+      // For all paddles here, camera is "above and back" so we see top + front
+      const faces = [
+        // Top (corners 4,5,6,7)
+        { pts: [corners[4], corners[5], corners[6], corners[7]], shade: 1 },
+        // Front face (corners 1,2,6,5) — the z=WORLD side for bottom paddle
+        { pts: [corners[1], corners[2], corners[6], corners[5]], shade: 0.7 }
+      ];
+
+      // Shadow under paddle
+      const shadowAlpha = 0.4;
+      ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`;
+      ctx.beginPath();
+      const s1 = project(x + 4, 0.1, z + 4);
+      const s2 = project(x + w - 4, 0.1, z + 4);
+      const s3 = project(x + w - 4, 0.1, z + d - 4);
+      const s4 = project(x + 4, 0.1, z + d - 4);
+      ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+      ctx.lineTo(s3.x, s3.y); ctx.lineTo(s4.x, s4.y);
+      ctx.closePath();
+      ctx.fill();
+
+      faces.forEach(f => {
         ctx.save();
-        ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = color;
+        ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        f.pts.forEach((pt, i) => { if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y); });
+        ctx.closePath();
         ctx.fill();
+        // Highlight edges
+        ctx.strokeStyle = `rgba(255,255,255,${0.5 * f.shade})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
         ctx.restore();
       });
-    }
-
-    function drawGlow(drawFn, color, blur = 20) {
-      ctx.save();
-      ctx.shadowBlur = blur;
-      ctx.shadowColor = color;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      drawFn();
-      ctx.restore();
-    }
-
-    function drawPaddle(paddle, color) {
-      ctx.save();
-      ctx.shadowBlur = 25;
-      ctx.shadowColor = color;
-      ctx.fillStyle = '#000';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 3;
-
-      if (paddle === paddles.left || paddle === paddles.right) {
-        ctx.fillRect(paddle.x, paddle.y, PADDLE_THICKNESS, PADDLE_SIZE);
-        ctx.strokeRect(paddle.x, paddle.y, PADDLE_THICKNESS, PADDLE_SIZE);
-      } else {
-        ctx.fillRect(paddle.x, paddle.y, PADDLE_SIZE, PADDLE_THICKNESS);
-        ctx.strokeRect(paddle.x, paddle.y, PADDLE_SIZE, PADDLE_THICKNESS);
-      }
-      ctx.restore();
     }
 
     function drawBall() {
+      // Trail
       ball.trail.forEach((pos, i) => {
-        const alpha = i / ball.trail.length * 0.5;
+        const alpha = (i / ball.trail.length) * 0.5;
+        const p = project(pos.x, pos.y, pos.z);
+        const r = BALL_RADIUS * (i / ball.trail.length) * viewScale * 1.2;
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 18;
         ctx.shadowColor = '#0ff';
         ctx.fillStyle = '#0ff';
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, BALL_RADIUS * (i / ball.trail.length), 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, Math.max(1, r), 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       });
 
+      // Ball shadow on floor
+      const shadowP = project(ball.x, 0.5, ball.z);
       ctx.save();
-      ctx.shadowBlur = 30;
-      ctx.shadowColor = '#fff';
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+      ctx.ellipse(shadowP.x, shadowP.y, BALL_RADIUS * viewScale * 1.5, BALL_RADIUS * viewScale * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Ball body — sphere approximated with concentric circles for glow
+      const p = project(ball.x, ball.y, ball.z);
+      const r = Math.max(3, BALL_RADIUS * viewScale * 1.2);
+      ctx.save();
+      // Outer glow
+      ctx.shadowBlur = 40;
+      ctx.shadowColor = COLORS.ball;
+      ctx.fillStyle = COLORS.ball;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      // Inner highlight
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(p.x - r * 0.3, p.y - r * 0.3, r * 0.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
 
-    function drawArena() {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(0,255,255,0.2)';
-      ctx.lineWidth = 1;
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = '#0ff';
-      
-      ctx.beginPath();
-      ctx.moveTo(W/2, 0);
-      ctx.lineTo(W/2, H);
-      ctx.moveTo(0, H/2);
-      ctx.lineTo(W, H/2);
-      ctx.stroke();
-
-      ctx.restore();
+    function drawParticles() {
+      particles.forEach(p => {
+        const pp = project(p.x, Math.max(0, p.y), p.z);
+        ctx.save();
+        ctx.globalAlpha = p.life;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = p.color;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(pp.x, pp.y, p.size * viewScale * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
     }
 
+    // ── AI ──
     function updateAI() {
-      const topPaddle = paddles.top;
-      const rightPaddle = paddles.right;
+      const topP = paddles.top;
+      const rightP = paddles.right;
 
-      const targetTopX = ball.x - PADDLE_SIZE/2;
-      if (topPaddle.x < targetTopX - 10) topPaddle.x += AI_SPEED;
-      else if (topPaddle.x > targetTopX + 10) topPaddle.x -= AI_SPEED;
-      topPaddle.x = Math.max(0, Math.min(W - PADDLE_SIZE, topPaddle.x));
+      // Top paddle: move along x to track ball
+      const targetX = ball.x - PADDLE_SIZE / 2;
+      if (topP.x < targetX - 10) topP.x += AI_SPEED;
+      else if (topP.x > targetX + 10) topP.x -= AI_SPEED;
+      topP.x = Math.max(0, Math.min(WORLD - PADDLE_SIZE, topP.x));
 
-      const targetRightY = ball.y - PADDLE_SIZE/2;
-      if (rightPaddle.y < targetRightY - 10) rightPaddle.y += AI_SPEED;
-      else if (rightPaddle.y > targetRightY + 10) rightPaddle.y -= AI_SPEED;
-      rightPaddle.y = Math.max(0, Math.min(H - PADDLE_SIZE, rightPaddle.y));
+      // Right paddle: move along z
+      const targetZ = ball.z - PADDLE_SIZE / 2;
+      if (rightP.z < targetZ - 10) rightP.z += AI_SPEED;
+      else if (rightP.z > targetZ + 10) rightP.z -= AI_SPEED;
+      rightP.z = Math.max(0, Math.min(WORLD - PADDLE_SIZE, rightP.z));
     }
 
+    // ── Collision ──
     function checkCollision() {
       const b = ball;
+      const nextX = b.x + b.vx;
+      const nextZ = b.z + b.vz;
 
-      if (b.x - BALL_RADIUS <= PADDLE_THICKNESS && b.y >= paddles.left.y && b.y <= paddles.left.y + PADDLE_SIZE) {
+      // Left paddle (z-aligned, at x=0)
+      if (nextX - BALL_RADIUS <= PADDLE_THICKNESS && b.z >= paddles.left.z && b.z <= paddles.left.z + PADDLE_SIZE) {
         b.x = PADDLE_THICKNESS + BALL_RADIUS;
         b.vx = Math.abs(b.vx);
-        spawnParticles(b.x, b.y, COLORS.player, 15);
-        b.vx *= 1.05;
+        spawnParticles(b.x, b.y, b.z, COLORS.player, 14);
+        b.vx *= 1.05; b.vz *= 1.05;
+        cameraShake = 4;
       }
-
-      if (b.x + BALL_RADIUS >= W - PADDLE_THICKNESS && b.y >= paddles.right.y && b.y <= paddles.right.y + PADDLE_SIZE) {
-        b.x = W - PADDLE_THICKNESS - BALL_RADIUS;
+      // Right paddle (z-aligned, at x=WORLD)
+      if (nextX + BALL_RADIUS >= WORLD - PADDLE_THICKNESS && b.z >= paddles.right.z && b.z <= paddles.right.z + PADDLE_SIZE) {
+        b.x = WORLD - PADDLE_THICKNESS - BALL_RADIUS;
         b.vx = -Math.abs(b.vx);
-        spawnParticles(b.x, b.y, COLORS.ai, 15);
-        b.vx *= 1.05;
+        spawnParticles(b.x, b.y, b.z, COLORS.ai, 14);
+        b.vx *= 1.05; b.vz *= 1.05;
+        cameraShake = 4;
+      }
+      // Top paddle (x-aligned, at z=0) — AI
+      if (nextZ - BALL_RADIUS <= PADDLE_THICKNESS && b.x >= paddles.top.x && b.x <= paddles.top.x + PADDLE_SIZE) {
+        b.z = PADDLE_THICKNESS + BALL_RADIUS;
+        b.vz = Math.abs(b.vz);
+        spawnParticles(b.x, b.y, b.z, COLORS.ai, 14);
+        b.vx *= 1.05; b.vz *= 1.05;
+      }
+      // Bottom paddle (x-aligned, at z=WORLD) — Player
+      if (nextZ + BALL_RADIUS >= WORLD - PADDLE_THICKNESS && b.x >= paddles.bottom.x && b.x <= paddles.bottom.x + PADDLE_SIZE) {
+        b.z = WORLD - PADDLE_THICKNESS - BALL_RADIUS;
+        b.vz = -Math.abs(b.vz);
+        spawnParticles(b.x, b.y, b.z, COLORS.player, 14);
+        b.vx *= 1.05; b.vz *= 1.05;
+        cameraShake = 4;
       }
 
-      if (b.y - BALL_RADIUS <= PADDLE_THICKNESS && b.x >= paddles.top.x && b.x <= paddles.top.x + PADDLE_SIZE) {
-        b.y = PADDLE_THICKNESS + BALL_RADIUS;
-        b.vy = Math.abs(b.vy);
-        spawnParticles(b.x, b.y, COLORS.ai, 15);
-        b.vy *= 1.05;
-      }
-
-      if (b.y + BALL_RADIUS >= H - PADDLE_THICKNESS && b.x >= paddles.bottom.x && b.x <= paddles.bottom.x + PADDLE_SIZE) {
-        b.y = H - PADDLE_THICKNESS - BALL_RADIUS;
-        b.vy = -Math.abs(b.vy);
-        spawnParticles(b.x, b.y, COLORS.player, 15);
-        b.vy *= 1.05;
-      }
-
-      const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-      const maxSpeed = 15;
-      if (speed > maxSpeed) {
-        b.vx = (b.vx / speed) * maxSpeed;
-        b.vy = (b.vy / speed) * maxSpeed;
+      // Cap speed
+      const spd = Math.sqrt(b.vx * b.vx + b.vz * b.vz);
+      const maxSpeed = 14;
+      if (spd > maxSpeed) {
+        b.vx = (b.vx / spd) * maxSpeed;
+        b.vz = (b.vz / spd) * maxSpeed;
       }
     }
 
     function checkScore() {
       let scored = false;
       let scorer = '';
-
-      if (ball.x < 0) {
-        scorer = 'ai';
-        aiScore++;
-        scored = true;
-      } else if (ball.x > W) {
-        scorer = 'player';
-        playerScore++;
-        scored = true;
-      } else if (ball.y < 0) {
-        scorer = 'player';
-        playerScore++;
-        scored = true;
-      } else if (ball.y > H) {
-        scorer = 'ai';
-        aiScore++;
-        scored = true;
-      }
+      if (ball.x < 0) { scorer = 'ai'; aiScore++; scored = true; }
+      else if (ball.x > WORLD) { scorer = 'player'; playerScore++; scored = true; }
+      else if (ball.z < 0) { scorer = 'player'; playerScore++; scored = true; }
+      else if (ball.z > WORLD) { scorer = 'ai'; aiScore++; scored = true; }
 
       if (scored) {
         scoreDisplay.textContent = `YOU: ${playerScore} | AI: ${aiScore}`;
         if (playerScore > bestScore) {
-            bestScore = playerScore;
-            localStorage.setItem('neon-pong-best', bestScore);
+          bestScore = playerScore;
+          localStorage.setItem('neon-pong-3d-best', bestScore);
         }
-        spawnParticles(W/2, H/2, scorer === 'player' ? COLORS.player : COLORS.ai, 30);
-        setTimeout(() => resetBall(scorer === 'player' ? 1 : -1), 500);
+        scoreFlash = 30;
+        cameraShake = 18;
+        spawnParticles(WORLD/2, 30, WORLD/2, scorer === 'player' ? COLORS.player : COLORS.ai, 40);
+        setTimeout(() => resetBall(scorer === 'player' ? 1 : -1), 600);
       }
     }
 
+    // ── Update ──
     function update() {
       if (gameState !== 'playing') return;
 
-      if (keys['ArrowUp'] && paddles.left.y > 0) paddles.left.y -= PADDLE_SPEED;
-      if (keys['ArrowDown'] && paddles.left.y < H - PADDLE_SIZE) paddles.left.y += PADDLE_SPEED;
+      // Player input
+      if (keys['ArrowUp'] && paddles.left.z > 0) paddles.left.z -= PADDLE_SPEED;
+      if (keys['ArrowDown'] && paddles.left.z < WORLD - PADDLE_SIZE) paddles.left.z += PADDLE_SPEED;
       if (keys['ArrowLeft'] && paddles.bottom.x > 0) paddles.bottom.x -= PADDLE_SPEED;
-      if (keys['ArrowRight'] && paddles.bottom.x < W - PADDLE_SIZE) paddles.bottom.x += PADDLE_SPEED;
+      if (keys['ArrowRight'] && paddles.bottom.x < WORLD - PADDLE_SIZE) paddles.bottom.x += PADDLE_SPEED;
 
       updateAI();
 
-      ball.trail.push({ x: ball.x, y: ball.y });
-      if (ball.trail.length > 20) ball.trail.shift();
+      ball.trail.push({ x: ball.x, y: ball.y, z: ball.z });
+      if (ball.trail.length > 18) ball.trail.shift();
 
       ball.x += ball.vx;
-      ball.y += ball.vy;
+      ball.z += ball.vz;
 
       checkCollision();
       checkScore();
       updateParticles();
+
+      if (scoreFlash > 0) scoreFlash--;
+      if (cameraShake > 0) cameraShake *= 0.85;
     }
 
+    // ── Draw ──
     function draw() {
-      ctx.fillStyle = 'rgba(10,10,15,0.3)';
-      ctx.fillRect(0, 0, W, H);
-
-      drawArena();
-      drawPaddle(paddles.left, COLORS.player);
-      drawPaddle(paddles.bottom, COLORS.player);
-      drawPaddle(paddles.top, COLORS.ai);
-      drawPaddle(paddles.right, COLORS.ai);
-
-      if (gameState === 'playing') {
-        drawBall();
+      ctx.save();
+      // Camera shake
+      if (cameraShake > 0.5) {
+        ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
       }
 
+      drawArena();
+
+      // Draw paddles (back to front by depth: top, far-x, then near-x)
+      // Sort by distance from camera (z + x in our projection)
+      const paddleArr = Object.values(paddles);
+      paddleArr.sort((a, b) => (a.x + a.z) - (b.x + b.z));
+      paddleArr.forEach(p => drawPaddle3D(p));
+
+      if (gameState === 'playing') drawBall();
       drawParticles();
+
+      // Score flash overlay
+      if (scoreFlash > 0) {
+        ctx.save();
+        ctx.globalAlpha = scoreFlash / 30 * 0.3;
+        ctx.fillStyle = scoreFlash > 20 ? COLORS.player : COLORS.ai;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+
+      ctx.restore();
     }
 
     function gameLoop() {
@@ -387,70 +624,59 @@
       requestAnimationFrame(gameLoop);
     }
 
+    // ── Input ──
     document.addEventListener('keydown', e => {
       keys[e.key] = true;
       if (e.key === ' ' && gameState === 'waiting') {
         gameState = 'playing';
         resetBall(Math.random() > 0.5 ? 1 : -1);
+        startMsg.style.display = 'none';
       }
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
-        e.preventDefault();
-      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
     });
+    document.addEventListener('keyup', e => { keys[e.key] = false; });
 
-    document.addEventListener('keyup', e => {
-      keys[e.key] = false;
-    });
-
-    let touchStartY = null;
-    let touchStartX = null;
-    const TOUCH_ZONE = 150;
+    let touchStartZ = null, touchStartX = null;
+    const TOUCH_ZONE = 110;
 
     function handleTouchStart(e) {
       e.preventDefault();
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
-      const x = touch.clientX - rect.left;
-      const y = touch.clientY - rect.top;
+      touchStartX = touch.clientX - rect.left;
+      touchStartZ = touch.clientY - rect.top;
 
       if (gameState === 'waiting') {
         gameState = 'playing';
         resetBall(Math.random() > 0.5 ? 1 : -1);
-        document.getElementById('startMsg').style.display = 'none';
+        startMsg.style.display = 'none';
       }
-
-      touchStartY = y;
-      touchStartX = x;
     }
 
     function handleTouchMove(e) {
       e.preventDefault();
-      if (gameState !== 'playing' || touchStartY === null) return;
-
+      if (gameState !== 'playing' || touchStartZ === null) return;
       const touch = e.touches[0];
       const rect = canvas.getBoundingClientRect();
-      const y = touch.clientY - rect.top;
+      const z = touch.clientY - rect.top;
       const x = touch.clientX - rect.left;
-      const scaleY = H / rect.height;
-      const scaleX = W / rect.width;
-      const scaledY = y * scaleY;
-      const scaledX = x * scaleX;
 
-      if (scaledX < TOUCH_ZONE * scaleX) {
-        const delta = (touchStartY - y) * scaleY;
-        paddles.left.y = Math.max(0, Math.min(H - PADDLE_SIZE, paddles.left.y + delta));
-        touchStartY = y;
+      // Left edge controls paddle.left.z (up/down)
+      if (touchStartX < TOUCH_ZONE) {
+        const delta = touchStartZ - z;
+        paddles.left.z = Math.max(0, Math.min(WORLD - PADDLE_SIZE, paddles.left.z + delta));
+        touchStartZ = z;
       }
-
-      if (scaledY > H - TOUCH_ZONE * scaleY) {
-        const delta = (touchStartX - x) * scaleX;
-        paddles.bottom.x = Math.max(0, Math.min(W - PADDLE_SIZE, paddles.bottom.x + delta));
+      // Bottom controls paddle.bottom.x (left/right)
+      if (touchStartZ > rect.height - TOUCH_ZONE) {
+        const delta = touchStartX - x;
+        paddles.bottom.x = Math.max(0, Math.min(WORLD - PADDLE_SIZE, paddles.bottom.x + delta));
         touchStartX = x;
       }
     }
 
     function handleTouchEnd(e) {
-      touchStartY = null;
+      touchStartZ = null;
       touchStartX = null;
     }
 
