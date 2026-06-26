@@ -527,8 +527,8 @@ document.getElementById('restartBtn').addEventListener('click', () => {
 
 // Touch on canvas for fire (alternative to button)
 canvas.addEventListener('touchstart', e => {
-  if (isMobile()) { initAudio(); firePressed = true; e.preventDefault(); }, {passive: false};
-});
+  if (isMobile()) { initAudio(); firePressed = true; e.preventDefault(); }
+}, {passive: false});
 canvas.addEventListener('touchend', () => { firePressed = false; });
 
 loop();
