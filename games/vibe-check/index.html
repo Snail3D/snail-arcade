@@ -153,6 +153,16 @@ const highScoreEl = document.getElementById('high-score');
 
 let W, H;
 let score = 0, highScore = parseInt(localStorage.getItem('vibe-check-best') || '0', 10), vibe = 100;
+let comboCount = 0;
+let comboTimer = 0;
+let comboMultiplier = 1;
+let shieldActive = false;
+let shieldTimer = 0;
+let comboCount = 0;
+let comboTimer = 0;
+let comboMultiplier = 1;
+let shieldActive = false;
+let shieldTimer = 0;
 let running = false, dead = false;
 let frame = 0;
 let keys = {};

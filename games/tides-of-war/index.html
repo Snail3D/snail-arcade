@@ -76,7 +76,7 @@ o.start(t);o.stop(t+1);
 }
 
 // Game state
-const G={running:false,wave:0,score:0,hull:100,windDir:Math.PI/4,windSpd:0.5,camDist:500,zoom:1,gameTime:0,highScore:parseInt(localStorage.getItem('tidesHS'))||0,comboCount:0,comboTimer:0,comboScore:0};
+const G={running:false,wave:0,score:0,hull:100,windDir:Math.PI/4,windSpd:0.5,camDist:500,zoom:1,gameTime:0,highScore:parseInt(localStorage.getItem('tidesHS'))||0,comboCount:0,comboTimer:0,comboScore:0,lastHitTime:0};
 const P={x:0,z:0,heading:0,speed:0,maxSpd:3,turnRate:0,maxTurn:0.02,pelt:0,roll:0,pitch:0,ptCD:0,stCD:0,sails:[true,true,true],cannons:true};
 let enemies=[],projectiles=[],particles=[],waveTimer=0,wavePhase='spawn',waveMaxEnemies=0,waveAnn=0;
 
