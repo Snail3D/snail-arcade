@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>G-Code Drop</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  background: #0a0a12;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10, 10, 18, 0.95);
+  z-index: 10;
+  pointer-events: auto;
+}
+#overlay.hidden { display: none; }
+#title {
+  font-size: clamp(28px, 7vw, 56px);
+  color: #00f0ff;
+  text-shadow: 0 0 20px #00f0ff88, 0 0 40px #00f0ff44;
+  margin-bottom: 8px;
+  letter-spacing: 4px;
+}
+#subtitle {
+  font-size: clamp(12px, 3vw, 18px);
+  color: #ff00aa;
+  text-shadow: 0 0 10px #ff00aa66;
+  margin-bottom: 30px;
+}
+#startBtn {
+  padding: 14px 48px;
+  font-size: clamp(16px, 4vw, 22px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #00f0ff;
+  border: 2px solid #00f0ff;
+  cursor: pointer;
+  letter-spacing: 3px;
+  pointer-events: auto;
+  transition: all 0.2s;
+}
+#startBtn:hover, #startBtn:active {
+  background: #00f0ff22;
+  box-shadow: 0 0 20px #00f0ff44;
+}
+#instructions {
+  margin-top: 24px;
+  font-size: clamp(10px, 2.5vw, 14px);
+  color: #666;
+  text-align: center;
+  line-height: 1.6;
+  max-width: 320px;
+}
+#gameOver {
+  position: fixed; inset: 0;
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10, 10, 18, 0.92);
+  z-index: 10;
+  pointer-events: auto;
+}
+#gameOver h2 {
+  font-size: clamp(24px, 6vw, 44px);
+  color: #ff0044;
+  text-shadow: 0 0 20px #ff004488;
+  margin-bottom: 10px;
+}
+#finalScore {
+  font-size: clamp(18px, 4vw, 32px);
+  color: #00f0ff;
+  margin-bottom: 6px;
+}
+#finalLevel {
+  font-size: clamp(12px, 3vw, 18px);
+  color: #ff00aa;
+  margin-bottom: 24px;
+}
+#restartBtn {
+  padding: 12px 40px;
+  font-size: clamp(14px, 3.5vw, 20px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #ff00aa;
+  border: 2px solid #ff00aa;
+  cursor: pointer;
+  letter-spacing: 2px;
+  pointer-events: auto;
+  transition: all 0.2s;
+}
+#restartBtn:hover, #restartBtn:active {
+  background: #ff00aa22;
+  box-shadow: 0 0 20px #ff00aa44;
+}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay">
+  <div id="title">G-CODE DROP</div>
+  <div id="subtitle">catch commands, dodge errors</div>
+  <button id="startBtn">START PRINT</button>
+  <div id="instructions">
+    ← → or drag to move the print head<br>
+    Catch G-CODE commands (+points)<br>
+    Avoid ERRORS (lose a layer!)
+  </div>
+</div>
+
+<div id="gameOver">
+  <h2>PRINT FAILED</h2>
+  <div id="finalScore">SCORE: 0</div>
+  <div id="finalLevel">LEVEL 1</div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const gameOverScreen = document.getElementById('gameOver');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let W, H, dpr;
+  let gameRunning = false;
+  let animFrameId = null;
+  let lastTime = 0;
+
+  // Game state
+  let score = 0;
+  let lives = 5;
+  let level = 1;
+  let items = [];
+  let particles = [];
+  let combo = 0;
+  let maxCombo = 0;
+  let spawnTimer = 0;
+  let spawnInterval = 1.2;
+  let fallSpeed = 120;
+  let printHead = { x: 0, y: 0, w: 60, h: 16 };
+  let bgStars = [];
+  let screenShake = 0;
+  let flashAlpha = 0;
+  let flashColor = '#ff0044';
+
+  const GCODE_COMMANDS = [
+    { text: 'G00', points: 10, color: '#00f0ff' },
+    { text: 'G01', points: 15, color: '#00f0ff' },
+    { text: 'G28', points: 20, color: '#00f0ff' },
+    { text: 'M104', points: 25, color: '#ffaa00' },
+    { text: 'M140', points: 25, color: '#ffaa00' },
+    { text: 'G92', points: 30, color: '#00ff88' },
+    { text: 'G90', points: 15, color: '#00f0ff' },
+    { text: 'T0', points: 10, color: '#ff00aa' },
+  ];
+  const ERROR_COMMANDS = [
+    { text: 'ERR:01', color: '#ff0044' },
+    { text: 'OVER', color: '#ff0044' },
+    { text: 'TEMP!', color: '#ff4400' },
+    { text: 'JAM!', color: '#ff0044' },
+    { text: 'E03', color: '#ff4400' },
+  ];
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    printHead.y = H - 50;
+    printHead.x = W / 2 - printHead.w / 2;
+    printHead.w = Math.min(70, W * 0.15);
+  }
+
+  function initBgStars() {
+    bgStars = [];
+    for (let i = 0; i < 60; i++) {
+      bgStars.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        size: Math.random() * 1.5 + 0.5,
+        alpha: Math.random() * 0.5 + 0.2,
+        speed: Math.random() * 10 + 5
+      });
+    }
+  }
+
+  function spawnItem() {
+    const isError = Math.random() < 0.3;
+    const pool = isError ? ERROR_COMMANDS : GCODE_COMMANDS;
+    const template = pool[Math.floor(Math.random() * pool.length)];
+    const fontSize = Math.min(18, W * 0.04);
+    items.push({
+      x: Math.random() * (W - fontSize * 4) + fontSize * 2,
+      y: -fontSize,
+      text: template.text,
+      points: template.points || 0,
+      color: template.color,
+      isError: isError,
+      fontSize: fontSize,
+      speed: fallSpeed * (0.8 + Math.random() * 0.4),
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: (Math.random() - 0.5) * 2
+    });
+  }
+
+  function spawnParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 150 + 50;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: Math.random() * 1.5 + 1,
+        size: Math.random() * 3 + 1,
+        color: color
+      });
+    }
+  }
+
+  function update(dt) {
+    // Spawn items
+    spawnTimer += dt;
+    if (spawnTimer >= spawnInterval) {
+      spawnTimer = 0;
+      spawnItem();
+      // Spawn extra at higher levels
+      if (level >= 3 && Math.random() < 0.3) spawnItem();
+      if (level >= 5 && Math.random() < 0.3) spawnItem();
+    }
+
+    // Update items
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      item.y += item.speed * dt;
+      item.wobble += item.wobbleSpeed * dt;
+      item.x += Math.sin(item.wobble) * 0.5;
+
+      // Check collision with print head
+      const ih = item.fontSize;
+      if (item.y + ih > printHead.y &&
+          item.y < printHead.y + printHead.h &&
+          item.x > printHead.x - item.fontSize &&
+          item.x < printHead.x + printHead.w) {
+        if (item.isError) {
+          lives--;
+          combo = 0;
+          screenShake = 0.3;
+          flashAlpha = 0.4;
+          flashColor = '#ff0044';
+          spawnParticles(item.x, item.y, '#ff0044', 12);
+          if (lives <= 0) {
+            endGame();
+            return;
+          }
+        } else {
+          combo++;
+          if (combo > maxCombo) maxCombo = combo;
+          const multiplier = Math.min(combo, 10);
+          score += item.points * multiplier;
+          spawnParticles(item.x, item.y, item.color, 8);
+        }
+        items.splice(i, 1);
+        continue;
+      }
+
+      // Remove if off screen
+      if (item.y > H + 30) {
+        if (!item.isError) {
+          // Missed a good command — break combo
+          combo = 0;
+        }
+        items.splice(i, 1);
+      }
+    }
+
+    // Level up
+    const newLevel = Math.floor(score / 200) + 1;
+    if (newLevel > level) {
+      level = newLevel;
+      fallSpeed = 120 + (level - 1) * 25;
+      spawnInterval = Math.max(0.35, 1.2 - (level - 1) * 0.1);
+    }
+
+    // Update particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 200 * dt; // gravity
+      p.life -= p.decay * dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Screen shake decay
+    if (screenShake > 0) screenShake -= dt * 2;
+    if (screenShake < 0) screenShake = 0;
+
+    // Flash decay
+    if (flashAlpha > 0) flashAlpha -= dt * 2;
+    if (flashAlpha < 0) flashAlpha = 0;
+
+    // Background stars drift
+    for (const s of bgStars) {
+      s.y += s.speed * dt;
+      if (s.y > H) { s.y = 0; s.x = Math.random() * W; }
+    }
+  }
+
+  function draw() {
+    ctx.save();
+
+    // Screen shake
+    if (screenShake > 0) {
+      const shakeX = (Math.random() - 0.5) * screenShake * 12;
+      const shakeY = (Math.random() - 0.5) * screenShake * 12;
+      ctx.translate(shakeX, shakeY);
+    }
+
+    // Background
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+
+    // Grid lines (subtle)
+    ctx.strokeStyle = '#00f0ff08';
+    ctx.lineWidth = 1;
+    const gridSize = 40;
+    for (let x = 0; x < W; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Stars
+    for (const s of bgStars) {
+      ctx.globalAlpha = s.alpha;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(s.x, s.y, s.size, s.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Draw items
+    for (const item of items) {
+      ctx.font = `bold ${item.fontSize}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Glow
+      ctx.shadowColor = item.color;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = item.color;
+      ctx.fillText(item.text, item.x, item.y);
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw particles
+    for (const p of particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Draw print head
+    const ph = printHead;
+    // Nozzle
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.moveTo(ph.x + ph.w / 2 - 4, ph.y);
+    ctx.lineTo(ph.x + ph.w / 2 + 4, ph.y);
+    ctx.lineTo(ph.x + ph.w / 2, ph.y + 12);
+    ctx.closePath();
+    ctx.fill();
+
+    // Carriage
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(ph.x, ph.y - 6, ph.w, 8);
+    ctx.strokeRect(ph.x, ph.y - 6, ph.w, 8);
+
+    // Build plate (bottom)
+    ctx.fillStyle = '#111118';
+    ctx.strokeStyle = '#00f0ff33';
+    ctx.lineWidth = 1;
+    ctx.fillRect(0, ph.y + 14, W, 3);
+    ctx.strokeRect(0, ph.y + 14, W, 3);
+
+    // Flash overlay
+    if (flashAlpha > 0) {
+      ctx.globalAlpha = flashAlpha;
+      ctx.fillStyle = flashColor;
+      ctx.fillRect(-10, -10, W + 20, H + 20);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+
+    // HUD (not affected by shake)
+    drawHUD();
+  }
+
+  function drawHUD() {
+    const pad = 12;
+    const fontSize = Math.min(16, W * 0.04);
+
+    // Score
+    ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#00f0ff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 6;
+    ctx.fillText(`SCORE: ${score}`, pad, pad);
+    ctx.shadowBlur = 0;
+
+    // Level
+    ctx.fillStyle = '#ff00aa';
+    ctx.fillText(`LV ${level}`, pad, pad + fontSize + 4);
+
+    // Combo
+    if (combo > 1) {
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillText(`x${Math.min(combo, 10)} COMBO`, pad, pad + (fontSize + 4) * 2);
+    }
+
+    // Lives (layer icons)
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText(`LAYERS:`, W - pad, pad);
+    for (let i = 0; i < 5; i++) {
+      const lx = W - pad - (4 - i) * (fontSize + 4);
+      if (i < lives) {
+        ctx.fillStyle = '#00f0ff';
+        ctx.shadowColor = '#00f0ff';
+        ctx.shadowBlur = 6;
+      } else {
+        ctx.fillStyle = '#333';
+        ctx.shadowBlur = 0;
+      }
+      ctx.fillRect(lx, pad + fontSize + 4, fontSize, fontSize * 0.6);
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  function gameLoop(timestamp) {
+    if (!gameRunning) return;
+    if (!lastTime) lastTime = timestamp;
+    let dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+    if (dt > 0.1) dt = 0.016; // cap delta
+
+    update(dt);
+    render();
+    animFrameId = requestAnimationFrame(gameLoop);
+  }
+
+  function render() {
+    draw();
+  }
+
+  function startGame() {
+    score = 0;
+    lives = 5;
+    level = 1;
+    items = [];
+    particles = [];
+    combo = 0;
+    maxCombo = 0;
+    spawnTimer = 0;
+    spawnInterval = 1.2;
+    fallSpeed = 120;
+    lastTime = 0;
+    screenShake = 0;
+    flashAlpha = 0;
+
+    overlay.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    gameRunning = true;
+
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = requestAnimationFrame(gameLoop);
+  }
+
+  function endGame() {
+    gameRunning = false;
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+
+    document.getElementById('finalScore').textContent = `SCORE: ${score}`;
+    document.getElementById('finalLevel').textContent = `LEVEL ${level}  |  BEST COMBO: x${maxCombo}`;
+    gameOverScreen.style.display = 'flex';
+  }
+
+  // Input handling
+  let targetX = W / 2 - 30;
+  let inputActive = false;
+
+  function handleMove(clientX) {
+    targetX = clientX - printHead.w / 2;
+    targetX = Math.max(0, Math.min(W - printHead.w, targetX));
+    inputActive = true;
+  }
+
+  // Keyboard
+  const keys = {};
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.preventDefault();
+  });
+  document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // Mouse
+  canvas.addEventListener('mousemove', e => {
+    if (gameRunning) handleMove(e.clientX);
+  });
+  canvas.addEventListener('mousedown', e => {
+    if (gameRunning) handleMove(e.clientX);
+  });
+
+  // Touch
+  canvas.addEventListener('touchstart', e => {
+    if (gameRunning && e.touches.length > 0) {
+      handleMove(e.touches[0].clientX);
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    if (gameRunning && e.touches.length > 0) {
+      e.preventDefault();
+      handleMove(e.touches[0].clientX);
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    inputActive = false;
+  });
+
+  // Buttons
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+
+  // Resize
+  window.addEventListener('resize', () => {
+    resize();
+    initBgStars();
+  });
+
+  // Init
+  resize();
+  initBgStars();
+
+  // Smooth movement
+  function inputUpdate(dt) {
+    if (keys['ArrowLeft'] || keys['a']) {
+      targetX -= 300 * dt;
+    }
+    if (keys['ArrowRight'] || keys['d']) {
+      targetX += 300 * dt;
+    }
+    targetX = Math.max(0, Math.min(W - printHead.w, targetX));
+    printHead.x += (targetX - printHead.x) * Math.min(1, dt * 15);
+  }
+
+  // Override game loop to include input update
+  const origGameLoop = gameLoop;
+  function gameLoopWithInput(timestamp) {
+    if (!gameRunning) return;
+    if (!lastTime) lastTime = timestamp;
+    let dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+    if (dt > 0.1) dt = 0.016;
+
+    inputUpdate(dt);
+    update(dt);
+    render();
+    animFrameId = requestAnimationFrame(gameLoopWithInput);
+  }
+
+  // Replace the game loop reference
+  const origStart = startGame;
+  window._gcodeDropStart = function() {
+    score = 0;
+    lives = 5;
+    level = 1;
+    items = [];
+    particles = [];
+    combo = 0;
+    maxCombo = 0;
+    spawnTimer = 0;
+    spawnInterval = 1.2;
+    fallSpeed = 120;
+    lastTime = 0;
+    screenShake = 0;
+    flashAlpha = 0;
+    targetX = W / 2 - printHead.w / 2;
+    printHead.x = targetX;
+
+    overlay.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    gameRunning = true;
+
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = requestAnimationFrame(gameLoopWithInput);
+  };
+
+  startBtn.onclick = window._gcodeDropStart;
+  restartBtn.onclick = window._gcodeDropStart;
+
+})();
+</script>
+</body>
+</html>
