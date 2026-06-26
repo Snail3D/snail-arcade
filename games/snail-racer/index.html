@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Snail Racer — Snail Arcade</title>
+<title>Snail Racer 3D — Snail Arcade</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -152,9 +152,9 @@
 
   <div class="overlay" id="start">
     <div class="panel">
-      <h1>🐌 Snail Racer</h1>
+      <h1>🐌 Snail Racer 3D</h1>
       <p class="subtitle">Snail Arcade</p>
-      <p>Tap or click as fast as you can to race your snail to the finish line!</p>
+      <p>Tap or click as fast as you can to race your snail down the 3D track!</p>
       <div class="keys">
         <span class="key">TAP</span>
         <span class="key">CLICK</span>
@@ -191,11 +191,10 @@
   const resultEmoji = document.getElementById('result-emoji');
   const bestLine = document.getElementById('best-line');
 
-  // Game dimensions (internal buffer)
+  // Internal buffer size — high-res, scaled down via CSS
   const GAME_W = 800;
   const GAME_H = 500;
 
-  // Responsive canvas
   function resize() {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -204,70 +203,105 @@
     const h = Math.floor(GAME_H * scale);
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
+    canvas.width = GAME_W;
+    canvas.height = GAME_H;
   }
   window.addEventListener('resize', resize);
   resize();
 
-  // --- Constants ---
-  const FINISH_X = GAME_W - 60;   // where the finish line is
-  const LANE_Y = [GAME_H - 90, GAME_H - 190, GAME_H - 290, GAME_H - 380]; // y positions for 4 lanes
-  const TRACK_TOP = LANE_Y[3] - 20;
-  const TRACK_BOTTOM = LANE_Y[0] + 70;
+  // ─── 3D Projection ───
+  // Track: 4 lanes, perspective view, vanishing point at center
+  // Lane Y positions in screen space (back to front)
+  const LANE_SCREEN_Y = [410, 320, 240, 175]; // front→back (closer to camera = larger Y)
+  const LANE_X_OFFSET = [-200, -75, 75, 200]; // lateral position per lane (perspective)
+  const TRACK_NEAR_Y = 430;
+  const TRACK_FAR_Y = 165;
+  const VANISH_X = GAME_W / 2;
+  const FOCAL = 380;
+  const NEAR_Z = 30;
+  const FAR_Z = 1000;
+  // Lane depth positions (z=NEAR..FAR)
+  const LANE_Z = [NEAR_Z + 60, NEAR_Z + 240, NEAR_Z + 480, NEAR_Z + 800];
+
+  function project(laneX, laneZ) {
+    // laneX: lateral in world (-300..+300)
+    // laneZ: depth (positive = away from camera)
+    if (laneZ < NEAR_Z) laneZ = NEAR_Z;
+    const scale = FOCAL / laneZ;
+    // Lane positions (each lane has its own screen center)
+    // Map laneZ to lane index
+    let lane = 0;
+    for (let i = 0; i < LANE_Z.length; i++) {
+      if (laneZ <= LANE_Z[i]) { lane = i; break; }
+      lane = i;
+    }
+    // Interpolate screen Y based on depth between current and next lane
+    let screenY, screenX;
+    if (lane >= LANE_Z.length - 1) {
+      screenY = LANE_SCREEN_Y[LANE_Z.length - 1];
+      screenX = VANISH_X + LANE_X_OFFSET[LANE_Z.length - 1] + laneX * 0.3;
+    } else {
+      const z0 = lane === 0 ? NEAR_Z : LANE_Z[lane - 1];
+      const z1 = LANE_Z[lane];
+      const t = (laneZ - z0) / (z1 - z0);
+      screenY = LANE_SCREEN_Y[lane] + (LANE_SCREEN_Y[lane + 1] - LANE_SCREEN_Y[lane]) * t;
+      const xBase = LANE_X_OFFSET[lane] + (LANE_X_OFFSET[lane + 1] - LANE_X_OFFSET[lane]) * t;
+      screenX = VANISH_X + xBase + laneX * scale * 0.3;
+    }
+    const s = FOCAL / laneZ;
+    return { sx: screenX, sy: screenY, scale: s };
+  }
+
+  // Constants
+  const FINISH_X = 740;
   const MAX_SPEED = 9;
   const FRICTION = 0.013;
   const TAP_BOOST = 0.55;
-  const CPU_BASE = [0.025, 0.022, 0.028]; // per-frame speed multipliers for 3 CPUs
+  const CPU_BASE = [0.025, 0.022, 0.028];
 
-  // --- Game State ---
+  // State
   const STATE_READY = 0;
   const STATE_RACING = 1;
   const STATE_FINISHED = 2;
   let state = STATE_READY;
 
-  // Player
-  const player = { x: 40, speed: 0, tapCount: 0, lane: 0, wobble: 0, nitro: 0 };
+  // Player (x = world X position, lane = assigned lane)
+  const player = { x: 40, speed: 0, tapCount: 0, lane: 0, wobble: 0, nitro: 0, laneX: 0 };
 
   // CPUs
   const cpus = [
-    { x: 40, speed: 0, lane: 1, wobble: 0 },
-    { x: 40, speed: 0, lane: 2, wobble: Math.PI * 0.7 },
-    { x: 40, speed: 0, lane: 3, wobble: Math.PI * 1.3 },
+    { x: 40, speed: 0, lane: 1, wobble: 0, laneX: 0 },
+    { x: 40, speed: 0, lane: 2, wobble: Math.PI * 0.7, laneX: 0 },
+    { x: 40, speed: 0, lane: 3, wobble: Math.PI * 1.3, laneX: 0 },
   ];
 
-  // Finish order
-  let finishOrder = []; // 'player' or 'cpu0','cpu1','cpu2'
+  let finishOrder = [];
   let finishTime = 0;
-
-  // Particles
   const particles = [];
-
-  // Speed lines (motion streaks)
   const streaks = [];
-
-  // Race progress scroll (for track details)
   let scrollX = 0;
 
-  // localStorage best (fewest taps to finish)
   let best = parseInt(localStorage.getItem('snail-racer-best') || '0', 10);
   let bestSet = best > 0;
 
-  // --- Overlay helpers ---
   function setOverlay(name) {
     startScreen.classList.toggle('active', name === 'start');
     gameoverScreen.classList.toggle('active', name === 'gameover');
   }
 
-  // --- Reset / init ---
   function resetRace() {
     player.x = 40;
     player.speed = 0;
     player.tapCount = 0;
     player.wobble = 0;
     player.nitro = 0;
+    player.lane = 0;
+    player.laneX = 0;
     cpus.forEach((c, i) => {
       c.x = 40;
       c.speed = 0;
       c.wobble = Math.PI * (i + 1) * 0.7;
+      c.laneX = 0;
     });
     finishOrder = [];
     particles.length = 0;
@@ -288,7 +322,6 @@
     state = STATE_FINISHED;
     finishTime = Date.now();
 
-    // Determine player placement
     const playerPlace = finishOrder.indexOf('player');
     const isWin = playerPlace === 0;
     const isNewBest = player.tapCount > 0 && (best === 0 || player.tapCount < best);
@@ -298,7 +331,6 @@
       localStorage.setItem('snail-racer-best', best);
     }
 
-    // Update game over panel
     if (isWin) {
       resultTitle.textContent = 'You Win!';
       resultTitle.style.color = '#00ff88';
@@ -318,52 +350,38 @@
     finalTaps.textContent = player.tapCount;
     finalBest.textContent = best;
 
-    // Show game over after short delay
     setTimeout(() => {
       if (state === STATE_FINISHED) setOverlay('gameover');
     }, 900);
   }
 
-  // --- Input ---
   function onInput(e) {
     e.preventDefault();
-    if (state === STATE_READY) {
-      startRace();
-      return;
-    }
+    if (state === STATE_READY) { startRace(); return; }
     if (state === STATE_FINISHED) {
-      // Allow restart after a moment
-      if (Date.now() - finishTime > 500) {
-        startRace();
-      }
+      if (Date.now() - finishTime > 500) startRace();
       return;
     }
     if (state === STATE_RACING) {
-      // Tap boost
       player.speed += TAP_BOOST;
       if (player.speed > MAX_SPEED) player.speed = MAX_SPEED;
       player.tapCount++;
       tapCountEl.textContent = player.tapCount;
 
-      // Nitro: every 50 taps, get a burst
-      if (player.tapCount % 50 === 0) {
-        player.nitro = 60; // 1 second of boosted speed
-      }
-
-      // Nitro boost
+      if (player.tapCount % 50 === 0) player.nitro = 60;
       if (player.nitro > 0) {
         player.speed = Math.min(MAX_SPEED * 1.3, player.speed + 0.3);
         player.nitro--;
       }
 
-      // Tap particles (slime splat behind snail)
       for (let i = 0; i < 5; i++) {
-        const laneY = LANE_Y[player.lane];
         particles.push({
           x: player.x - 10 + Math.random() * -15,
-          y: laneY + 20 + Math.random() * 20 - 10,
+          y: 30 + Math.random() * 20 - 10,
+          z: LANE_Z[player.lane] + 50,
           vx: -1 - Math.random() * 2,
           vy: -1 + Math.random() * 2,
+          vz: -2 - Math.random() * 2,
           r: 2 + Math.random() * 3,
           life: 1,
           color: `hsl(${100 + Math.random() * 40}, 70%, 55%)`,
@@ -385,203 +403,36 @@
   gameoverScreen.addEventListener('mousedown', onInput);
   gameoverScreen.addEventListener('touchstart', onInput, { passive: false });
 
-  // --- Update ---
-  function update() {
-    if (state === STATE_RACING) {
-      // Player physics
-      player.speed -= player.speed * FRICTION;
-      if (player.speed < 0) player.speed = 0;
-      player.x += player.speed;
+  // ─── 3D Snail drawing helper ───
+  function drawSnail3D(worldX, lane, wobble, speed, isPlayer) {
+    const z = LANE_Z[lane] + 20;
+    const p = project(worldX, z);
+    const s = p.scale;
+    const sx = p.sx;
+    const sy = p.sy;
+    const r = Math.max(8, 22 * s * 0.5);
 
-      // Speed display (0-100%)
-      const pct = Math.round((player.speed / MAX_SPEED) * 100);
-      speedValEl.textContent = pct;
-
-      // Player wobble (snail bounce)
-      player.wobble += 0.12 + player.speed * 0.04;
-
-      // CPU movement
-      cpus.forEach((c, i) => {
-        // Variable speed based on position (rubber-banding)
-        const base = CPU_BASE[i];
-        const variance = Math.sin(Date.now() / 800 + c.wobble) * 0.008;
-        c.speed += base + variance + Math.random() * 0.006;
-        c.speed *= 0.97;
-        if (c.speed > MAX_SPEED * 0.88) c.speed = MAX_SPEED * 0.88;
-        c.x += c.speed;
-        c.wobble += 0.05 + c.speed * 0.02;
-
-        // Check if CPU finished
-        if (c.x >= FINISH_X && !finishOrder.includes('cpu' + i)) {
-          finishOrder.push('cpu' + i);
-          // CPU slime particles at finish
-          const laneY = LANE_Y[c.lane];
-          for (let j = 0; j < 15; j++) {
-            particles.push({
-              x: c.x,
-              y: laneY + 20 + Math.random() * 20 - 10,
-              vx: (Math.random() - 0.5) * 4,
-              vy: -1 - Math.random() * 3,
-              r: 2 + Math.random() * 4,
-              life: 1,
-              color: '#7bc95c',
-            });
-          }
-        }
-      });
-
-      // Check if player finished
-      if (player.x >= FINISH_X && !finishOrder.includes('player')) {
-        finishOrder.push('player');
-        endRace();
-        // Victory particles
-        for (let j = 0; j < 25; j++) {
-          particles.push({
-            x: player.x,
-            y: LANE_Y[player.lane] + 20,
-            vx: (Math.random() - 0.5) * 6,
-            vy: -2 - Math.random() * 4,
-            r: 3 + Math.random() * 4,
-            life: 1,
-            color: ['#00ff88', '#ffeb3b', '#ff9a56', '#7bc95c'][Math.floor(Math.random() * 4)],
-          });
-        }
-      }
-
-      // Scroll for track details
-      scrollX += player.speed * 0.3;
-    }
-
-    // Update particles
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.15;
-      p.life -= 0.025;
-      if (p.life <= 0) particles.splice(i, 1);
-    }
-
-    // Update speed streaks
-    if (state === STATE_RACING && player.speed > 2) {
-      if (Math.random() < player.speed / MAX_SPEED) {
-        streaks.push({
-          x: player.x - 20,
-          y: LANE_Y[player.lane] + 22 + Math.random() * 10 - 5,
-          len: 10 + Math.random() * 20 * (player.speed / MAX_SPEED),
-          life: 1,
-        });
-      }
-    }
-    for (let i = streaks.length - 1; i >= 0; i--) {
-      streaks[i].x -= 3;
-      streaks[i].life -= 0.08;
-      if (streaks[i].life <= 0) streaks.splice(i, 1);
-    }
-  }
-
-  // --- Drawing helpers ---
-  function drawTrack() {
-    // Track background (asphalt)
-    const trackGrad = ctx.createLinearGradient(0, TRACK_TOP, 0, TRACK_BOTTOM + 20);
-    trackGrad.addColorStop(0, '#1a1a1a');
-    trackGrad.addColorStop(0.5, '#222');
-    trackGrad.addColorStop(1, '#1a1a1a');
-    ctx.fillStyle = trackGrad;
-    ctx.fillRect(0, TRACK_TOP, GAME_W, TRACK_BOTTOM - TRACK_TOP + 20);
-
-    // Lane dividers (dashed white lines)
-    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([20, 15]);
-    for (let i = 1; i <= 3; i++) {
-      const y = LANE_Y[i] + 50;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(GAME_W, y);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-
-    // Track edges (neon green border)
-    ctx.strokeStyle = '#00ff88';
-    ctx.lineWidth = 3;
-    ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 10;
-    ctx.beginPath();
-    ctx.moveTo(0, TRACK_TOP);
-    ctx.lineTo(GAME_W, TRACK_TOP);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, TRACK_BOTTOM);
-    ctx.lineTo(GAME_W, TRACK_BOTTOM);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // Start line
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(30, TRACK_TOP, 6, TRACK_BOTTOM - TRACK_TOP);
-    for (let y = TRACK_TOP; y < TRACK_BOTTOM; y += 16) {
-      ctx.fillStyle = (Math.floor(y / 16) % 2 === 0) ? '#fff' : '#222';
-      ctx.fillRect(30, y, 6, 8);
-    }
-
-    // Finish line (checkered)
-    const fx = FINISH_X;
-    const fw = 12;
-    for (let row = 0; row < Math.ceil((TRACK_BOTTOM - TRACK_TOP) / 12); row++) {
-      for (let col = 0; col < 2; col++) {
-        ctx.fillStyle = ((row + col) % 2 === 0) ? '#fff' : '#111';
-        ctx.fillRect(fx + col * (fw / 2), TRACK_TOP + row * 12, fw / 2, 12);
-      }
-    }
-    // "FINISH" text on finish line
     ctx.save();
-    ctx.translate(fx + fw / 2, (TRACK_TOP + TRACK_BOTTOM) / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = '#00ff88';
-    ctx.font = 'bold 14px Courier New';
-    ctx.textAlign = 'center';
-    ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 8;
-    ctx.fillText('FINISH', 0, 5);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-
-    // Distance markers
-    ctx.fillStyle = 'rgba(0,255,136,0.3)';
-    ctx.font = '10px Courier New';
-    const distStart = 100;
-    const distStep = 100;
-    for (let d = distStart; d < FINISH_X - 20; d += distStep) {
-      ctx.fillText(d + 'm', d, TRACK_TOP - 5);
-      ctx.fillText(d + 'm', d, TRACK_BOTTOM + 14);
-    }
-  }
-
-  function drawSnailShape(x, y, lane, wobble, speed, isPlayer) {
-    ctx.save();
-    ctx.translate(x, y + 20); // center in lane
+    ctx.translate(sx, sy);
     ctx.rotate(Math.sin(wobble) * 0.08);
 
-    const r = 20; // snail radius
-    const dir = isPlayer ? 1 : -1; // face direction of travel
-    const flipX = isPlayer ? 1 : -1;
+    const flipX = 1; // always face right (direction of travel)
+    const dir = 1;
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    // Shadow (ellipse beneath)
+    ctx.fillStyle = `rgba(0,0,0,${0.3 * s * 0.5})`;
     ctx.beginPath();
-    ctx.ellipse(0, r + 4, r * 1.2, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, r * 0.8, r * 1.2, r * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Slime trail (wavy line behind)
-    ctx.strokeStyle = `rgba(180,230,150,${0.2 + speed * 0.06})`;
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(180,230,150,${(0.2 + speed * 0.06) * Math.min(1, s * 0.5)})`;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(-r * flipX, 4);
+    ctx.moveTo(-r * flipX, r * 0.3);
     const trailLen = 25 + speed * 3;
     for (let i = 0; i <= trailLen; i += 5) {
-      ctx.lineTo(-r * flipX - i * flipX, 4 + Math.sin(wobble * 2 - i * 0.15) * 3);
+      ctx.lineTo(-r * flipX - i * flipX * 0.3, r * 0.3 + Math.sin(wobble * 2 - i * 0.15) * 2);
     }
     ctx.stroke();
 
@@ -591,101 +442,95 @@
     bodyGrad.addColorStop(1, '#8ab868');
     ctx.fillStyle = bodyGrad;
     ctx.beginPath();
-    ctx.ellipse(0, 6, r + 3, r - 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, r * 0.35, r + 3, r - 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Shell
-    const shellGrad = ctx.createRadialGradient(-3, -5, 2, 0, 0, r - 2);
+    const shellGrad = ctx.createRadialGradient(-3, -5, 2, 0, -2, r - 2);
     shellGrad.addColorStop(0, '#ffb070');
     shellGrad.addColorStop(0.5, '#e87830');
     shellGrad.addColorStop(1, '#a04018');
     ctx.fillStyle = shellGrad;
     ctx.beginPath();
-    ctx.arc(0, -4, r - 3, 0, Math.PI * 2);
+    ctx.arc(0, -2, r - 3, 0, Math.PI * 2);
     ctx.fill();
 
     // Shell spiral
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(0, -4, r - 7, 0.3, Math.PI * 1.3);
+    ctx.arc(0, -2, r - 7, 0.3, Math.PI * 1.3);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(0, -4, r - 11, 0.5, Math.PI * 1.7);
+    ctx.arc(0, -2, r - 11, 0.5, Math.PI * 1.7);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(0, -4, 3, 0, Math.PI * 2);
+    ctx.arc(0, -2, 3, 0, Math.PI * 2);
     ctx.stroke();
 
     // Shell highlight
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
     ctx.beginPath();
-    ctx.arc(-5, -10, 4, 0, Math.PI * 2);
+    ctx.arc(-5, -8, 3, 0, Math.PI * 2);
     ctx.fill();
 
-    // Head (pointing in direction of travel)
-    const headX = (isPlayer ? r + 2 : -r - 2) * flipX;
+    // Head (pointing forward)
+    const headX = r + 2;
     ctx.fillStyle = '#d0eca0';
     ctx.beginPath();
-    ctx.ellipse(headX, 2, 9, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(headX, r * 0.15, 7, 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Eye
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    const eyeX = headX + (isPlayer ? 4 : -4) * flipX;
-    ctx.arc(eyeX, -1, 4, 0, Math.PI * 2);
+    ctx.arc(headX + 4, -0.5, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#111';
     ctx.beginPath();
-    ctx.arc(eyeX + (isPlayer ? 1.5 : -1.5) * flipX, -1, 2, 0, Math.PI * 2);
+    ctx.arc(headX + 5.5, -0.5, 1.5, 0, Math.PI * 2);
     ctx.fill();
-    // Eye highlight
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(eyeX - 1, -2, 1, 0, Math.PI * 2);
+    ctx.arc(headX + 3, -1.5, 1, 0, Math.PI * 2);
     ctx.fill();
 
     // Antennae
     ctx.strokeStyle = '#5a8a3a';
-    ctx.lineWidth = 1.8;
-    const antBaseX = headX;
-    const antBaseY = -2;
-    // Top antenna
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(antBaseX, antBaseY);
-    ctx.lineTo(antBaseX + (isPlayer ? 8 : -8), antBaseY - 14);
+    ctx.moveTo(headX, -1.5);
+    ctx.lineTo(headX + 6, -12);
     ctx.stroke();
     ctx.fillStyle = '#5a8a3a';
     ctx.beginPath();
-    ctx.arc(antBaseX + (isPlayer ? 8 : -8), antBaseY - 14, 2.5, 0, Math.PI * 2);
+    ctx.arc(headX + 6, -12, 2, 0, Math.PI * 2);
     ctx.fill();
-    // Side antenna
     ctx.beginPath();
-    ctx.moveTo(antBaseX + (isPlayer ? 2 : -2), antBaseY);
-    ctx.lineTo(antBaseX + (isPlayer ? 6 : -6), antBaseY - 10);
+    ctx.moveTo(headX + 1.5, -1.5);
+    ctx.lineTo(headX + 4, -9);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(antBaseX + (isPlayer ? 6 : -6), antBaseY - 10, 2, 0, Math.PI * 2);
+    ctx.arc(headX + 4, -9, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Mouth (small smile)
+    // Mouth
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(headX + (isPlayer ? 3 : -3), 3, 2.5, 0, Math.PI);
+    ctx.arc(headX + 2.5, 2, 2, 0, Math.PI);
     ctx.stroke();
 
-    // Speed indicator (motion lines)
+    // Speed indicator
     if (speed > 1) {
       ctx.strokeStyle = `rgba(0,255,136,${Math.min(0.6, speed / MAX_SPEED * 0.7)})`;
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.2;
       for (let i = 0; i < 3; i++) {
-        const sy = -r + i * r / 1.5;
+        const sy = -r * 0.6 + i * r * 0.4;
         const len = 8 + speed * 2;
         ctx.beginPath();
-        ctx.moveTo(-r * flipX - 5, sy);
-        ctx.lineTo(-r * flipX - 5 - len, sy);
+        ctx.moveTo(-r - 4, sy);
+        ctx.lineTo(-r - 4 - len, sy);
         ctx.stroke();
       }
     }
@@ -697,39 +542,193 @@
       ctx.textAlign = 'center';
       ctx.shadowColor = '#00ff88';
       ctx.shadowBlur = 6;
-      ctx.fillText('YOU', 0, -r - 8);
+      ctx.fillText('YOU', 0, -r - 6);
       ctx.shadowBlur = 0;
     }
 
     ctx.restore();
   }
 
-  function drawCpuLabel(x, lane) {
+  // ─── 3D Track drawing ───
+  function drawTrack3D() {
+    // Sky/background gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, GAME_H);
+    bgGrad.addColorStop(0, '#020a02');
+    bgGrad.addColorStop(0.5, '#0a1a0a');
+    bgGrad.addColorStop(1, '#060e06');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Track ground plane (between lane rows)
+    // Draw from back to front: trapezoid for each lane segment
+    for (let i = LANE_Z.length - 1; i > 0; i--) {
+      const z0 = i === 0 ? NEAR_Z : LANE_Z[i - 1];
+      const z1 = LANE_Z[i];
+      const yTop = LANE_SCREEN_Y[i] + (i + 1 < LANE_Z.length ? 0 : -50);
+      const yBot = LANE_SCREEN_Y[i - 1];
+
+      // Interpolate lane edge positions
+      let xLeft, xRight;
+      if (i === 0) {
+        xLeft = VANISH_X + LANE_X_OFFSET[0] - 130;
+        xRight = VANISH_X + LANE_X_OFFSET[0] + 130;
+      } else if (i >= LANE_Z.length - 1) {
+        xLeft = VANISH_X + LANE_X_OFFSET[i] - 30;
+        xRight = VANISH_X + LANE_X_OFFSET[i] + 30;
+      } else {
+        const t0 = (z0 - (i > 0 ? LANE_Z[i - 1] : NEAR_Z)) / (LANE_Z[i] - (i > 0 ? LANE_Z[i - 1] : NEAR_Z));
+        const t1 = (z1 - LANE_Z[i - 1]) / (LANE_Z[i] - LANE_Z[i - 1]);
+        xLeft = VANISH_X + (LANE_X_OFFSET[i - 1] - 30) + ((LANE_X_OFFSET[i] - 30) - (LANE_X_OFFSET[i - 1] - 30)) * t1;
+        xRight = VANISH_X + (LANE_X_OFFSET[i - 1] + 30) + ((LANE_X_OFFSET[i] + 30) - (LANE_X_OFFSET[i - 1] + 30)) * t1;
+      }
+      // Asphalt fill
+      const xL0 = VANISH_X + LANE_X_OFFSET[i - 1 < 0 ? 0 : i - 1] - 130 * (1 - (LANE_Z[i - 1 < 0 ? 0 : i - 1] / FAR_Z));
+      const xR0 = VANISH_X + LANE_X_OFFSET[i - 1 < 0 ? 0 : i - 1] + 130 * (1 - (LANE_Z[i - 1 < 0 ? 0 : i - 1] / FAR_Z));
+      const xL1 = VANISH_X + LANE_X_OFFSET[i] - 30 * (1 - (LANE_Z[i] / FAR_Z));
+      const xR1 = VANISH_X + LANE_X_OFFSET[i] + 30 * (1 - (LANE_Z[i] / FAR_Z));
+
+      const grad = ctx.createLinearGradient(0, yTop, 0, yBot);
+      grad.addColorStop(0, '#0e1a0e');
+      grad.addColorStop(1, '#1a2a1a');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(xL0, yBot);
+      ctx.lineTo(xR0, yBot);
+      ctx.lineTo(xR1, yTop);
+      ctx.lineTo(xL1, yTop);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Lane dividers (dashed white lines on track)
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1.5;
+    for (let i = 1; i < LANE_Z.length; i++) {
+      const z = (LANE_Z[i - 1] + LANE_Z[i]) / 2;
+      const xLeft = VANISH_X + (LANE_X_OFFSET[i - 1] + LANE_X_OFFSET[i]) / 2;
+      const yTop = (LANE_SCREEN_Y[i - 1] + LANE_SCREEN_Y[i]) / 2 - 15;
+      const yBot = LANE_SCREEN_Y[i - 1] + 5;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(xLeft, yBot);
+      ctx.lineTo(xLeft + (VANISH_X - xLeft) * 0.95, yTop);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Track edges (neon green border)
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 8;
+    // Left edge (full polyline front to back)
+    ctx.beginPath();
+    for (let i = LANE_Z.length - 1; i >= 0; i--) {
+      const z = i === 0 ? NEAR_Z : LANE_Z[i - 1];
+      const xLeft = VANISH_X + LANE_X_OFFSET[i] - 30 * (1 - (LANE_Z[i] / FAR_Z));
+      const y = LANE_SCREEN_Y[i];
+      if (i === LANE_Z.length - 1) ctx.moveTo(xLeft, y);
+      else ctx.lineTo(xLeft, y);
+    }
+    ctx.stroke();
+    // Right edge
+    ctx.beginPath();
+    for (let i = LANE_Z.length - 1; i >= 0; i--) {
+      const xRight = VANISH_X + LANE_X_OFFSET[i] + 30 * (1 - (LANE_Z[i] / FAR_Z));
+      const y = LANE_SCREEN_Y[i];
+      if (i === LANE_Z.length - 1) ctx.moveTo(xRight, y);
+      else ctx.lineTo(xRight, y);
+    }
+    ctx.stroke();
+    // Front edge (closest)
+    ctx.beginPath();
+    ctx.moveTo(VANISH_X + LANE_X_OFFSET[0] - 130, LANE_SCREEN_Y[0] + 5);
+    ctx.lineTo(VANISH_X + LANE_X_OFFSET[0] + 130, LANE_SCREEN_Y[0] + 5);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Distance markers (perspective text on edges)
+    ctx.fillStyle = 'rgba(0,255,136,0.4)';
+    ctx.font = '9px Courier New';
+    const distStart = 100;
+    const distStep = 100;
+    for (let d = distStart; d < FINISH_X - 20; d += distStep) {
+      // Calculate depth for this distance (d=40→NEAR, d=FINISH_X→deeper)
+      const t = (d - 40) / (FINISH_X - 40);
+      const z = NEAR_Z + t * (FAR_Z - NEAR_Z);
+      const p = project(0, z);
+      const s = p.scale * 0.5;
+      ctx.fillText(d + 'm', p.sx - 80 * s, p.sy - 5);
+      ctx.fillText(d + 'm', p.sx + 80 * s, p.sy - 5);
+    }
+
+    // Finish line (3D arch at FINISH_X)
+    const finishZ = NEAR_Z + ((FINISH_X - 40) / (FINISH_X - 40)) * (FAR_Z - NEAR_Z);
+    const finishP = project(0, finishZ);
+    const finishS = finishP.scale * 0.5;
+    // Checkered pillar pattern (left and right)
+    const pillarW = 8 * finishS;
+    const pillarH = 60 * finishS;
+    const pillarTop = finishP.sy - pillarH;
+    for (let side = -1; side <= 1; side += 2) {
+      const px = finishP.sx + side * 50 * finishS;
+      // Left half
+      for (let row = 0; row < 5; row++) {
+        for (let col = 0; col < 2; col++) {
+          ctx.fillStyle = ((row + col) % 2 === 0) ? '#fff' : '#111';
+          ctx.fillRect(px + side * (col * pillarW / 2 - pillarW / 2), pillarTop + row * pillarH / 5, pillarW / 2, pillarH / 5);
+        }
+      }
+    }
+    // "FINISH" text banner across top
+    ctx.save();
+    ctx.translate(finishP.sx, pillarTop - 8);
+    const textScale = Math.max(0.5, finishS);
+    ctx.scale(textScale, textScale);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 14px Courier New';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 8;
+    ctx.fillText('FINISH', 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function drawCpuLabel(worldX, lane) {
+    const z = LANE_Z[lane] + 50;
+    const p = project(worldX, z);
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.font = 'bold 9px Courier New';
     ctx.textAlign = 'center';
-    ctx.fillText('CPU ' + (lane), x, LANE_Y[lane] + 8);
+    ctx.fillText('CPU ' + (lane), p.sx, p.sy + 8);
   }
 
-  function drawParticles() {
-    for (const p of particles) {
+  function drawParticles3D() {
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const pp = project(p.x, p.z);
+      const s = pp.scale * 0.5;
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.arc(pp.sx, pp.sy + p.y, p.r * s, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
 
-  function drawStreaks() {
-    for (const s of streaks) {
+  function drawStreaks3D() {
+    for (let i = 0; i < streaks.length; i++) {
+      const s = streaks[i];
+      const sp = project(s.x, LANE_Z[s.lane] + 30);
+      const sc = sp.scale * 0.5;
       ctx.globalAlpha = s.life * 0.5;
       ctx.strokeStyle = '#00ff88';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y);
-      ctx.lineTo(s.x - s.len, s.y);
+      ctx.moveTo(sp.sx, sp.sy + s.y);
+      ctx.lineTo(sp.sx - s.len * sc, sp.sy + s.y);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
@@ -742,11 +741,9 @@
     const bx = (GAME_W - barW) / 2;
     const by = GAME_H - 28;
 
-    // Background
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
 
-    // Track progress
     const progress = Math.min(1, player.x / FINISH_X);
     const fillGrad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
     fillGrad.addColorStop(0, '#00ff88');
@@ -754,12 +751,10 @@
     ctx.fillStyle = fillGrad;
     ctx.fillRect(bx, by, barW * progress, barH);
 
-    // Border
     ctx.strokeStyle = '#00ff88';
     ctx.lineWidth = 1;
     ctx.strokeRect(bx - 1, by - 1, barW + 2, barH + 2);
 
-    // Snail icon on progress bar
     const iconX = bx + barW * progress;
     ctx.fillStyle = '#fff';
     ctx.font = '10px Courier New';
@@ -767,43 +762,129 @@
     ctx.fillText('🐌', Math.min(iconX, GAME_W - 20), by + barH + 10);
   }
 
-  // --- Main loop ---
-  let lastTime = 0;
-  function loop(t) {
-    const dt = Math.min(33, t - lastTime || 16);
-    lastTime = t;
+  function update() {
+    if (state === STATE_RACING) {
+      player.speed -= player.speed * FRICTION;
+      if (player.speed < 0) player.speed = 0;
+      player.x += player.speed;
 
+      const pct = Math.round((player.speed / MAX_SPEED) * 100);
+      speedValEl.textContent = pct;
+
+      player.wobble += 0.12 + player.speed * 0.04;
+
+      cpus.forEach((c, i) => {
+        const base = CPU_BASE[i];
+        const variance = Math.sin(Date.now() / 800 + c.wobble) * 0.008;
+        c.speed += base + variance + Math.random() * 0.006;
+        c.speed *= 0.97;
+        if (c.speed > MAX_SPEED * 0.88) c.speed = MAX_SPEED * 0.88;
+        c.x += c.speed;
+        c.wobble += 0.05 + c.speed * 0.02;
+
+        if (c.x >= FINISH_X && !finishOrder.includes('cpu' + i)) {
+          finishOrder.push('cpu' + i);
+          for (let j = 0; j < 15; j++) {
+            particles.push({
+              x: c.x,
+              y: 30 + Math.random() * 20 - 10,
+              z: LANE_Z[c.lane] + 30,
+              vx: (Math.random() - 0.5) * 4,
+              vy: -1 - Math.random() * 3,
+              vz: (Math.random() - 0.5) * 2,
+              r: 2 + Math.random() * 4,
+              life: 1,
+              color: '#7bc95c',
+            });
+          }
+        }
+      });
+
+      if (player.x >= FINISH_X && !finishOrder.includes('player')) {
+        finishOrder.push('player');
+        endRace();
+        for (let j = 0; j < 25; j++) {
+          particles.push({
+            x: player.x,
+            y: 30,
+            z: LANE_Z[player.lane] + 30,
+            vx: (Math.random() - 0.5) * 6,
+            vy: -2 - Math.random() * 4,
+            vz: (Math.random() - 0.5) * 3,
+            r: 3 + Math.random() * 4,
+            life: 1,
+            color: ['#00ff88', '#ffeb3b', '#ff9a56', '#7bc95c'][Math.floor(Math.random() * 4)],
+          });
+        }
+      }
+
+      scrollX += player.speed * 0.3;
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * 0.3;
+      p.y += p.vy * 0.3;
+      p.z += p.vz * 0.3;
+      p.vy += 0.05;
+      p.life -= 0.025;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    if (state === STATE_RACING && player.speed > 2) {
+      if (Math.random() < player.speed / MAX_SPEED) {
+        streaks.push({
+          x: player.x - 20,
+          y: 22 + Math.random() * 10 - 5,
+          len: 10 + Math.random() * 20 * (player.speed / MAX_SPEED),
+          life: 1,
+          lane: player.lane,
+        });
+      }
+    }
+    for (let i = streaks.length - 1; i >= 0; i--) {
+      streaks[i].x -= 3;
+      streaks[i].life -= 0.08;
+      if (streaks[i].life <= 0) streaks.splice(i, 1);
+    }
+  }
+
+  // Main render
+  function loop() {
     update();
 
-    // --- Render ---
     // Clear with dark background
-    ctx.fillStyle = '#0a0f0a';
+    ctx.fillStyle = '#060e06';
     ctx.fillRect(0, 0, GAME_W, GAME_H);
 
-    drawTrack();
+    drawTrack3D();
+    drawStreaks3D();
 
-    // Draw speed streaks (behind snails)
-    drawStreaks();
+    // Sort by z (far to near)
+    const entities = [];
+    entities.push({ z: LANE_Z[player.lane] + 20, kind: 'snail', isPlayer: true });
+    cpus.forEach((c, i) => entities.push({ z: LANE_Z[c.lane] + 20, kind: 'snail', isPlayer: false, idx: i }));
+    entities.sort((a, b) => b.z - a.z);
 
-    // Draw CPUs
-    cpus.forEach((c, i) => {
-      drawCpuLabel(c.x, cpus[i].lane);
-      drawSnailShape(c.x, LANE_Y[c.lane], c.lane, c.wobble, c.speed, false);
+    entities.forEach(e => {
+      if (e.kind === 'snail') {
+        if (e.isPlayer) {
+          drawSnail3D(player.x, player.lane, player.wobble, player.speed, true);
+        } else {
+          const c = cpus[e.idx];
+          drawCpuLabel(c.x, c.lane);
+          drawSnail3D(c.x, c.lane, c.wobble, c.speed, false);
+        }
+      }
     });
 
-    // Draw player
-    drawSnailShape(player.x, LANE_Y[player.lane], player.lane, player.wobble, player.speed, true);
-
-    // Draw particles (on top)
-    drawParticles();
-
-    // Progress bar
+    drawParticles3D();
     drawProgressBar();
 
     requestAnimationFrame(loop);
   }
 
-  // --- Init ---
+  // Init
   setOverlay('start');
   requestAnimationFrame(loop);
 })();
