@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Circuit Defense</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a12; font-family: 'Courier New', monospace; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#overlay {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.95); z-index: 10; pointer-events: auto;
+}
+#overlay.hidden { display: none !important; }
+#title { font-size: clamp(28px, 6vw, 56px); color: #0ff; text-shadow: 0 0 20px #0ff, 0 0 40px #08f; margin-bottom: 8px; letter-spacing: 4px; }
+#subtitle { font-size: clamp(12px, 2.5vw, 18px); color: #f0f; margin-bottom: 30px; letter-spacing: 2px; }
+#startBtn {
+  padding: 14px 48px; font-size: clamp(16px, 3vw, 22px); font-family: 'Courier New', monospace;
+  background: transparent; color: #0ff; border: 2px solid #0ff; cursor: pointer;
+  text-shadow: 0 0 10px #0ff; box-shadow: 0 0 15px rgba(0,255,255,0.3);
+  pointer-events: auto; transition: all 0.2s; letter-spacing: 3px;
+}
+#startBtn:hover { background: rgba(0,255,255,0.15); transform: scale(1.05); }
+#hud {
+  position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+  padding: 8px 16px; z-index: 5; pointer-events: none; font-size: clamp(11px, 2vw, 16px);
+}
+#hud > div { pointer-events: auto; }
+.hud-item { color: #0ff; text-shadow: 0 0 8px #0ff; }
+.hud-item span { color: #f0f; }
+#towerSelect {
+  position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; gap: 8px;
+  padding: 10px; z-index: 5; background: linear-gradient(transparent, rgba(10,10,18,0.9));
+}
+.tower-btn {
+  padding: 8px 12px; font-family: 'Courier New', monospace; font-size: clamp(10px, 1.8vw, 13px);
+  background: rgba(0,255,255,0.05); color: #0ff; border: 1px solid rgba(0,255,255,0.4);
+  cursor: pointer; pointer-events: auto; transition: all 0.15s; min-width: 60px; text-align: center;
+}
+.tower-btn.selected { background: rgba(0,255,255,0.2); border-color: #0ff; box-shadow: 0 0 10px rgba(0,255,255,0.4); }
+.tower-btn.disabled { opacity: 0.3; pointer-events: none; }
+#gameOver {
+  position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.92); z-index: 15; pointer-events: auto;
+}
+#gameOver.show { display: flex; }
+#gameOver h2 { font-size: clamp(24px, 5vw, 48px); color: #f0f; text-shadow: 0 0 20px #f0f; margin-bottom: 10px; }
+#gameOver p { color: #0ff; font-size: clamp(14px, 2.5vw, 20px); margin-bottom: 20px; }
+#restartBtn {
+  padding: 12px 40px; font-size: clamp(14px, 2.5vw, 18px); font-family: 'Courier New', monospace;
+  background: transparent; color: #f0f; border: 2px solid #f0f; cursor: pointer;
+  text-shadow: 0 0 10px #f0f; box-shadow: 0 0 15px rgba(255,0,255,0.3);
+  pointer-events: auto; letter-spacing: 2px;
+}
+#restartBtn:hover { background: rgba(255,0,255,0.15); }
+#tooltip {
+  position: fixed; display: none; padding: 6px 10px; background: rgba(0,0,0,0.9); color: #0ff;
+  border: 1px solid #0ff; font-size: 11px; z-index: 20; pointer-events: none; max-width: 200px;
+  font-family: 'Courier New', monospace;
+}
+#tooltip.show { display: block; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay" class="">
+  <div id="title">CIRCUIT DEFENSE</div>
+  <div id="subtitle">PROTECT THE CORE</div>
+  <button id="startBtn">INITIALIZE</button>
+</div>
+
+<div id="hud">
+  <div class="hud-item">WAVE: <span id="hudWave">1</span></div>
+  <div class="hud-item">SCORE: <span id="hudScore">0</span></div>
+  <div class="hud-item">CREDITS: <span id="hudCredits">100</span></div>
+  <div class="hud-item">LIVES: <span id="hudLives">20</span></div>
+</div>
+
+<div id="towerSelect">
+  <button class="tower-btn selected" data-type="capacitor" data-cost="25">⚡ 25</button>
+  <button class="tower-btn" data-type="resistor" data-cost="40">🔥 40</button>
+  <button class="tower-btn" data-type="diode" data-cost="60">💎 60</button>
+  <button class="tower-btn" data-type="transistor" data-cost="100">⬡ 100</button>
+</div>
+
+<div id="gameOver">
+  <h2>CORE BREACHED</h2>
+  <p>SCORE: <span id="finalScore">0</span></p>
+  <button id="restartBtn">REBOOT</button>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+(function() {
+  'use strict';
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const hudWave = document.getElementById('hudWave');
+  const hudScore = document.getElementById('hudScore');
+  const hudCredits = document.getElementById('hudCredits');
+  const hudLives = document.getElementById('hudLives');
+  const gameOverScreen = document.getElementById('gameOver');
+  const finalScore = document.getElementById('finalScore');
+  const tooltip = document.getElementById('tooltip');
+  const towerBtns = document.querySelectorAll('.tower-btn');
+
+  let W, H, scale;
+  let gameRunning = false;
+  let animFrame;
+  let lastTime = 0;
+
+  // Game state
+  let score = 0, credits = 100, lives = 20, wave = 1;
+  let enemies = [], towers = [], projectiles = [], particles = [];
+  let selectedTowerType = 'capacitor';
+  let waveActive = false, waveTimer = 0, enemiesSpawned = 0, enemiesInWave = 0;
+  let spawnTimer = 0;
+  let grid = [];
+  let CELL;
+  let COLS, ROWS;
+  let paths = [];
+  let corePos = { x: 0, y: 0 };
+
+  // Tower definitions
+  const TOWER_DEFS = {
+    capacitor:   { cost: 25, range: 90,  damage: 8,  fireRate: 800,  color: '#0ff', emoji: '⚡', projSpeed: 300, splash: 0 },
+    resistor:    { cost: 40, range: 70,  damage: 25, fireRate: 1200, color: '#f80', emoji: '🔥', projSpeed: 200, splash: 40 },
+    diode:       { cost: 60, range: 120, damage: 5,  fireRate: 200,  color: '#f0f', emoji: '💎', projSpeed: 500, splash: 0 },
+    transistor:  { cost: 100, range: 100, damage: 50, fireRate: 2000, color: '#ff0', emoji: '⬡', projSpeed: 150, splash: 60 }
+  };
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    CELL = Math.max(28, Math.min(40, Math.floor(Math.min(W, H) / 18)));
+    COLS = Math.floor(W / CELL);
+    ROWS = Math.floor((H - 80) / CELL);
+    corePos = { x: Math.floor(COLS / 2), y: Math.floor(ROWS / 2) };
+    buildGrid();
+    buildPaths();
+  }
+
+  function buildGrid() {
+    grid = [];
+    for (let y = 0; y < ROWS; y++) {
+      grid[y] = [];
+      for (let x = 0; x < COLS; x++) {
+        grid[y][x] = { tower: null, path: false };
+      }
+    }
+  }
+
+  function buildPaths() {
+    paths = [];
+    const cx = corePos.x, cy = corePos.y;
+    const edgeCells = COLS - 1;
+    // 4 paths from edges to center
+    const pathDefs = [
+      // Top path
+      generatePath(0, 0, cx, cy, 'top'),
+      // Bottom path
+      generatePath(COLS - 1, ROWS - 1, cx, cy, 'bottom'),
+      // Left path
+      generatePath(0, ROWS - 1, cx, cy, 'left'),
+      // Right path
+      generatePath(COLS - 1, 0, cx, cy, 'right')
+    ];
+    paths = pathDefs.filter(p => p.length > 0);
+    // Mark path cells
+    for (let p of paths) {
+      for (let pt of p) {
+        if (pt.y >= 0 && pt.y < ROWS && pt.x >= 0 && pt.x < COLS) {
+          grid[pt.y][pt.x].path = true;
+        }
+      }
+    }
+  }
+
+  function generatePath(sx, sy, ex, ey, side) {
+    const path = [];
+    let x = sx, y = sy;
+    // Go horizontally then vertically (or vice versa)
+    if (side === 'top' || side === 'bottom') {
+      // Move horizontally toward center, then vertically
+      const targetX = ex;
+      while (x !== targetX) x += (targetX > x) ? 1 : -1;
+      path.push({ x, y });
+      const targetY = ey;
+      while (y !== targetY) y += (targetY > y) ? 1 : -1;
+      path.push({ x, y });
+    } else {
+      const targetY = ey;
+      while (y !== targetY) y += (targetY > y) ? 1 : -1;
+      path.push({ x, y });
+      const targetX = ex;
+      while (x !== targetX) x += (targetX > x) ? 1 : -1;
+      path.push({ x, y });
+    }
+    return path;
+  }
+
+  function cellToPixel(cx, cy) {
+    return {
+      x: cx * CELL + CELL / 2,
+      y: cy * CELL + CELL / 2 + 40
+    };
+  }
+
+  function pixelToCell(px, py) {
+    return {
+      x: Math.floor(px / CELL),
+      y: Math.floor((py - 40) / CELL)
+    };
+  }
+
+  function dist(a, b) {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  }
+
+  // Enemy types
+  function createEnemy(type) {
+    const pathIdx = Math.floor(Math.random() * paths.length);
+    const path = paths[pathIdx];
+    const start = path[0];
+    const def = {
+      glitch:   { hp: 20 + wave * 5, speed: 1.2, reward: 5,  color: '#f44', size: 0.6 },
+      spike:    { hp: 40 + wave * 10, speed: 0.8, reward: 10, color: '#f80', size: 0.8 },
+      worm:     { hp: 10 + wave * 3, speed: 2.0, reward: 3,  color: '#ff0', size: 0.4 },
+      boss:     { hp: 100 + wave * 25, speed: 0.5, reward: 30, color: '#f0f', size: 1.2 }
+    }[type] || { hp: 20 + wave * 5, speed: 1.2, reward: 5, color: '#f44', size: 0.6 };
+
+    const pixel = cellToPixel(start.x, start.y);
+    return {
+      type, pathIdx, path, pathStep: 0,
+      x: pixel.x, y: pixel.y,
+      hp: def.hp, maxHp: def.hp, speed: def.speed,
+      reward: def.reward, color: def.color, size: def.size,
+      alive: true
+    };
+  }
+
+  function getWaveConfig(w) {
+    const base = 5 + w * 3;
+    const enemies = [];
+    for (let i = 0; i < base; i++) enemies.push('glitch');
+    if (w >= 2) for (let i = 0; i < Math.floor(w / 2); i++) enemies.push('worm');
+    if (w >= 3) for (let i = 0; i < Math.floor(w / 3); i++) enemies.push('spike');
+    if (w % 5 === 0) enemies.push('boss');
+    return enemies;
+  }
+
+  function startWave() {
+    waveActive = true;
+    const waveEnemies = getWaveConfig(wave);
+    enemiesInWave = waveEnemies.length;
+    enemiesSpawned = 0;
+    spawnTimer = 0;
+    hudWave.textContent = wave;
+  }
+
+  function spawnEnemy() {
+    if (enemiesSpawned >= enemiesInWave) return;
+    const waveEnemies = getWaveConfig(wave);
+    const type = waveEnemies[enemiesSpawned];
+    enemies.push(createEnemy(type));
+    enemiesSpawned++;
+  }
+
+  function placeTower(cx, cy) {
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) return false;
+    if (grid[cy][cx].tower || grid[cy][cx].path) return false;
+    const def = TOWER_DEFS[selectedTowerType];
+    if (credits < def.cost) return false;
+    credits -= def.cost;
+    const px = cellToPixel(cx, cy);
+    const tower = {
+      type: selectedTowerType, cx, cy, x: px.x, y: px.y,
+      range: def.range, damage: def.damage, fireRate: def.fireRate,
+      color: def.color, projSpeed: def.projSpeed, splash: def.splash,
+      lastFire: 0, angle: 0
+    };
+    towers.push(tower);
+    grid[cy][cx].tower = tower;
+    updateHUD();
+    return true;
+  }
+
+  function findTarget(tower) {
+    let best = null, bestDist = Infinity;
+    for (let e of enemies) {
+      if (!e.alive) continue;
+      const d = dist(tower, e);
+      if (d <= tower.range && d < bestDist) {
+        best = e;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  function fireProjectile(tower, target) {
+    const dx = target.x - tower.x;
+    const dy = target.y - tower.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    projectiles.push({
+      x: tower.x, y: tower.y,
+      vx: (dx / d) * tower.projSpeed,
+      vy: (dy / d) * tower.projSpeed,
+      damage: tower.damage, color: tower.color,
+      splash: tower.splash, alive: true, trail: []
+    });
+  }
+
+  function addParticles(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 30 + Math.random() * 80;
+      particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 0.3 + Math.random() * 0.5, maxLife: 0.3 + Math.random() * 0.5,
+        color, size: 1 + Math.random() * 3
+      });
+    }
+  }
+
+  function updateHUD() {
+    hudScore.textContent = score;
+    hudCredits.textContent = credits;
+    hudLives.textContent = lives;
+    for (let btn of towerBtns) {
+      const cost = parseInt(btn.dataset.cost);
+      btn.classList.toggle('disabled', credits < cost);
+    }
+  }
+
+  // Input handling
+  function handleInput(px, py) {
+    if (!gameRunning) return;
+    const cell = pixelToCell(px, py);
+    // Check if clicking on existing tower to sell
+    if (cell.x >= 0 && cell.x < COLS && cell.y >= 0 && cell.y < ROWS) {
+      const existing = grid[cell.y][cell.x].tower;
+      if (existing) {
+        // Sell for half
+        const def = TOWER_DEFS[existing.type];
+        credits += Math.floor(def.cost * 0.5);
+        grid[cell.y][cell.x].tower = null;
+        towers = towers.filter(t => t !== existing);
+        addParticles(existing.x, existing.y, '#888', 8);
+        updateHUD();
+        return;
+      }
+      placeTower(cell.x, cell.y);
+    }
+  }
+
+  let touchStartTime = 0, touchStartPos = { x: 0, y: 0 };
+
+  canvas.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    const t = e.touches[0];
+    touchStartTime = Date.now();
+    touchStartPos = { x: t.clientX, y: t.clientY };
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', function(e) {
+    e.preventDefault();
+    if (e.changedTouches.length === 0) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartPos.x;
+    const dy = t.clientY - touchStartPos.y;
+    if (Math.abs(dx) < 15 && Math.abs(dy) < 15) {
+      handleInput(t.clientX, t.clientY);
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('click', function(e) {
+    handleInput(e.clientX, e.clientY);
+  });
+
+  // Tower selection
+  for (let btn of towerBtns) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      for (let b of towerBtns) b.classList.remove('selected');
+      btn.classList.add('selected');
+      selectedTowerType = btn.dataset.type;
+    });
+  }
+
+  // Start button
+  document.getElementById('startBtn').addEventListener('click', function() {
+    overlay.style.display = 'none';
+    initGame();
+  });
+
+  document.getElementById('restartBtn').addEventListener('click', function() {
+    gameOverScreen.classList.remove('show');
+    initGame();
+  });
+
+  function initGame() {
+    score = 0; credits = 100; lives = 20; wave = 1;
+    enemies = []; towers = []; projectiles = []; particles = [];
+    waveActive = false; waveTimer = 3;
+    resize();
+    updateHUD();
+    gameRunning = true;
+    lastTime = performance.now();
+    if (animFrame) cancelAnimationFrame(animFrame);
+    loop(performance.now());
+  }
+
+  function gameOver() {
+    gameRunning = false;
+    finalScore.textContent = score;
+    gameOverScreen.classList.add('show');
+  }
+
+  function loop(now) {
+    if (!gameRunning) return;
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    update(dt, now);
+    render();
+
+    animFrame = requestAnimationFrame(loop);
+  }
+
+  function update(dt, now) {
+    // Wave management
+    if (!waveActive) {
+      waveTimer -= dt;
+      if (waveTimer <= 0) startWave();
+    } else {
+      // Spawn enemies
+      spawnTimer -= dt;
+      if (spawnTimer <= 0 && enemiesSpawned < enemiesInWave) {
+        spawnEnemy();
+        spawnTimer = 0.6 - Math.min(0.3, wave * 0.02);
+        if (spawnTimer < 0.2) spawnTimer = 0.2;
+      }
+
+      // Check wave complete
+      const aliveEnemies = enemies.filter(e => e.alive).length;
+      if (enemiesSpawned >= enemiesInWave && aliveEnemies === 0) {
+        waveActive = false;
+        wave++;
+        credits += 15 + wave * 5;
+        updateHUD();
+        waveTimer = 3;
+      }
+    }
+
+    // Update enemies
+    for (let e of enemies) {
+      if (!e.alive) continue;
+      const path = paths[e.pathIdx];
+      if (!path || e.pathStep >= path.length) {
+        // Reached core
+        e.alive = false;
+        lives--;
+        addParticles(e.x, e.y, '#f00', 15);
+        updateHUD();
+        if (lives <= 0) { gameOver(); return; }
+        continue;
+      }
+      const target = cellToPixel(path[e.pathStep].x, path[e.pathStep].y);
+      const dx = target.x - e.x;
+      const dy = target.y - e.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const move = e.speed * CELL * dt;
+      if (move >= d) {
+        e.x = target.x;
+        e.y = target.y;
+        e.pathStep++;
+      } else {
+        e.x += (dx / d) * move;
+        e.y += (dy / d) * move;
+      }
+    }
+
+    // Update towers
+    for (let t of towers) {
+      if (now - t.lastFire >= t.fireRate) {
+        const target = findTarget(t);
+        if (target) {
+          fireProjectile(t, target);
+          t.lastFire = now;
+          t.angle = Math.atan2(target.y - t.y, target.x - t.x);
+        }
+      }
+    }
+
+    // Update projectiles
+    for (let p of projectiles) {
+      if (!p.alive) continue;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.trail.push({ x: p.x, y: p.y });
+      if (p.trail.length > 6) p.trail.shift();
+
+      // Check bounds
+      if (p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
+        p.alive = false;
+        continue;
+      }
+
+      // Check collision with enemies
+      for (let e of enemies) {
+        if (!e.alive) continue;
+        const d = dist(p, e);
+        if (d < 15 * e.size) {
+          // Hit
+          if (p.splash > 0) {
+            // Splash damage
+            for (let e2 of enemies) {
+              if (!e2.alive) continue;
+              if (dist(p, e2) < p.splash) {
+                e2.hp -= p.damage * (1 - dist(p, e2) / p.splash * 0.5);
+                if (e2.hp <= 0) {
+                  e2.alive = false;
+                  score += e2.reward;
+                  credits += e2.reward;
+                  addParticles(e2.x, e2.y, e2.color, 10);
+                }
+              }
+            }
+          } else {
+            e.hp -= p.damage;
+            if (e.hp <= 0) {
+              e.alive = false;
+              score += e.reward;
+              credits += e.reward;
+              addParticles(e.x, e.y, e.color, 10);
+            }
+          }
+          p.alive = false;
+          updateHUD();
+          break;
+        }
+      }
+    }
+
+    projectiles = projectiles.filter(p => p.alive);
+    enemies = enemies.filter(e => e.alive || e.hp > 0);
+
+    // Update particles
+    for (let p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+      p.life -= dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  function render() {
+    ctx.fillStyle = '#0a0a12';
+    ctx.fillRect(0, 0, W, H);
+
+    // Film grain
+    ctx.globalAlpha = 0.03;
+    for (let i = 0; i < 200; i++) {
+      const gx = Math.random() * W;
+      const gy = Math.random() * H;
+      ctx.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+      ctx.fillRect(gx, gy, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+
+    // Draw grid lines (circuit board aesthetic)
+    ctx.strokeStyle = 'rgba(0,255,255,0.06)';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= COLS; x++) {
+      ctx.beginPath();
+      ctx.moveTo(x * CELL, 40);
+      ctx.lineTo(x * CELL, ROWS * CELL + 40);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= ROWS; y++) {
+      ctx.beginPath();
+      ctx.moveTo(0, y * CELL + 40);
+      ctx.lineTo(COLS * CELL, y * CELL + 40);
+      ctx.stroke();
+    }
+
+    // Draw paths (circuit traces)
+    for (let path of paths) {
+      ctx.strokeStyle = 'rgba(255,0,255,0.25)';
+      ctx.lineWidth = CELL * 0.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < path.length; i++) {
+        const px = cellToPixel(path[i].x, path[i].y);
+        if (i === 0) ctx.moveTo(px.x, px.y);
+        else ctx.lineTo(px.x, px.y);
+      }
+      ctx.stroke();
+
+      // Trace glow
+      ctx.strokeStyle = 'rgba(255,0,255,0.1)';
+      ctx.lineWidth = CELL * 1.2;
+      ctx.beginPath();
+      for (let i = 0; i < path.length; i++) {
+        const px = cellToPixel(path[i].x, path[i].y);
+        if (i === 0) ctx.moveTo(px.x, px.y);
+        else ctx.lineTo(px.x, px.y);
+      }
+      ctx.stroke();
+    }
+
+    // Draw core
+    const corePx = cellToPixel(corePos.x, corePos.y);
+    const corePulse = 1 + Math.sin(Date.now() / 300) * 0.1;
+    ctx.save();
+    ctx.translate(corePx.x, corePx.y);
+    ctx.scale(corePulse, corePulse);
+
+    // Core glow
+    const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, CELL * 0.8);
+    coreGrad.addColorStop(0, 'rgba(0,255,255,0.3)');
+    coreGrad.addColorStop(1, 'rgba(0,255,255,0)');
+    ctx.fillStyle = coreGrad;
+    ctx.fillRect(-CELL, -CELL, CELL * 2, CELL * 2);
+
+    // Core body
+    ctx.fillStyle = '#0ff';
+    ctx.shadowColor = '#0ff';
+    ctx.shadowBlur = 20;
+    ctx.fillRect(-CELL * 0.35, -CELL * 0.35, CELL * 0.7, CELL * 0.7);
+    ctx.shadowBlur = 0;
+
+    // Core icon
+    ctx.fillStyle = '#0a0a12';
+    ctx.font = `${CELL * 0.4}px Courier New`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⬡', 0, 0);
+    ctx.restore();
+
+    // Draw towers
+    for (let t of towers) {
+      const def = TOWER_DEFS[t.type];
+      const isSelected = grid[t.cy] && grid[t.cy][t.x] && grid[t.cy][t.x].tower === t;
+
+      // Range indicator for selected
+      if (isSelected) {
+        ctx.strokeStyle = 'rgba(0,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Tower base
+      ctx.fillStyle = 'rgba(0,255,255,0.1)';
+      ctx.strokeStyle = isSelected ? '#0ff' : 'rgba(0,255,255,0.4)';
+      ctx.lineWidth = 1;
+      const s = CELL * 0.4;
+      ctx.fillRect(t.x - s, t.y - s, s * 2, s * 2);
+      ctx.strokeRect(t.x - s, t.y - s, s * 2, s * 2);
+
+      // Tower type indicator
+      ctx.fillStyle = def.color;
+      ctx.font = `${CELL * 0.35}px Courier New`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(def.emoji, t.x, t.y);
+
+      // Turret direction
+      ctx.strokeStyle = def.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.lineTo(t.x + Math.cos(t.angle) * s * 1.2, t.y + Math.sin(t.angle) * s * 1.2);
+      ctx.stroke();
+    }
+
+    // Draw enemies
+    for (let e of enemies) {
+      if (!e.alive) continue;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+
+      // Enemy glow
+      ctx.shadowColor = e.color;
+      ctx.shadowBlur = 10;
+
+      // Enemy body
+      ctx.fillStyle = e.color;
+      const s = CELL * e.size * 0.35;
+      if (e.type === 'glitch') {
+        // Zigzag shape
+        ctx.beginPath();
+        ctx.moveTo(-s, -s * 0.5);
+        ctx.lineTo(0, -s);
+        ctx.lineTo(s, -s * 0.5);
+        ctx.lineTo(s * 0.5, 0);
+        ctx.lineTo(s, s * 0.5);
+        ctx.lineTo(0, s);
+        ctx.lineTo(-s, s * 0.5);
+        ctx.lineTo(-s * 0.5, 0);
+        ctx.closePath();
+        ctx.fill();
+      } else if (e.type === 'spike') {
+        // Hexagon
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (Math.PI / 3) * i - Math.PI / 6;
+          ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else if (e.type === 'worm') {
+        // Circle
+        ctx.beginPath();
+        ctx.arc(0, 0, s, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (e.type === 'boss') {
+        // Diamond
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 1.3);
+        ctx.lineTo(s, 0);
+        ctx.lineTo(0, s * 1.3);
+        ctx.lineTo(-s, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+
+      // HP bar
+      if (e.hp < e.maxHp) {
+        const barW = CELL * 0.6;
+        const barH = 3;
+        ctx.fillStyle = 'rgba(255,0,0,0.5)';
+        ctx.fillRect(-barW / 2, -s - 8, barW, barH);
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(-barW / 2, -s - 8, barW * (e.hp / e.maxHp), barH);
+      }
+
+      ctx.restore();
+    }
+
+    // Draw projectiles
+    for (let p of projectiles) {
+      if (!p.alive) continue;
+      // Trail
+      ctx.strokeStyle = p.color + '44';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < p.trail.length; i++) {
+        const t = p.trail[i];
+        if (i === 0) ctx.moveTo(t.x, t.y);
+        else ctx.lineTo(t.x, t.y);
+      }
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
+      // Projectile
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw particles
+    for (let p of particles) {
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Wave incoming indicator
+    if (!waveActive && enemies.length === 0) {
+      ctx.fillStyle = '#f0f';
+      ctx.font = `bold ${Math.min(24, W * 0.04)}px Courier New`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#f0f';
+      ctx.shadowBlur = 15;
+      ctx.fillText(`WAVE ${wave + 1} INCOMING`, W / 2, H / 2 - 40);
+      ctx.shadowBlur = 0;
+    }
+
+    // Placement preview
+    // (handled via hover, optional)
+  }
+
+  // Window resize
+  window.addEventListener('resize', function() {
+    if (gameRunning) {
+      resize();
+    }
+  });
+
+  // Expose for debugging
+  window._pj = { initGame, getTowers: () => towers, getEnemies: () => enemies, getWave: () => wave };
+})();
+</script>
+</body>
+</html>
