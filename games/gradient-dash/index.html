@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Gradient Dash — Snail Arcade</title>
+<title>Gradient Dash 3D — Snail Arcade</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a12; font-family: 'Courier New', monospace; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
@@ -33,7 +33,7 @@
 
 <div id="overlay">
   <div id="title">GRADIENT DASH</div>
-  <div id="subtitle">RUN THE LOSS LANDSCAPE</div>
+  <div id="subtitle">3D · RUN THE LOSS LANDSCAPE</div>
   <button id="startBtn">START</button>
   <div class="controls-hint">
     SPACE / TAP — Jump &nbsp;|&nbsp; ↓ / SWIPE DOWN — Slide<br>
@@ -70,7 +70,7 @@
   const finalScore = document.getElementById('finalScore');
   const finalHigh = document.getElementById('finalHigh');
 
-  let W, H, scale;
+  let W, H;
   let highScore = parseInt(localStorage.getItem('gradientDashHigh') || '0', 10);
   hudHigh.textContent = 'HI: ' + highScore;
 
@@ -117,19 +117,35 @@
   function playHit() { playSound(120, 0.3, 'sawtooth', 0.15); playSound(80, 0.4, 'square', 0.1); }
   function playBoost() { playSound(600, 0.06, 'sine', 0.08); playSound(900, 0.06, 'sine', 0.08); playSound(1200, 0.1, 'sine', 0.08); }
 
-  // Resize
+  // ─── 3D Projection ───
+  const FOCAL = 420;
+  const HORIZON_Y = 0.42;   // horizon as fraction of H
+  const NEAR_Z = 80;
+  const FAR_Z = 1400;
+  const GROUND_W = 600;     // half-width of ground at z=0
+
+  let VP_X, VP_Y;
   function resize() {
     W = window.innerWidth;
     H = window.innerHeight;
-    scale = Math.min(W / 800, H / 600);
     canvas.width = W;
     canvas.height = H;
     grainCanvas.width = Math.floor(W / 4);
     grainCanvas.height = Math.floor(H / 4);
+    VP_X = W / 2;
+    VP_Y = H * HORIZON_Y;
     generateGrain();
   }
   window.addEventListener('resize', resize);
   resize();
+
+  function project(x, y, z) {
+    if (z < NEAR_Z) z = NEAR_Z;
+    const scale = FOCAL / z;
+    const sx = VP_X + x * scale;
+    const sy = VP_Y + y * scale;
+    return { sx, sy, scale };
+  }
 
   // Film grain
   function generateGrain() {
@@ -142,9 +158,9 @@
     grainCtx.putImageData(img, 0, 0);
   }
 
-  // Snail player
+  // ─── Snail player (3D) ───
   const snail = {
-    x: 120, y: 0, w: 40, h: 40,
+    x: 0, y: 0, w: 40, h: 40,
     vy: 0, grounded: true, jumping: false, sliding: false,
     slideTimer: 0, jumpHeld: false,
     groundY: 0,
@@ -154,11 +170,12 @@
   };
 
   const GRAVITY = 0.6;
-  const JUMP_VEL = -12;
+  const JUMP_VEL = -14;
   const GROUND_OFFSET = 80;
 
   function resetSnail() {
-    snail.groundY = H - GROUND_OFFSET;
+    snail.x = -GROUND_W * 0.5;
+    snail.groundY = 220;
     snail.y = snail.groundY;
     snail.vy = 0;
     snail.grounded = true;
@@ -175,34 +192,40 @@
   let collectibles = [];
   let particles = [];
   let bgNodes = [];
-  let bgLines = [];
   let stars = [];
 
   function initBg() {
     bgNodes = [];
-    bgLines = [];
     stars = [];
-    for (let i = 0; i < 15; i++) {
-      bgNodes.push({ x: Math.random() * W * 2, y: 50 + Math.random() * (H - GROUND_OFFSET - 100), r: 3 + Math.random() * 5, color: Math.random() > 0.5 ? '#00f0ff' : '#ff00aa', pulse: Math.random() * Math.PI * 2 });
+    for (let i = 0; i < 40; i++) {
+      bgNodes.push({ x: Math.random() * W * 2, y: Math.random() * H * 0.5, r: 1 + Math.random() * 3, color: Math.random() > 0.5 ? '#00f0ff' : '#ff00aa', pulse: Math.random() * Math.PI * 2, depth: 0.3 + Math.random() * 0.7 });
     }
-    for (let i = 0; i < 20; i++) {
-      stars.push({ x: Math.random() * W, y: Math.random() * H * 0.5, s: 0.5 + Math.random() * 1.5, b: Math.random() });
+    for (let i = 0; i < 60; i++) {
+      stars.push({ x: Math.random() * W, y: Math.random() * H * 0.5, s: 0.5 + Math.random() * 1.5, b: Math.random(), twinkle: Math.random() * Math.PI * 2 });
     }
   }
 
+  // spawn obstacles in 3D world space: x = lateral, z = depth (positive = away)
   function spawnObstacle() {
     const type = Math.random() < 0.55 ? 'minima' : 'saddle';
     if (type === 'minima') {
-      const r = 20 + Math.random() * 15;
+      const r = 28 + Math.random() * 22;
       obstacles.push({
-        type: 'minima', x: W + r, y: snail.groundY - r * 0.3 + Math.random() * 20,
-        r: r, pull: 1.5 + speed * 0.2, hit: false
+        type: 'minima',
+        x: (Math.random() - 0.5) * GROUND_W * 1.2,
+        y: 30 + Math.random() * 20,
+        z: FAR_Z,
+        r: r, pull: 1.5 + speed * 0.2, hit: false,
+        spin: 0, vertOffset: Math.random() * Math.PI * 2
       });
     } else {
-      const h = 50 + Math.random() * 30;
-      const w = 15 + Math.random() * 20;
+      const h = 80 + Math.random() * 40;
+      const w = 25 + Math.random() * 30;
       obstacles.push({
-        type: 'saddle', x: W + 10, y: snail.groundY - h,
+        type: 'saddle',
+        x: (Math.random() - 0.5) * GROUND_W * 1.2,
+        y: 0,
+        z: FAR_Z,
         w: w, h: h, hit: false
       });
     }
@@ -212,18 +235,21 @@
     const types = ['lr', 'lr', 'shield', 'point'];
     const type = types[Math.floor(Math.random() * types.length)];
     collectibles.push({
-      type: type, x: W + 20,
-      y: snail.groundY - 40 - Math.random() * 80,
-      r: 12, collected: false, pulse: 0
+      type: type,
+      x: (Math.random() - 0.5) * GROUND_W * 1.2,
+      y: 60 + Math.random() * 100,
+      z: FAR_Z,
+      r: 18, collected: false, pulse: 0, bob: Math.random() * Math.PI * 2
     });
   }
 
-  function spawnParticles(x, y, color, count) {
+  function spawnParticles(x, y, z, color, count) {
     for (let i = 0; i < count; i++) {
       particles.push({
-        x: x, y: y,
-        vx: (Math.random() - 0.5) * 6,
-        vy: (Math.random() - 0.5) * 6 - 2,
+        x: x, y: y, z: z,
+        vx: (Math.random() - 0.5) * 8,
+        vy: (Math.random() - 0.5) * 8 - 2,
+        vz: (Math.random() - 0.5) * 4,
         life: 1, decay: 0.02 + Math.random() * 0.03,
         r: 1 + Math.random() * 3, color: color
       });
@@ -272,7 +298,6 @@
 
   canvas.addEventListener('touchend', function(e) { e.preventDefault(); }, {passive: false});
 
-  // Buttons
   document.getElementById('startBtn').addEventListener('click', function() {
     initAudio();
     startGame();
@@ -305,8 +330,8 @@
     playHit();
     shakeTimer = 20;
     shakeIntensity = 8;
-    spawnParticles(snail.x, snail.y, '#ff0044', 30);
-    spawnParticles(snail.x, snail.y, '#00f0ff', 15);
+    spawnParticles(snail.x, snail.y + snail.h * 0.5, NEAR_Z + 50, '#ff0044', 30);
+    spawnParticles(snail.x, snail.y + snail.h * 0.5, NEAR_Z + 50, '#00f0ff', 15);
 
     if (score > highScore) {
       highScore = score;
@@ -321,12 +346,12 @@
     }, 500);
   }
 
-  // Drawing helpers
-  function drawNeonRect(x, y, w, h, color, glow) {
+  // ─── Drawing helpers ───
+  function drawNeonRect(x, y, w, h, color, glow, lineW) {
     ctx.shadowColor = color;
     ctx.shadowBlur = glow || 8;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lineW || 2;
     ctx.strokeRect(x, y, w, h);
     ctx.shadowBlur = 0;
   }
@@ -334,76 +359,169 @@
   function drawNeonCircle(x, y, r, color, glow) {
     ctx.shadowColor = color;
     ctx.shadowBlur = glow || 10;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
 
-  // Draw snail
+  // ─── 3D Draw: ground plane (perspective grid receding to horizon) ───
+  function drawGround() {
+    // Ground gradient (sky→horizon→ground)
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+    skyGrad.addColorStop(0, '#04040a');
+    skyGrad.addColorStop(0.35, '#0a0a18');
+    skyGrad.addColorStop(0.5, '#1a0830');
+    skyGrad.addColorStop(1, '#0a0010');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Ground band
+    const groundGrad = ctx.createLinearGradient(0, VP_Y, 0, H);
+    groundGrad.addColorStop(0, '#1a0830');
+    groundGrad.addColorStop(0.3, '#0a0a18');
+    groundGrad.addColorStop(1, '#000005');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, VP_Y, W, H - VP_Y);
+
+    // Depth grid on ground (perspective lines)
+    const gridCount = 14;
+    const gridSpacing = 100; // world units between grid rings
+    const camZ = frameCount * speed * 0.8; // camera z position
+    const totalRange = FAR_Z;
+    const startZ = (camZ % gridSpacing);
+    // Lateral lines (left-right at fixed z)
+    for (let i = 0; i < gridCount; i++) {
+      const z = NEAR_Z + (i * totalRange / gridCount);
+      const p = project(0, 0, z);
+      if (p.sy > H) continue;
+      const alpha = 0.15 * (1 - (z - NEAR_Z) / totalRange) + 0.05;
+      ctx.strokeStyle = `rgba(0,240,255,${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, p.sy);
+      ctx.lineTo(W, p.sy);
+      ctx.stroke();
+    }
+
+    // Forward grid lines (depth lines from horizon to camera)
+    const lateralCount = 16;
+    for (let i = -lateralCount / 2; i < lateralCount / 2; i++) {
+      const xWorld = (i / (lateralCount / 2)) * GROUND_W;
+      const pFar = project(xWorld, 0, FAR_Z);
+      const pNear = project(xWorld, 0, NEAR_Z);
+      ctx.strokeStyle = 'rgba(0,240,255,0.18)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pFar.sx, pFar.sy);
+      ctx.lineTo(pNear.sx, pNear.sy);
+      ctx.stroke();
+    }
+
+    // Horizon glow
+    const horizonGrad = ctx.createLinearGradient(0, VP_Y - 20, 0, VP_Y + 20);
+    horizonGrad.addColorStop(0, 'rgba(0,240,255,0)');
+    horizonGrad.addColorStop(0.5, 'rgba(255,0,170,0.15)');
+    horizonGrad.addColorStop(1, 'rgba(0,240,255,0)');
+    ctx.fillStyle = horizonGrad;
+    ctx.fillRect(0, VP_Y - 20, W, 40);
+  }
+
+  // Draw 3D star field (parallax)
+  function drawStars() {
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      s.twinkle += 0.02;
+      const a = 0.3 + Math.sin(s.twinkle) * 0.3;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(s.x, s.y, s.s, s.s);
+    }
+    ctx.globalAlpha = 1;
+
+    for (let i = 0; i < bgNodes.length; i++) {
+      const n = bgNodes[i];
+      n.pulse += 0.03;
+      n.x -= speed * 0.4 * n.depth;
+      if (n.x < -20) { n.x = W + 20 + Math.random() * 100; n.y = Math.random() * H * 0.4; }
+      const glow = 0.4 + Math.sin(n.pulse) * 0.3;
+      ctx.globalAlpha = glow * (1 - n.depth * 0.5);
+      ctx.fillStyle = n.color;
+      ctx.shadowColor = n.color;
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * (1.5 - n.depth), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw snail in 3D
   function drawSnail() {
-    const sx = snail.x;
-    const sy = snail.y;
-    const sh = snail.sliding ? snail.h * 0.5 : snail.h;
-    const sw = snail.sliding ? snail.w * 1.3 : snail.w;
-    const sy2 = snail.sliding ? snail.groundY - sh : sy - sh;
+    const z = NEAR_Z + 30; // snail sits just in front of camera
+    const p = project(snail.x, snail.y, z);
+    const sx = p.sx;
+    const sy = p.sy;
+    const pScale = p.scale;
+    const sh = snail.sliding ? snail.h * 0.5 * pScale * 0.5 : snail.h * pScale * 0.5;
+    const sw = snail.sliding ? snail.w * 1.3 * pScale * 0.5 : snail.w * pScale * 0.5;
 
     // Shield glow
     if (snail.shieldTimer > 0) {
       ctx.globalAlpha = 0.2 + Math.sin(frameCount * 0.2) * 0.1;
       ctx.fillStyle = '#00f0ff';
       ctx.beginPath();
-      ctx.arc(sx + sw/2, sy2 + sh/2, sw * 0.8, 0, Math.PI * 2);
+      ctx.arc(sx, sy - sh * 0.4, sw * 1.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     }
 
-    // Trail
-    ctx.fillStyle = '#00f0ff33';
-    for (let i = 0; i < snail.trail.length; i++) {
-      const t = snail.trail[i];
-      ctx.globalAlpha = t.life * 0.3;
-      ctx.fillRect(t.x, t.y, 3, 2);
-    }
-    ctx.globalAlpha = 1;
+    // Shadow on ground beneath snail
+    const groundP = project(snail.x, snail.groundY + 5, z);
+    ctx.fillStyle = 'rgba(0,240,255,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(groundP.sx, groundP.sy, sw * 0.7, sw * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill();
 
     // Body (shell)
     ctx.fillStyle = '#1a1a2e';
     ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(1, 2 * pScale * 0.5);
     ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 8;
     ctx.beginPath();
-    ctx.ellipse(sx + sw * 0.5, sy2 + sh * 0.45, sw * 0.35, sh * 0.35, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, sy - sh * 0.55, sw * 0.42, sh * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     ctx.shadowBlur = 0;
 
     // Shell spiral
     ctx.strokeStyle = '#ff00aa';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = Math.max(1, 1.5 * pScale * 0.5);
     ctx.beginPath();
-    const cx = sx + sw * 0.5, cy = sy2 + sh * 0.45;
     for (let a = 0; a < Math.PI * 3; a += 0.2) {
       const r = 3 + a * 2;
-      ctx.lineTo(cx + Math.cos(a + frameCount * 0.05) * r, cy + Math.sin(a + frameCount * 0.05) * r);
+      ctx.lineTo(sx + Math.cos(a + frameCount * 0.05) * r * pScale * 0.4, sy - sh * 0.55 + Math.sin(a + frameCount * 0.05) * r * pScale * 0.4);
     }
     ctx.stroke();
 
     // Head
     ctx.fillStyle = '#0a0a12';
     ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = Math.max(1, 1.5 * pScale * 0.5);
     ctx.beginPath();
-    ctx.ellipse(sx + sw * 0.85, sy2 + sh * 0.55, sw * 0.15, sh * 0.18, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(sx + sw * 0.4, sy - sh * 0.5, sw * 0.18, sh * 0.22, -0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
     // Eyes
     ctx.fillStyle = '#ff00aa';
     ctx.beginPath();
-    ctx.arc(sx + sw * 0.9, sy2 + sh * 0.4, 2.5, 0, Math.PI * 2);
-    ctx.arc(sx + sw * 0.92, sy2 + sh * 0.52, 2, 0, Math.PI * 2);
+    ctx.arc(sx + sw * 0.48, sy - sh * 0.7, 2.5 * pScale * 0.5, 0, Math.PI * 2);
+    ctx.arc(sx + sw * 0.52, sy - sh * 0.4, 2 * pScale * 0.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Antennae
@@ -411,190 +529,161 @@
     ctx.lineWidth = 1;
     const antWave = Math.sin(frameCount * 0.15) * 3;
     ctx.beginPath();
-    ctx.moveTo(sx + sw * 0.88, sy2 + sh * 0.35);
-    ctx.quadraticCurveTo(sx + sw * 0.95 + antWave, sy2 - 5, sx + sw * 0.92 + antWave, sy2 - 12);
-    ctx.moveTo(sx + sw * 0.9, sy2 + sh * 0.35);
-    ctx.quadraticCurveTo(sx + sw * 0.98 - antWave, sy2 - 2, sx + sw * 0.96 - antWave, sy2 - 10);
+    ctx.moveTo(sx + sw * 0.42, sy - sh * 0.7);
+    ctx.quadraticCurveTo(sx + sw * 0.55 + antWave, sy - sh * 1.1, sx + sw * 0.5 + antWave, sy - sh * 1.4);
+    ctx.moveTo(sx + sw * 0.45, sy - sh * 0.7);
+    ctx.quadraticCurveTo(sx + sw * 0.62 - antWave, sy - sh * 1.0, sx + sw * 0.58 - antWave, sy - sh * 1.3);
     ctx.stroke();
 
     // Feet
     ctx.fillStyle = '#00f0ff88';
     const footAnim = Math.sin(frameCount * 0.3) * 2;
-    ctx.fillRect(sx + sw * 0.2, sy2 + sh, sw * 0.15, 4 + footAnim);
-    ctx.fillRect(sx + sw * 0.4, sy2 + sh, sw * 0.15, 4 - footAnim);
-    ctx.fillRect(sx + sw * 0.6, sy2 + sh, sw * 0.15, 4 + footAnim);
-    ctx.fillRect(sx + sw * 0.8, sy2 + sh, sw * 0.15, 4 - footAnim);
-  }
+    ctx.fillRect(sx - sw * 0.35, sy - sh * 0.1, sw * 0.15, (4 + footAnim) * pScale * 0.4);
+    ctx.fillRect(sx - sw * 0.05, sy - sh * 0.1, sw * 0.15, (4 - footAnim) * pScale * 0.4);
+    ctx.fillRect(sx + sw * 0.2, sy - sh * 0.1, sw * 0.15, (4 + footAnim) * pScale * 0.4);
+    ctx.fillRect(sx + sw * 0.4, sy - sh * 0.1, sw * 0.15, (4 - footAnim) * pScale * 0.4);
 
-  // Draw ground
-  function drawGround() {
-    const gy = snail.groundY;
-    // Ground line
-    ctx.strokeStyle = '#00f0ff44';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, gy + 2);
-    ctx.lineTo(W, gy + 2);
-    ctx.stroke();
-
-    // Grid lines on ground
-    ctx.strokeStyle = '#00f0ff11';
-    ctx.lineWidth = 0.5;
-    const gridOffset = (frameCount * speed) % 40;
-    for (let x = -gridOffset; x < W; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, gy + 2);
-      ctx.lineTo(x - 20, H);
-      ctx.stroke();
-    }
-    for (let y = gy + 10; y < H; y += 20) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
-
-    // Ground glow
-    const grad = ctx.createLinearGradient(0, gy, 0, gy + 30);
-    grad.addColorStop(0, '#00f0ff08');
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, gy, W, 30);
-  }
-
-  // Draw background neural network
-  function drawBg() {
-    // Stars
-    for (let i = 0; i < stars.length; i++) {
-      const s = stars[i];
-      s.b += 0.02;
-      ctx.globalAlpha = 0.3 + Math.sin(s.b) * 0.2;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(s.x, s.y, s.s, s.s);
+    // Trail (3D)
+    for (let i = 0; i < snail.trail.length; i++) {
+      const t = snail.trail[i];
+      const tp = project(t.x, t.y, t.z);
+      ctx.globalAlpha = t.life * 0.3;
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(tp.sx - 2, tp.sy - 1, 4, 2);
     }
     ctx.globalAlpha = 1;
+  }
 
-    // Neural network nodes
-    for (let i = 0; i < bgNodes.length; i++) {
-      const n = bgNodes[i];
-      n.pulse += 0.03;
-      n.x -= speed * 0.3;
-      if (n.x < -20) { n.x = W + 20 + Math.random() * 100; n.y = 50 + Math.random() * (H - GROUND_OFFSET - 100); }
+  // Draw 3D obstacle (minima = 3D vortex, saddle = 3D box)
+  function drawObstacle3D(obs) {
+    const relZ = obs.z;
+    if (relZ < NEAR_Z - 50 || relZ > FAR_Z + 100) return;
+    const p = project(obs.x, obs.y, relZ);
+    const s = p.scale;
+    const depthFade = 1 - (relZ - NEAR_Z) / (FAR_Z - NEAR_Z);
 
-      const glow = 0.5 + Math.sin(n.pulse) * 0.3;
-      ctx.globalAlpha = glow;
-      ctx.fillStyle = n.color;
+    if (obs.type === 'minima') {
+      obs.spin += 0.04;
+      // Outer glow sphere (multiple concentric rings)
+      const r = obs.r * s * 0.5;
+      // Halo
+      const haloGrad = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, r * 1.8);
+      haloGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
+      haloGrad.addColorStop(0.4, 'rgba(40,0,60,0.7)');
+      haloGrad.addColorStop(1, 'rgba(255,0,170,0)');
+      ctx.fillStyle = haloGrad;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.arc(p.sx, p.sy, r * 1.8, 0, Math.PI * 2);
       ctx.fill();
 
-      // Glow ring
-      ctx.strokeStyle = n.color;
-      ctx.globalAlpha = glow * 0.3;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-
-    // Connections between nearby nodes
-    ctx.strokeStyle = '#00f0ff11';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < bgNodes.length; i++) {
-      for (let j = i + 1; j < bgNodes.length; j++) {
-        const dx = bgNodes[i].x - bgNodes[j].x;
-        const dy = bgNodes[i].y - bgNodes[j].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 150) {
-          ctx.globalAlpha = (1 - dist / 150) * 0.15;
-          ctx.beginPath();
-          ctx.moveTo(bgNodes[i].x, bgNodes[i].y);
-          ctx.lineTo(bgNodes[j].x, bgNodes[j].y);
-          ctx.stroke();
-        }
+      // Swirling rings
+      ctx.strokeStyle = `rgba(255,0,170,${0.5 * depthFade})`;
+      ctx.lineWidth = Math.max(1, 2 * s * 0.5);
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 12 * depthFade;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        const offset = obs.spin + i * 2.1;
+        ctx.ellipse(p.sx, p.sy, r * (1 + i * 0.2), r * (0.4 + i * 0.15), offset, 0, Math.PI * 2);
+        ctx.stroke();
       }
-    }
-    ctx.globalAlpha = 1;
-  }
+      ctx.shadowBlur = 0;
 
-  // Draw local minima (black holes)
-  function drawMinima(obs) {
-    const x = obs.x, y = obs.y, r = obs.r;
-
-    // Outer glow
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r * 1.5);
-    grad.addColorStop(0, '#000000');
-    grad.addColorStop(0.5, '#1a0022');
-    grad.addColorStop(1, 'transparent');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Swirl
-    ctx.strokeStyle = '#ff00aa44';
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 3; i++) {
+      // Core (event horizon)
+      ctx.fillStyle = '#000005';
       ctx.beginPath();
-      const offset = (frameCount * 0.05 + i * 2) % (Math.PI * 2);
-      for (let a = 0; a < Math.PI * 4; a += 0.1) {
-        const rr = 5 + a * (r * 0.25 / (Math.PI * 4));
-        ctx.lineTo(x + Math.cos(a + offset) * rr, y + Math.sin(a + offset) * rr);
-      }
+      ctx.arc(p.sx, p.sy, r * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ff00aa';
+      ctx.lineWidth = Math.max(1, 2 * s * 0.5);
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 10;
       ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Label
+      ctx.fillStyle = `rgba(255,0,170,${0.6 * depthFade})`;
+      ctx.font = `${Math.max(8, 12 * s * 0.5)}px Courier New`;
+      ctx.textAlign = 'center';
+      ctx.fillText('LOCAL MIN', p.sx, p.sy + r + 14);
+    } else {
+      // Saddle point = 3D box barrier
+      const w = obs.w * s * 0.5;
+      const h = obs.h * s * 0.5;
+      const d = 20 * s * 0.5;
+      // Top face
+      ctx.fillStyle = `rgba(40,0,60,${0.85 * depthFade})`;
+      ctx.beginPath();
+      ctx.moveTo(p.sx - w, p.sy - h);
+      ctx.lineTo(p.sx - w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w, p.sy - h);
+      ctx.closePath();
+      ctx.fill();
+      // Front face
+      ctx.fillStyle = `rgba(20,0,40,${0.95 * depthFade})`;
+      ctx.beginPath();
+      ctx.moveTo(p.sx - w, p.sy - h);
+      ctx.lineTo(p.sx + w, p.sy - h);
+      ctx.lineTo(p.sx + w, p.sy);
+      ctx.lineTo(p.sx - w, p.sy);
+      ctx.closePath();
+      ctx.fill();
+      // Right face (darker)
+      ctx.fillStyle = `rgba(60,0,80,${0.7 * depthFade})`;
+      ctx.beginPath();
+      ctx.moveTo(p.sx + w, p.sy - h);
+      ctx.lineTo(p.sx + w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w + d, p.sy - d);
+      ctx.lineTo(p.sx + w, p.sy);
+      ctx.closePath();
+      ctx.fill();
+      // Neon edges
+      ctx.strokeStyle = `rgba(255,0,170,${depthFade})`;
+      ctx.lineWidth = Math.max(1, 2 * s * 0.5);
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 8 * depthFade;
+      ctx.beginPath();
+      ctx.moveTo(p.sx - w, p.sy - h);
+      ctx.lineTo(p.sx + w, p.sy - h);
+      ctx.lineTo(p.sx + w, p.sy);
+      ctx.lineTo(p.sx - w, p.sy);
+      ctx.closePath();
+      ctx.stroke();
+      // Top edges
+      ctx.beginPath();
+      ctx.moveTo(p.sx - w, p.sy - h);
+      ctx.lineTo(p.sx - w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w, p.sy - h);
+      ctx.stroke();
+      // Right edges
+      ctx.beginPath();
+      ctx.moveTo(p.sx + w, p.sy - h);
+      ctx.lineTo(p.sx + w + d, p.sy - h - d);
+      ctx.lineTo(p.sx + w + d, p.sy - d);
+      ctx.lineTo(p.sx + w, p.sy);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Warning label
+      ctx.fillStyle = `rgba(255,0,170,${0.6 * depthFade})`;
+      ctx.font = `${Math.max(8, 10 * s * 0.5)}px Courier New`;
+      ctx.textAlign = 'center';
+      ctx.fillText('SADDLE', p.sx, p.sy - h - d - 6);
     }
-
-    // Core
-    ctx.fillStyle = '#0a0015';
-    ctx.beginPath();
-    ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#ff00aa';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Label
-    ctx.fillStyle = '#ff00aa88';
-    ctx.font = '8px Courier New';
-    ctx.textAlign = 'center';
-    ctx.fillText('LOCAL MIN', x, y + r + 12);
   }
 
-  // Draw saddle points
-  function drawSaddle(obs) {
-    const x = obs.x, y = obs.y, w = obs.w, h = obs.h;
-
-    // Barrier
-    ctx.fillStyle = '#1a002288';
-    ctx.fillRect(x, y, w, h);
-
-    // Swirling edges
-    ctx.strokeStyle = '#ff00aa';
-    ctx.lineWidth = 2;
-    ctx.shadowColor = '#ff00aa';
-    ctx.shadowBlur = 6;
-    ctx.strokeRect(x, y, w, h);
-    ctx.shadowBlur = 0;
-
-    // Saddle symbol
-    ctx.fillStyle = '#ff00aa88';
-    ctx.font = '10px Courier New';
-    ctx.textAlign = 'center';
-    ctx.fillText('⌒', x + w/2, y + h/2 + 4);
-
-    // Warning label
-    ctx.fillStyle = '#ff00aa66';
-    ctx.font = '7px Courier New';
-    ctx.fillText('SADDLE', x + w/2, y - 5);
-  }
-
-  // Draw collectible
-  function drawCollectible(col) {
+  // Draw collectible (3D diamond floating in space)
+  function drawCollectible3D(col) {
     if (col.collected) return;
+    if (col.z < NEAR_Z - 30 || col.z > FAR_Z + 50) return;
     col.pulse += 0.1;
-    const x = col.x, y = col.y, r = col.r;
-    const pulseR = r + Math.sin(col.pulse) * 2;
+    col.bob += 0.05;
+    const p = project(col.x, col.y + Math.sin(col.bob) * 8, col.z);
+    const s = p.scale;
+    const depthFade = 1 - (col.z - NEAR_Z) / (FAR_Z - NEAR_Z);
+    const r = col.r * s * 0.5;
+    const pulseR = r + Math.sin(col.pulse) * r * 0.15;
 
     let color, label;
     switch(col.type) {
@@ -603,106 +692,51 @@
       case 'point': color = '#ffff00'; label = '★'; break;
     }
 
-    // Glow
+    // Outer glow
     ctx.shadowColor = color;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 15 * depthFade;
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(1, 2 * s * 0.5);
     ctx.beginPath();
-    ctx.arc(x, y, pulseR, 0, Math.PI * 2);
+    ctx.arc(p.sx, p.sy, pulseR, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
-    // Inner
-    ctx.fillStyle = color + '22';
+    // Inner fill
+    ctx.fillStyle = color + '33';
     ctx.beginPath();
-    ctx.arc(x, y, pulseR - 2, 0, Math.PI * 2);
+    ctx.arc(p.sx, p.sy, pulseR - 2, 0, Math.PI * 2);
     ctx.fill();
 
     // Label
-    ctx.shadowBlur = 0;
     ctx.fillStyle = color;
-    ctx.font = 'bold 9px Courier New';
+    ctx.font = `bold ${Math.max(8, 10 * s * 0.5)}px Courier New`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, x, y);
+    ctx.fillText(label, p.sx, p.sy);
     ctx.textBaseline = 'alphabetic';
   }
 
-  // Collision check
-  function checkCollisions() {
-    const sh = snail.sliding ? snail.h * 0.5 : snail.h;
-    const sw = snail.sliding ? snail.w * 1.3 : snail.w;
-    const sy = snail.sliding ? snail.groundY - sh : snail.y - sh;
-    const px = snail.x + sw * 0.2;
-    const py = sy + sh * 0.3;
-    const pw = sw * 0.6;
-    const ph = sh * 0.7;
-
-    // Obstacles
-    for (let i = 0; i < obstacles.length; i++) {
-      const obs = obstacles[i];
-      if (obs.hit) continue;
-
-      if (obs.type === 'minima') {
-        const dx = (snail.x + sw/2) - obs.x;
-        const dy = (sy + sh/2) - obs.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-
-        // Pull effect
-        if (dist < obs.r * 3 && dist > 0) {
-          const pullForce = obs.pull / (dist * 0.1);
-          snail.x -= (dx / dist) * pullForce * 0.5;
-          snail.y -= (dy / dist) * pullForce * 0.3;
-        }
-
-        if (dist < obs.r + 10 && !snail.shieldTimer) {
-          obs.hit = true;
-          endGame();
-          return;
-        }
-      } else if (obs.type === 'saddle') {
-        if (snail.x + sw > obs.x && snail.x < obs.x + obs.w &&
-            sy + sh > obs.y && sy < obs.y + obs.h) {
-          if (!snail.shieldTimer) {
-            obs.hit = true;
-            endGame();
-            return;
-          }
-        }
-      }
+  // Draw particles in 3D
+  function drawParticles3D() {
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const pp = project(p.x, p.y, p.z);
+      const s = pp.scale;
+      const alpha = p.life;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 6 * s * 0.3;
+      ctx.beginPath();
+      ctx.arc(pp.sx, pp.sy, p.r * s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
     }
-
-    // Collectibles
-    for (let i = 0; i < collectibles.length; i++) {
-      const col = collectibles[i];
-      if (col.collected) continue;
-      const dx = (snail.x + sw/2) - col.x;
-      const dy = (sy + sh/2) - col.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < col.r + 15) {
-        col.collected = true;
-        switch(col.type) {
-          case 'lr':
-            speedMultiplier = Math.min(speedMultiplier + 0.15, 2.0);
-            playBoost();
-            spawnParticles(col.x, col.y, '#00f0ff', 8);
-            break;
-          case 'shield':
-            snail.shieldTimer = 180;
-            playCollect();
-            spawnParticles(col.x, col.y, '#ff00aa', 10);
-            break;
-          case 'point':
-            score += 50;
-            playCollect();
-            spawnParticles(col.x, col.y, '#ffff00', 6);
-            break;
-        }
-      }
-    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
   }
 
-  // Main update
+  // ─── Update ───
   function update() {
     if (!gameRunning) return;
     frameCount++;
@@ -738,11 +772,10 @@
 
     // Trail
     if (frameCount % 2 === 0) {
-      snail.trail.push({ x: snail.x - 5, y: snail.y + snail.h * 0.7, life: 1 });
+      snail.trail.push({ x: snail.x - 5, y: snail.y + snail.h * 0.7, z: NEAR_Z + 30, life: 1 });
     }
     for (let i = snail.trail.length - 1; i >= 0; i--) {
       snail.trail[i].life -= 0.04;
-      snail.trail[i].x -= speed * 0.5;
       if (snail.trail[i].life <= 0) snail.trail.splice(i, 1);
     }
 
@@ -757,29 +790,28 @@
       spawnCollectible();
     }
 
-    // Update obstacles
+    // Update obstacles (move toward camera: decrease z)
     for (let i = obstacles.length - 1; i >= 0; i--) {
-      obstacles[i].x -= speed;
-      if (obstacles[i].x < -60) obstacles.splice(i, 1);
+      obstacles[i].z -= speed * 1.5;
+      if (obstacles[i].z < NEAR_Z - 80) obstacles.splice(i, 1);
     }
 
     // Update collectibles
     for (let i = collectibles.length - 1; i >= 0; i--) {
-      collectibles[i].x -= speed;
-      if (collectibles[i].x < -30) collectibles.splice(i, 1);
+      collectibles[i].z -= speed * 1.5;
+      if (collectibles[i].z < NEAR_Z - 30) collectibles.splice(i, 1);
     }
 
     // Update particles
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.1;
+      p.x += p.vx * 0.3;
+      p.y += p.vy * 0.3;
+      p.z += p.vz * 0.3;
       p.life -= p.decay;
       if (p.life <= 0) particles.splice(i, 1);
     }
 
-    // Shake
     if (shakeTimer > 0) shakeTimer--;
 
     checkCollisions();
@@ -789,49 +821,109 @@
     hudSpeed.textContent = 'SPD: ' + speedMultiplier.toFixed(1) + 'x';
   }
 
-  // Main render
+  // ─── Collision check (3D-aware) ───
+  function checkCollisions() {
+    const playerZ = NEAR_Z + 30;
+    const sh = snail.sliding ? snail.h * 0.5 : snail.h;
+    const sw = snail.sliding ? snail.w * 1.3 : snail.w;
+
+    for (let i = 0; i < obstacles.length; i++) {
+      const obs = obstacles[i];
+      if (obs.hit) continue;
+      // Z proximity check
+      if (Math.abs(obs.z - playerZ) > 80) continue;
+
+      if (obs.type === 'minima') {
+        const dx = snail.x - obs.x;
+        const dy = (snail.y - sh * 0.5) - obs.y;
+        const dz = playerZ - obs.z;
+        const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+        // Pull effect
+        if (dist3D < obs.r * 2.5 && dist3D > 0) {
+          const pullForce = obs.pull / (dist3D * 0.08);
+          snail.x -= (dx / dist3D) * pullForce * 1.5;
+          snail.y -= (dy / dist3D) * pullForce * 0.5;
+        }
+
+        if (dist3D < obs.r * 0.8 && !snail.shieldTimer) {
+          obs.hit = true;
+          endGame();
+          return;
+        }
+      } else if (obs.type === 'saddle') {
+        // Approximate as 2D collision in lateral plane (saddle is vertical barrier)
+        const halfW = obs.w / 2;
+        if (Math.abs(snail.x - obs.x) < halfW + sw * 0.4 &&
+            snail.y - sh < obs.y + obs.h && snail.y > obs.y) {
+          if (!snail.shieldTimer) {
+            obs.hit = true;
+            endGame();
+            return;
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < collectibles.length; i++) {
+      const col = collectibles[i];
+      if (col.collected) continue;
+      if (Math.abs(col.z - playerZ) > 60) continue;
+      const dx = snail.x - col.x;
+      const dy = (snail.y - sh * 0.5) - col.y;
+      const dz = playerZ - col.z;
+      const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (dist3D < col.r + 18) {
+        col.collected = true;
+        switch(col.type) {
+          case 'lr':
+            speedMultiplier = Math.min(speedMultiplier + 0.15, 2.0);
+            playBoost();
+            spawnParticles(col.x, col.y, col.z, '#00f0ff', 8);
+            break;
+          case 'shield':
+            snail.shieldTimer = 180;
+            playCollect();
+            spawnParticles(col.x, col.y, col.z, '#ff00aa', 10);
+            break;
+          case 'point':
+            score += 50;
+            playCollect();
+            spawnParticles(col.x, col.y, col.z, '#ffff00', 6);
+            break;
+        }
+      }
+    }
+  }
+
+  // ─── Render ───
   function render() {
     ctx.clearRect(0, 0, W, H);
 
-    // Background
-    ctx.fillStyle = '#0a0a12';
-    ctx.fillRect(0, 0, W, H);
-
     // Screen shake
+    let sx = 0, sy = 0;
     if (shakeTimer > 0) {
-      const sx = (Math.random() - 0.5) * shakeIntensity * (shakeTimer / 20);
-      const sy = (Math.random() - 0.5) * shakeIntensity * (shakeTimer / 20);
+      sx = (Math.random() - 0.5) * shakeIntensity * (shakeTimer / 20);
+      sy = (Math.random() - 0.5) * shakeIntensity * (shakeTimer / 20);
       ctx.save();
       ctx.translate(sx, sy);
     }
 
-    drawBg();
     drawGround();
+    drawStars();
 
-    // Obstacles
-    for (let i = 0; i < obstacles.length; i++) {
-      if (obstacles[i].type === 'minima') drawMinima(obstacles[i]);
-      else drawSaddle(obstacles[i]);
-    }
+    // Sort drawables by z (far to near) for painter's algorithm
+    const drawables = [];
+    obstacles.forEach(o => drawables.push({ z: o.z, kind: 'obs', obj: o }));
+    collectibles.forEach(c => drawables.push({ z: c.z, kind: 'col', obj: c }));
+    drawables.sort((a, b) => b.z - a.z);
+    drawables.forEach(d => {
+      if (d.kind === 'obs') drawObstacle3D(d.obj);
+      else drawCollectible3D(d.obj);
+    });
 
-    // Collectibles
-    for (let i = 0; i < collectibles.length; i++) {
-      drawCollectible(collectibles[i]);
-    }
-
-    // Particles
-    for (let i = 0; i < particles.length; i++) {
-      const p = particles[i];
-      ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // Snail
-    if (gameRunning || gameOver) drawSnail();
+    drawSnail();
+    drawParticles3D();
 
     if (shakeTimer > 0) ctx.restore();
 
@@ -854,7 +946,6 @@
   resize();
   initBg();
   loop();
-
 })();
 </script>
 </body>
