@@ -13,7 +13,11 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; t
 canvas { display: block; width: 100%; height: 100%; }
 #hud { position: absolute; top: 0; left: 0; right: 0; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; font-family: 'Courier New', monospace; z-index: 10; }
 #hud > div { color: #00ff88; text-shadow: 0 0 8px rgba(0,255,136,0.5); font-size: 16px; font-weight: bold; }
-#overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 20; font-family: 'Courier New', monospace; }
+#overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 20; font-family: 'Courier New', monospace; pointer-events: auto; }
+#overlay #menuScreen { pointer-events: auto; }
+#startBtn { pointer-events: auto; cursor: pointer; }
+#gameOver { pointer-events: auto; }
+#restartBtn { pointer-events: auto; cursor: pointer; }
 #overlay h1 { color: #00ff88; font-size: clamp(28px, 6vw, 56px); text-shadow: 0 0 30px rgba(0,255,136,0.6), 0 0 60px rgba(0,255,136,0.3); margin-bottom: 8px; letter-spacing: 4px; }
 #overlay .subtitle { color: #ff00ff; font-size: clamp(12px, 2.5vw, 18px); margin-bottom: 30px; text-shadow: 0 0 10px rgba(255,0,255,0.5); }
 #overlay .info { color: #888; font-size: clamp(11px, 2vw, 14px); text-align: center; line-height: 1.8; margin-bottom: 30px; max-width: 400px; padding: 0 20px; }
