@@ -208,6 +208,8 @@ function spawnAsteroid() {
 
   const types = ['blob', 'string', 'layer'];
   const type = types[Math.floor(Math.random() * Math.min(types.length, 1 + Math.floor(wave / 2)))];
+  // Layer types have 2 HP and split into 2 blobs on death
+  const isLayer = type === 'layer';
 
   const angle = Math.atan2(H/2 - y + (Math.random()-0.5)*W, W/2 - x + (Math.random()-0.5)*H);
   asteroids.push({
@@ -216,6 +218,15 @@ function spawnAsteroid() {
     type, hp: type === 'blob' ? 1 : type === 'string' ? 1 : 2,
     vertices: generateVertices(size)
   });
+}
+
+// Powerup: every 5 waves, spawn a health pickup
+function spawnHealthPickup() {
+  // Simple: add a life on wave 5, 10, 15...
+  if (wave > 0 && wave % 5 === 0 && lives < 5) {
+    lives++;
+    updateHUD();
+  }
 }
 
 function generateVertices(size) {
@@ -320,6 +331,7 @@ function update() {
       spawnTimer = 0;
       waveSound();
       updateHUD();
+      spawnHealthPickup();
     }
   }
 
@@ -348,6 +360,20 @@ function update() {
           const colors = { blob: '#ff0055', string: '#ff00ff', layer: '#ff8800' };
           spawnParticles(a.x, a.y, colors[a.type] || '#ff0055', 12);
           explodeSound();
+          // Layer types split into 2 smaller blobs
+          if (isLayer && a.size > 15) {
+            for (let s = 0; s < 2; s++) {
+              const newA = {
+                x: a.x + (Math.random()-0.5)*20, y: a.y + (Math.random()-0.5)*20,
+                vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3,
+                size: a.size * 0.6, angle: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random()-0.5) * 0.08,
+                type: 'blob', hp: 1,
+                vertices: generateVertices(a.size * 0.6)
+              };
+              asteroids.push(newA);
+            }
+          }
           asteroids.splice(i, 1);
           updateHUD();
           break;

@@ -552,6 +552,10 @@ function update() {
     if (rects(snailRect, lRect)) {
       lettuce.splice(i, 1);
       score += 500;
+      // Golden lettuce: occasionally spawns extra life
+      if (Math.random() < 0.1 && lives < 5) {
+        lives++;
+      }
       spawnParticles(l.x + l.w * 0.5, l.y + l.h * 0.5, '#44cc66', 8);
     }
   }

@@ -76,20 +76,27 @@ let width, height, score = 0, glitchLevel = 0, frame = 0;
 
         function update() {
             const accel = 0.6, friction = 0.94;
+            // Glitch affects physics: higher glitch = more erratic movement
+            const erratic = glitchLevel / 100 * 0.3;
 
             if (touchTarget) {
                 const dx = touchTarget.x - snail.x;
                 const dy = touchTarget.y - snail.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist > 5) {
-                    snail.vx += (dx / dist) * accel;
-                    snail.vy += (dy / dist) * accel;
+                    snail.vx += (dx / dist) * accel + (Math.random()-0.5)*erratic;
+                    snail.vy += (dy / dist) * accel + (Math.random()-0.5)*erratic;
                 }
             } else {
                 if (keys['ArrowUp'] || keys['KeyW']) snail.vy -= accel;
                 if (keys['ArrowDown'] || keys['KeyS']) snail.vy += accel;
                 if (keys['ArrowLeft'] || keys['KeyA']) snail.vx -= accel;
                 if (keys['ArrowRight'] || keys['KeyD']) snail.vx += accel;
+                // Glitch wobble on keys
+                if (erratic > 0.1) {
+                    snail.vx += (Math.random()-0.5) * erratic;
+                    snail.vy += (Math.random()-0.5) * erratic;
+                }
             }
 
             snail.vx *= friction;
@@ -111,8 +118,17 @@ let width, height, score = 0, glitchLevel = 0, frame = 0;
                 const dx = snail.x - item.x;
                 const dy = snail.y - item.y;
                 if (Math.sqrt(dx*dx + dy*dy) < snail.radius + item.radius) {
-                    if (item.type === 'GLITCH') glitchLevel = Math.min(100, glitchLevel + 20);
-                    else score += 10;
+                    if (item.type === 'GLITCH') {
+                        glitchLevel = Math.min(100, glitchLevel + 20);
+                        // At max glitch, screen flips: collect 3 more glitch items to restore
+                        if (glitchLevel >= 100 && Math.random() < 0.3) {
+                            glitchLevel = 50; // partial recovery
+                        }
+                    } else {
+                        score += 10;
+                        // Reduce glitch slightly when collecting lettuce
+                        glitchLevel = Math.max(0, glitchLevel - 2);
+                    }
                     if (score > bestScore) {
                         bestScore = score;
                         localStorage.setItem('snail-glitch-best', bestScore);

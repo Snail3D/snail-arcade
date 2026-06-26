@@ -124,7 +124,11 @@
         const game = {
             loot: 0,
             defeated: 0,
-            lastTime: 0
+            lastTime: 0,
+            comboCount: 0,
+            comboTimer: 0,
+            wave: 1,
+            bestLoot: parseInt(localStorage.getItem('pirate-best') || '0', 10)
         };
         
         // Camera
@@ -264,13 +268,17 @@
         });
         
         function fireCannon() {
-            for (let i = 0; i < player.cannons; i++) {
-                const offset = (i - (player.cannons - 1) / 2) * 15;
+            // Every 5th shot is a spread shot
+            const isSpread = game.comboCount > 0 && game.comboCount % 5 === 0;
+            const cannonCount = isSpread ? player.cannons + 2 : player.cannons;
+            for (let i = 0; i < cannonCount; i++) {
+                const offset = (i - (cannonCount - 1) / 2) * 15;
+                const angle = player.angle + (isSpread ? (i - (cannonCount-1)/2) * 0.15 : 0);
                 bullets.push({
                     x: player.x + Math.cos(player.angle) * 30,
                     y: player.y + Math.sin(player.angle) * 30,
-                    vx: Math.cos(player.angle) * 8,
-                    vy: Math.sin(player.angle) * 8,
+                    vx: Math.cos(angle) * 8,
+                    vy: Math.sin(angle) * 8,
                     life: 60,
                     offset: offset
                 });

@@ -118,6 +118,10 @@
   let state = 'ready';
   let animTime = 0;
   let goTimeout = null;
+  let comboCount = 0;
+  let comboTimer = 0;
+  let powerUpActive = false;
+  let powerUpTimer = 0;
 
   bestEl.textContent = best;
 
@@ -155,6 +159,15 @@
       tries++;
     } while (tries < 100 && (snail.some(s => s.x===pos.x && s.y===pos.y) || items.some(i => i.x===pos.x && i.y===pos.y)));
     items.push(pos);
+    // Every 5 lettuce eaten, spawn a golden lettuce (bonus points)
+    if (score > 0 && score % 5 === 0) {
+      let gPos, gTries = 0;
+      do {
+        gPos = { x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*COLS), type: 'golden' };
+        gTries++;
+      } while (gTries < 100 && (snail.some(s => s.x===gPos.x && s.y===gPos.y) || items.some(i => i.x===gPos.x && i.y===gPos.y)));
+      items.push(gPos);
+    }
     if (Math.random() < 0.4 + score * 0.02) spawnSalt();
   }
 
@@ -184,7 +197,17 @@
         score++;
         scoreEl.textContent = score;
         gameSpeed = Math.max(MIN_SPEED, gameSpeed - SPEED_STEP);
+        comboCount++;
+        comboTimer = 180; // 3 seconds
         spawnLettuce();
+      }
+      if (item.type === 'golden') {
+        score += 5;
+        scoreEl.textContent = score;
+        powerUpActive = true;
+        powerUpTimer = 300; // 5 seconds
+        // Grow extra segments
+        for (let g = 0; g < 3; g++) snail.push({...snail[snail.length-1]});
       }
     } else {
       snail.pop();

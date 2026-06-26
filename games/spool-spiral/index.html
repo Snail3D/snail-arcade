@@ -128,9 +128,10 @@
 </div>
 
 <div id="gameover">
-  <h2>PRINT FAILED</h2>
-  <div class="final">Score: <span id="finalScore">0</span> · Layers: <span id="finalLayers">0</span></div>
-  <button class="btn" id="restartBtn">RETRY</button>
+<div id="highScoreDisplay" style="color:#7dffb0;font-size:clamp(14px,3vw,18px);margin-bottom:12px;display:none">BEST: 0</div>
+<h2>PRINT FAILED</h2>
+<div class="final">Score: <span id="finalScore">0</span> · Layers: <span id="finalLayers">0</span></div>
+<button class="btn" id="restartBtn">RETRY</button>
 </div>
 
 <script>
@@ -187,6 +188,8 @@
   let layerSpeed = 0; // current angular velocity
   let difficulty = 0;
   let failMessage = '';
+  let highScore = parseInt(localStorage.getItem('spool-spiral-best') || '0', 10);
+  let bestCombo = parseInt(localStorage.getItem('spool-spiral-best-combo') || '0', 10);
 
   // Background floating particles (cyberpunk dust)
   for (let i = 0; i < 30; i++) {
@@ -230,6 +233,10 @@
     state = STATE.GAMEOVER;
     finalScore.textContent = score;
     finalLayers.textContent = layers;
+    if (score > highScore) { highScore = score; localStorage.setItem('spool-spiral-best', highScore); }
+    const hsEl = document.getElementById('highScoreDisplay');
+    hsEl.textContent = 'BEST: ' + highScore;
+    hsEl.style.display = 'block';
     gameoverEl.classList.add('show');
   }
 

@@ -184,6 +184,10 @@ const ENEMY_TYPES = {
   bird: { hp:25, spd:110, r:12, color:'#4444aa', score:3, dmg:15 }
 };
 let wave=1, waveTimer=0, waveKills=0, waveTarget=0, betweenWaves=0;
+let bestKills = parseInt(localStorage.getItem('slugfest-best') || '0', 10);
+let comboCount = 0;
+let comboTimer = 0;
+let slimeBoost = 0; // temporary speed boost from collecting slime
 function spawnWave(){
   waveTarget = 4 + wave*2;
   waveKills = 0;
@@ -194,6 +198,11 @@ function spawnWave(){
   for(let i=0;i<beetleN;i++) spawnEnemy('beetle');
   for(let i=0;i<birdN;i++) spawnEnemy('bird');
   sfxWave();
+  // Every 3 waves, grant a permanent maxHp increase
+  if (wave > 1 && wave % 3 === 0) {
+    player.maxHp += 15;
+    player.hp = Math.min(player.hp + 15, player.maxHp);
+  }
 }
 function spawnEnemy(type){
   const t = ENEMY_TYPES[type];
@@ -325,11 +334,16 @@ function update(dt){
 
     // death
     if(e.hp<=0){
-      burst(e.x, e.y, 14, e.color, 5);
-      sfxKill();
-      enemies.splice(i,1);
-      player.killCount++;
-      waveKills++;
+    burst(e.x, e.y, 14, e.color, 5);
+    sfxKill();
+    enemies.splice(i,1);
+    player.killCount++;
+    waveKills++;
+    // Combo system: consecutive kills within 2s
+    comboCount++;
+    comboTimer = 2.0;
+    const comboBonus = Math.min(comboCount, 10) * 5;
+    score = (score || 0) + comboBonus;
     }
   }
 
@@ -351,7 +365,10 @@ function update(dt){
   }
 
   // wave logic
-  waveTimer += dt;
+  // combo decay
+  if(comboTimer>0){ comboTimer-=dt; if(comboTimer<=0){ comboCount=0; } }
+  // slimeBoost decay
+  if(slimeBoost>0) slimeBoost -= dt*0.5;
   if(waveKills >= waveTarget){
     if(betweenWaves<=0){
       betweenWaves = 3.5;
@@ -380,7 +397,7 @@ function update(dt){
   // HUD
   document.getElementById('hudHp').textContent = 'HP '+Math.max(0,Math.floor(player.hp));
   document.getElementById('hudWave').textContent = betweenWaves>0 ? `WAVE ${wave} — NEXT IN ${Math.ceil(betweenWaves)}` : `WAVE ${wave}`;
-  document.getElementById('hudScore').textContent = 'KILLS '+player.killCount;
+  document.getElementById('hudScore').textContent = 'KILLS '+player.killCount + (comboCount>1 ? ' ×'+comboCount+' COMBO' : '');
   document.getElementById('hudKiller').textContent = 'FPS '+Math.round(fps);
 }
 

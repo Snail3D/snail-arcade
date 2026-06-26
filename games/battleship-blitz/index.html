@@ -139,6 +139,7 @@
         <div class="panel-item"><div class="panel-label">HITS</div><div class="panel-value" id="hits">0</div></div>
         <div class="panel-item"><div class="panel-label">ACC</div><div class="panel-value" id="acc">0%</div></div>
         <div class="panel-item"><div class="panel-label">BEST ACC</div><div class="panel-value" id="bestAcc">—</div></div>
+        <div class="panel-item"><div class="panel-label">BEST STREAK</div><div class="panel-value" id="bestStreak">—</div></div>
     </div>
 
     <div id="fleet"></div>
@@ -163,6 +164,7 @@ const SIZE = 10;
 let pBoard, eBoard, pShips, eShips;
 let gameOn, pTurn, shots, hits;
 let aiHunt, aiQueue;
+let consecutiveHits = 0;
 
 function mkBoard() {
     return Array.from({ length: SIZE }, () => Array(SIZE).fill(null).map(() => ({ ship: null, hit: false })));
@@ -317,7 +319,14 @@ function fire(r, c) {
         eShips[id].hits++;
         if (sunk(eShips, id)) { eShips[id].sunk = true; setStatus(SHIPS[id].name + ' SUNK!'); }
         else setStatus('HIT!');
+        // Track consecutive hits for bonus
+        if (!consecutiveHits) consecutiveHits = 0;
+        consecutiveHits++;
+        if (consecutiveHits >= 3) {
+            setStatus('HIT! ×' + consecutiveHits + ' COMBO!');
+        }
     } else {
+        consecutiveHits = 0;
         setStatus('MISS — ENEMY MOVING');
         pTurn = false;
         setTimeout(aiTurn, 700);

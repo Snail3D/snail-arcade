@@ -118,8 +118,11 @@ let score = 0, kills = 0, wave = 1, waveTimer = 0;
 let enemiesToSpawn = 0, spawnTimer = 0;
 let waveTransitioning = false;
 let best = parseInt(localStorage.getItem('alien-covenant-best') || '0', 10);
-let shakeAmount = 0, shakeX = 0, shakeY = 0;
-let gameTime = 0;
+// Track consecutive kills for combo
+let comboCount = 0;
+let comboTimer = 0;
+// Ammo pickups
+let ammoDropTimer = 0;
 
 // ─── Player ─────────────────────────────────────────────────
 const player = {
@@ -421,6 +424,7 @@ function update(){
     if(!shootStick.active) player.angle = player.moveAngle;
   }
 
+  if(comboTimer>0){ comboTimer--; if(comboTimer<=0) comboCount=0; }
   if(player.fireTimer > 0) player.fireTimer--;
   if(player.iframe > 0) player.iframe--;
 
@@ -477,6 +481,11 @@ function update(){
     if(e.health <= 0){
       score += e.score;
       kills++;
+      // Combo system: consecutive kills within 2s
+      comboCount++;
+      comboTimer = 120; // 2 seconds at 60fps
+      const comboBonus = Math.min(comboCount, 8) * 25;
+      score += comboBonus;
       spawnBlood(e.x, e.y, e.isBoss ? 30 : 12, e.type >= 3 ? '#2a0a30' : '#6a0810');
       spawnSpark(e.x, e.y, 8, '#ff6600');
       sfxKill();
@@ -921,8 +930,10 @@ function reset(){
   player.angle = 0; player.legPhase = 0;
   enemies = []; bullets = []; particles = []; pickups = []; decals = [];
   score = 0; kills = 0; wave = 1;
-  shakeAmount = 0;
-  gameTime = 0;
+  let shakeAmount = 0, shakeX = 0, shakeY = 0;
+  let gameTime = 0;
+  let comboCount = 0;
+  let comboTimer = 0;
   startWave();
 }
 

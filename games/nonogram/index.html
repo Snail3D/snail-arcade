@@ -172,6 +172,7 @@
         let currentGrid = [];
         let currentLang = 'ar';
         let solveStartTime = 0;
+        let solveCount = 0;
 
         const BEST_TIME_KEY = 'nonogram-best-time';
         function getBestTime() { return parseInt(localStorage.getItem(BEST_TIME_KEY) || '0'); }
@@ -181,6 +182,19 @@
                 document.getElementById('best-time').textContent = 'Best Time: ' + time + 's';
             }
         }
+        // Track games won
+        const GAMES_WON_KEY = 'nonogram-games-won';
+        function getGamesWon() { return parseInt(localStorage.getItem(GAMES_WON_KEY) || '0', 10); }
+        function saveGameWon() {
+            const won = getGamesWon() + 1;
+            localStorage.setItem(GAMES_WON_KEY, won.toString());
+        }
+        // Track consecutive solves for difficulty scaling
+        const CONSEC_KEY = 'nonogram-consec';
+        function getConsec() { return parseInt(localStorage.getItem(CONSEC_KEY) || '0', 10); }
+        function saveConsec(n) { localStorage.setItem(CONSEC_KEY, n.toString()); }
+        // Scale grid size based on streak
+        let currentSize = 5;
         // Initialize best time display
         (function() {
             const best = getBestTime();
@@ -263,36 +277,48 @@
         }
 
         function initGame() {
-            solution = generateRandomGrid(SIZE);
-            currentGrid = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+            // Use currentSize instead of fixed SIZE for scaling
+            const gs = currentSize || SIZE;
+            solution = generateRandomGrid(gs);
+            currentGrid = Array(gs).fill().map(() => Array(gs).fill(0));
             document.getElementById('message').innerText = '';
             solveStartTime = Date.now();
-            renderClues();
-            renderGrid();
+            // Update grid CSS to match size
+            const gridEl = document.getElementById('grid');
+            gridEl.style.gridTemplateColumns = 'repeat(' + gs + ', clamp(26px, 15vw, 50px))';
+            gridEl.style.gridTemplateRows = 'repeat(' + gs + ', clamp(26px, 15vw, 50px))';
+            renderClues(gs);
+            renderGrid(gs);
         }
 
-        function renderClues() {
+        function renderClues(size) {
+            const gs = size || SIZE;
             const rowCluesEl = document.getElementById('row-clues');
             const colCluesEl = document.getElementById('col-clues');
             rowCluesEl.innerHTML = '';
             colCluesEl.innerHTML = '';
 
-            for (let r = 0; r < SIZE; r++) {
+            for (let r = 0; r < gs; r++) {
                 const clues = getClues(solution[r]);
                 const div = document.createElement('div');
                 div.className = 'row-clue';
+                div.style.width = 'auto';
+                div.style.height = '30px';
+                div.style.paddingRight = '8px';
                 div.innerText = clues.join(' ');
                 rowCluesEl.appendChild(div);
             }
 
-            for (let c = 0; c < SIZE; c++) {
+            for (let c = 0; c < gs; c++) {
                 let colArr = [];
-                for (let r = 0; r < SIZE; r++) {
+                for (let r = 0; r < gs; r++) {
                     colArr.push(solution[r][c]);
                 }
                 const clues = getClues(colArr);
                 const div = document.createElement('div');
                 div.className = 'col-clue';
+                div.style.height = 'auto';
+                div.style.width = '30px';
                 clues.forEach(num => {
                     const span = document.createElement('span');
                     span.innerText = num;
@@ -303,15 +329,18 @@
             updateUI(); 
         }
 
-        function renderGrid() {
+        function renderGrid(size) {
+            const gs = size || SIZE;
             const gridEl = document.getElementById('grid');
             gridEl.innerHTML = '';
-            for (let r = 0; r < SIZE; r++) {
-                for (let c = 0; c < SIZE; c++) {
+            for (let r = 0; r < gs; r++) {
+                for (let c = 0; c < gs; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     cell.dataset.r = r;
                     cell.dataset.c = c;
+                    cell.style.width = 'clamp(26px, 15vw, 50px)';
+                    cell.style.height = 'clamp(26px, 15vw, 50px)';
                     cell.addEventListener('click', () => toggleCell(r, c, 'fill'));
                     cell.addEventListener('touchstart', (e) => { e.preventDefault(); toggleCell(r, c, 'fill'); }, { passive: false });
                     cell.addEventListener('contextmenu', (e) => {
@@ -355,6 +384,15 @@
             const timeTaken = Math.round((Date.now() - solveStartTime) / 1000);
             document.getElementById('message').innerText = translations[currentLang].winMsg;
             saveBestTime(timeTaken);
+            saveGameWon();
+            solveCount++;
+            const consec = getConsec();
+            saveConsec(consec + 1);
+            // Scale up difficulty every 3 solves: increase grid size
+            if (solveCount % 3 === 0 && currentSize < 10) {
+                currentSize = Math.min(10, currentSize + 1);
+                document.getElementById('message').innerText += ' (Next: ' + currentSize + '×' + currentSize + ')';
+            }
         }
 
         initGame();
