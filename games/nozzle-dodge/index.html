@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Nozzle Dodge</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  background: #0a0a12;
+  overflow: hidden;
+  touch-action: none;
+  font-family: 'Courier New', monospace;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.95);
+  z-index: 10;
+  pointer-events: auto;
+}
+#overlay.hidden { display: none; }
+#title {
+  font-size: clamp(28px, 8vw, 56px);
+  color: #00ffff;
+  text-shadow: 0 0 20px #00ffff, 0 0 40px #0088ff;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+}
+#subtitle {
+  font-size: clamp(12px, 3vw, 18px);
+  color: #ff00ff;
+  text-shadow: 0 0 10px #ff00ff;
+  margin-bottom: 32px;
+}
+#startBtn, #restartBtn {
+  padding: 16px 48px;
+  font-size: clamp(16px, 4vw, 24px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #00ffff;
+  border: 2px solid #00ffff;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  transition: all 0.2s;
+}
+#startBtn:hover, #restartBtn:hover {
+  background: #00ffff;
+  color: #0a0a12;
+  box-shadow: 0 0 30px #00ffff;
+}
+#hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between;
+  padding: 12px 16px;
+  z-index: 5;
+  pointer-events: none;
+}
+#hud span {
+  font-family: 'Courier New', monospace;
+  font-size: clamp(14px, 3.5vw, 20px);
+  color: #00ffff;
+  text-shadow: 0 0 8px #00ffff;
+}
+#gameOver {
+  position: fixed; inset: 0;
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(10,10,18,0.9);
+  z-index: 15;
+  pointer-events: auto;
+}
+#gameOver h2 {
+  font-size: clamp(24px, 7vw, 48px);
+  color: #ff0044;
+  text-shadow: 0 0 20px #ff0044;
+  margin-bottom: 12px;
+}
+#finalScore {
+  font-size: clamp(16px, 4vw, 28px);
+  color: #00ffff;
+  margin-bottom: 24px;
+}
+#restartBtn {
+  padding: 14px 40px;
+  font-size: clamp(14px, 3.5vw, 20px);
+  font-family: 'Courier New', monospace;
+  background: transparent;
+  color: #ff00ff;
+  border: 2px solid #ff00ff;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+#restartBtn:hover {
+  background: #ff00ff;
+  color: #0a0a12;
+  box-shadow: 0 0 30px #ff00ff;
+}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="overlay">
+  <div id="title">NOZZLE DODGE</div>
+  <div id="subtitle">Dodge the debris. Collect the spools.</div>
+  <button id="startBtn">START PRINT</button>
+</div>
+
+<div id="hud">
+  <span id="hudScore">SCORE: 0</span>
+  <span id="hudLives">♥♥♥</span>
+</div>
+
+<div id="gameOver">
+  <h2>PRINT FAILED</h2>
+  <div id="finalScore">SCORE: 0</div>
+  <button id="restartBtn">RETRY</button>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const gameOverScreen = document.getElementById('gameOver');
+const hudScore = document.getElementById('hudScore');
+const hudLives = document.getElementById('hudLives');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const finalScoreEl = document.getElementById('finalScore');
+
+let W, H, dpr;
+let gameRunning = false;
+let score = 0;
+let lives = 3;
+let difficulty = 1;
+let frameCount = 0;
+let animId;
+
+// Player (nozzle)
+const player = {
+  x: 0, y: 0, w: 36, h: 44,
+  speed: 0, targetX: 0,
+  trail: []
+};
+
+// Arrays
+let debris = [];
+let spools = [];
+let particles = [];
+
+// Input
+let keys = {};
+let touchActive = false;
+let touchX = 0;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!gameRunning) {
+    player.x = W / 2;
+    player.y = H - 80;
+  }
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+// Input handlers
+document.addEventListener('keydown', e => { keys[e.key] = true; });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  touchActive = true;
+  touchX = e.touches[0].clientX;
+}, {passive: false});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (touchActive) {
+    touchX = e.touches[0].clientX;
+  }
+}, {passive: false});
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touchActive = false;
+}, {passive: false});
+
+canvas.addEventListener('mousemove', e => {
+  if (gameRunning) {
+    player.targetX = e.clientX;
+  }
+});
+
+// Spawn functions
+function spawnDebris() {
+  const types = ['failed', 'string', 'support'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const size = 20 + Math.random() * 25;
+  debris.push({
+    x: Math.random() * (W - size),
+    y: -size,
+    w: size, h: size,
+    speed: (1.5 + Math.random() * 2) * difficulty,
+    type: type,
+    rot: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.1
+  });
+}
+
+function spawnSpool() {
+  spools.push({
+    x: Math.random() * (W - 24),
+    y: -24,
+    w: 24, h: 24,
+    speed: 1.5 + Math.random(),
+    glow: 0
+  });
+}
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.03,
+      size: 2 + Math.random() * 3,
+      color: color
+    });
+  }
+}
+
+// Collision
+function rectsCollide(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// Drawing helpers
+function drawFilmGrain() {
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  // Only sample every 4th pixel for performance
+  for (let i = 0; i < data.length; i += 16) {
+    const noise = (Math.random() - 0.5) * 12;
+    data[i] += noise;
+    data[i+1] += noise;
+    data[i+2] += noise;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function drawPlayer() {
+  const px = player.x;
+  const py = player.y;
+
+  // Trail
+  ctx.globalAlpha = 0.3;
+  for (let i = 0; i < player.trail.length; i++) {
+    const t = player.trail[i];
+    const alpha = i / player.trail.length * 0.3;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#00ffff';
+    ctx.fillRect(t.x - 4, t.y, 8, 6);
+  }
+  ctx.globalAlpha = 1;
+
+  // Nozzle body
+  ctx.fillStyle = '#1a1a2e';
+  ctx.strokeStyle = '#00ffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px - 12, py);
+  ctx.lineTo(px + 12, py);
+  ctx.lineTo(px + 8, py + 20);
+  ctx.lineTo(px + 4, py + 36);
+  ctx.lineTo(px - 4, py + 36);
+  ctx.lineTo(px - 8, py + 20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Nozzle tip glow
+  ctx.fillStyle = '#00ffff';
+  ctx.shadowColor = '#00ffff';
+  ctx.shadowBlur = 12;
+  ctx.fillRect(px - 3, py + 34, 6, 4);
+  ctx.shadowBlur = 0;
+
+  // LED indicator
+  ctx.fillStyle = frameCount % 30 < 15 ? '#ff00ff' : '#ff0044';
+  ctx.beginPath();
+  ctx.arc(px, py + 10, 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawDebris(d) {
+  ctx.save();
+  ctx.translate(d.x + d.w/2, d.y + d.h/2);
+  ctx.rotate(d.rot);
+
+  if (d.type === 'failed') {
+    // Failed print - jagged blob
+    ctx.fillStyle = '#ff0044';
+    ctx.shadowColor = '#ff0044';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const r = d.w * 0.4 * (0.7 + Math.random() * 0.3);
+      if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (d.type === 'string') {
+    // Stringing - thin wavy line
+    ctx.strokeStyle = '#ff8800';
+    ctx.shadowColor = '#ff8800';
+    ctx.shadowBlur = 6;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const sx = (i - 2) * d.w * 0.25;
+      const sy = Math.sin(i * 1.5 + frameCount * 0.1) * 8;
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+  } else {
+    // Support material - blocky
+    ctx.fillStyle = '#ffaa00';
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = 6;
+    ctx.fillRect(-d.w/2, -d.h/2, d.w, d.h);
+    ctx.strokeStyle = '#ff6600';
+    ctx.lineWidth = 1;
+    // Grid pattern
+    for (let i = -d.w/2 + 5; i < d.w/2; i += 6) {
+      ctx.beginPath();
+      ctx.moveTo(i, -d.h/2);
+      ctx.lineTo(i, d.h/2);
+      ctx.stroke();
+    }
+    for (let i = -d.h/2 + 5; i < d.h/2; i += 6) {
+      ctx.beginPath();
+      ctx.moveTo(-d.w/2, i);
+      ctx.lineTo(d.w/2, i);
+      ctx.stroke();
+    }
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawSpool(s) {
+  s.glow = (Math.sin(frameCount * 0.1) + 1) * 0.5;
+
+  ctx.save();
+  ctx.translate(s.x + s.w/2, s.y + s.h/2);
+
+  // Glow
+  ctx.shadowColor = '#00ff88';
+  ctx.shadowBlur = 10 + s.glow * 10;
+
+  // Outer ring
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner fill
+  ctx.fillStyle = `rgba(0, 255, 136, ${0.3 + s.glow * 0.3})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Center dot
+  ctx.fillStyle = '#00ff88';
+  ctx.beginPath();
+  ctx.arc(0, 0, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Filament strand on top
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.quadraticCurveTo(6, -18, 0, -22);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawBackground() {
+  // Dark background with subtle grid
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(0, 255, 255, 0.04)';
+  ctx.lineWidth = 1;
+  const gridSize = 40;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Print bed at bottom
+  const bedY = H - 40;
+  ctx.fillStyle = 'rgba(255, 0, 255, 0.08)';
+  ctx.fillRect(0, bedY, W, 40);
+  ctx.strokeStyle = 'rgba(255, 0, 255, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, bedY);
+  ctx.lineTo(W, bedY);
+  ctx.stroke();
+
+  // Bed grid
+  ctx.strokeStyle = 'rgba(255, 0, 255, 0.1)';
+  for (let x = 0; x < W; x += 20) {
+    ctx.beginPath();
+    ctx.moveTo(x, bedY);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawDifficulty() {
+  // Speed indicator
+  ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+  ctx.font = `${Math.max(10, 12)}px 'Courier New', monospace`;
+  ctx.fillText(`SPEED: x${difficulty.toFixed(1)}`, 12, H - 12);
+}
+
+// Game loop
+function update() {
+  frameCount++;
+
+  // Increase difficulty over time
+  difficulty = 1 + frameCount / 1200;
+
+  // Player movement
+  const moveSpeed = 6;
+  if (keys['ArrowLeft'] || keys['a']) { player.targetX = player.x - moveSpeed; }
+  if (keys['ArrowRight'] || keys['d']) { player.targetX = player.x + moveSpeed; }
+  if (touchActive) {
+    const diff = touchX - player.x;
+    player.x += diff * 0.15;
+  } else {
+    player.x += (player.targetX - player.x) * 0.15;
+  }
+  player.x = Math.max(player.w/2, Math.min(W - player.w/2, player.x));
+
+  // Trail
+  player.trail.push({x: player.x, y: player.y + 38});
+  if (player.trail.length > 12) player.trail.shift();
+
+  // Spawn debris
+  const debrisInterval = Math.max(15, 45 - Math.floor(difficulty * 5));
+  if (frameCount % debrisInterval === 0) spawnDebris();
+
+  // Spawn spools
+  if (frameCount % 90 === 0) spawnSpool();
+
+  // Update debris
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    d.y += d.speed;
+    d.rot += d.rotSpeed;
+
+    // Collision with player
+    const playerBox = {x: player.x - player.w/2, y: player.y, w: player.w, h: player.h};
+    if (rectsCollide(playerBox, d)) {
+      lives--;
+      spawnParticles(player.x, player.y, '#ff0044', 15);
+      debris.splice(i, 1);
+      hudLives.textContent = '♥'.repeat(Math.max(0, lives));
+      if (lives <= 0) {
+        endGame();
+        return;
+      }
+      continue;
+    }
+
+    // Remove if off screen
+    if (d.y > H + 50) {
+      debris.splice(i, 1);
+      score += 1;
+      hudScore.textContent = `SCORE: ${score}`;
+    }
+  }
+
+  // Update spools
+  for (let i = spools.length - 1; i >= 0; i--) {
+    const s = spools[i];
+    s.y += s.speed;
+
+    // Collision with player
+    const playerBox = {x: player.x - player.w/2, y: player.y, w: player.w, h: player.h};
+    if (rectsCollide(playerBox, s)) {
+      score += 10;
+      spawnParticles(s.x + s.w/2, s.y + s.h/2, '#00ff88', 12);
+      spools.splice(i, 1);
+      hudScore.textContent = `SCORE: ${score}`;
+      continue;
+    }
+
+    if (s.y > H + 30) {
+      spools.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function render() {
+  drawBackground();
+  drawParticles();
+
+  for (const d of debris) drawDebris(d);
+  for (const s of spools) drawSpool(s);
+  drawPlayer();
+  drawDifficulty();
+
+  // Film grain overlay (subtle)
+  if (frameCount % 3 === 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.03)';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function gameLoop() {
+  if (!gameRunning) return;
+  update();
+  render();
+  animId = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  score = 0;
+  lives = 3;
+  difficulty = 1;
+  frameCount = 0;
+  debris = [];
+  spools = [];
+  particles = [];
+  player.x = W / 2;
+  player.targetX = W / 2;
+  player.trail = [];
+  gameRunning = true;
+
+  hudScore.textContent = 'SCORE: 0';
+  hudLives.textContent = '♥♥♥';
+  overlay.style.display = 'none';
+  gameOverScreen.style.display = 'none';
+
+  gameLoop();
+}
+
+function endGame() {
+  gameRunning = false;
+  if (animId) cancelAnimationFrame(animId);
+  finalScoreEl.textContent = `SCORE: ${score}`;
+  gameOverScreen.style.display = 'flex';
+}
+
+// Event listeners
+startBtn.addEventListener('click', startGame);
+startBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); });
+restartBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('touchend', e => { e.preventDefault(); startGame(); });
+
+// Initial render
+render();
+</script>
+</body>
+</html>
