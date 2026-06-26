@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bed Level Balance 🖨️⚖️</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050810; font-family: 'Courier New', monospace; color: #a8f0ff; }
+  body { display: flex; align-items: center; justify-content: center; touch-action: none; }
+  #wrap { position: relative; width: 100vmin; height: 100vmin; max-width: 600px; max-height: 600px; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; border: 2px solid #0a3a4a; box-shadow: 0 0 40px rgba(0,255,255,0.15), inset 0 0 40px rgba(0,0,0,0.6); border-radius: 8px; background: #0a141e; }
+
+  #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(10,20,30,0.95) 0%, rgba(5,8,16,0.98) 100%); z-index: 10; text-align: center; padding: 24px; border-radius: 8px; }
+  #overlay.hidden { display: none; }
+  #overlay h1 { font-size: clamp(22px, 5vw, 36px); color: #00f0ff; text-shadow: 0 0 12px #00f0ff, 0 0 24px #00aaff; margin-bottom: 8px; letter-spacing: 2px; }
+  #overlay h2 { font-size: clamp(14px, 3vw, 20px); color: #ff6ad5; text-shadow: 0 0 8px #ff6ad5; margin-bottom: 16px; font-weight: normal; }
+  #overlay p { font-size: clamp(11px, 2.5vw, 14px); color: #a8c8d8; margin-bottom: 6px; line-height: 1.5; max-width: 380px; }
+  #overlay .controls { margin: 12px 0; font-size: clamp(10px, 2.2vw, 12px); color: #88aabb; }
+  #overlay button { margin-top: 18px; padding: 14px 32px; font-size: clamp(14px, 3vw, 18px); font-family: 'Courier New', monospace; background: linear-gradient(135deg, #00f0ff 0%, #0080ff 100%); color: #050810; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; letter-spacing: 2px; box-shadow: 0 0 20px rgba(0,240,255,0.4); transition: transform 0.1s; }
+  #overlay button:active { transform: scale(0.96); }
+
+  #hud { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; font-size: clamp(11px, 2.4vw, 14px); color: #00f0ff; text-shadow: 0 0 6px #00f0ff; pointer-events: none; z-index: 5; }
+  #hud div { background: rgba(5,8,16,0.7); padding: 4px 10px; border: 1px solid #0a3a4a; border-radius: 3px; }
+  #hud .lvl { color: #ff6ad5; text-shadow: 0 0 6px #ff6ad5; }
+
+  #toast { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: clamp(18px, 4vw, 28px); color: #00f0ff; text-shadow: 0 0 12px #00f0ff; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 6; font-weight: bold; letter-spacing: 3px; }
+  #toast.show { opacity: 1; }
+
+  .grain { position: absolute; inset: 0; pointer-events: none; opacity: 0.06; background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 2px); z-index: 4; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div class="grain"></div>
+  <div id="hud">
+    <div>LVL <span id="hudLevel" class="lvl">1</span></div>
+    <div>TIME <span id="hudTime">0.0</span></div>
+    <div>BEST <span id="hudBest">--</span></div>
+  </div>
+  <div id="toast"></div>
+  <div id="overlay">
+    <h1>BED LEVEL BALANCE</h1>
+    <h2>🖨️⚖️ Tilt to Win</h2>
+    <p>Roll the calibration ball through the maze of print pegs and into the corner hole — like leveling your print bed with a sheet of paper.</p>
+    <p>Each level adds more pegs and tighter tolerances.</p>
+    <div class="controls">
+      ⌨️ Arrow keys / WASD to tilt<br>
+      📱 Tilt device or drag finger on screen
+    </div>
+    <button id="startBtn">START CALIBRATING</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const hudLevel = document.getElementById('hudLevel');
+  const hudTime = document.getElementById('hudTime');
+  const hudBest = document.getElementById('hudBest');
+  const toast = document.getElementById('toast');
+
+  let W = 600, H = 600;
+  function resize() {
+    const r = canvas.parentElement.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = r.width; H = r.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Game state
+  const STATE = { MENU: 0, PLAY: 1, WIN: 2, LOSE: 3 };
+  let state = STATE.MENU;
+  let level = 1;
+  let startTime = 0;
+  let elapsed = 0;
+  let bestTime = parseFloat(localStorage.getItem('bedLevelBest') || 'NaN');
+  if (!isNaN(bestTime)) hudBest.textContent = bestTime.toFixed(1) + 's';
+
+  // Tilt
+  let tiltX = 0, tiltY = 0;       // current tilt (target)
+  let tiltXa = 0, tiltYa = 0;     // actual tilt (smoothed)
+  const TILT_MAX = 1.2;           // max tilt accel magnitude
+  let useDeviceTilt = false;
+
+  // Ball
+  let ball = { x: 0, y: 0, vx: 0, vy: 0, r: 9 };
+  let hole = { x: 0, y: 0, r: 16 };
+  let pegs = [];
+  let particles = [];
+
+  // Input
+  const keys = {};
+  let touchActive = false;
+  let touchCX = 0, touchCY = 0;
+
+  // Seeded RNG
+  function mulberry32(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ t >>> 15, t | 1);
+      t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function generateLevel(lvl) {
+    const rng = mulberry32(Date.now() & 0xffffffff);
+    const pad = 40;
+    ball.x = pad + 20;
+    ball.y = pad + 20;
+    ball.vx = 0; ball.vy = 0;
+
+    // Hole in opposite-ish corner, but offset based on level
+    const corners = [
+      { x: W - pad - 20, y: H - pad - 20 },
+      { x: W - pad - 20, y: pad + 20 },
+      { x: pad + 20, y: H - pad - 20 }
+    ];
+    const hc = corners[lvl % corners.length];
+    hole.x = hc.x; hole.y = hc.y; hole.r = 16;
+
+    const count = Math.min(6 + lvl * 2, 28);
+    pegs = [];
+    let attempts = 0;
+    while (pegs.length < count && attempts < 500) {
+      attempts++;
+      const px = pad + 20 + rng() * (W - 2 * (pad + 20));
+      const py = pad + 20 + rng() * (H - 2 * (pad + 20));
+      // avoid spawn and hole
+      const dStart = Math.hypot(px - ball.x, py - ball.y);
+      const dHole = Math.hypot(px - hole.x, py - hole.y);
+      if (dStart < 60) continue;
+      if (dHole < 50) continue;
+      // avoid other pegs
+      let tooClose = false;
+      for (const p of pegs) {
+        if (Math.hypot(px - p.x, py - p.y) < 50) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+      const r = 5 + rng() * 4;
+      pegs.push({ x: px, y: py, r, broken: false });
+    }
+    particles = [];
+  }
+
+  function resetToMenu() {
+    state = STATE.MENU;
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+    overlay.querySelector('h1').textContent = level > 1 ? 'LEVEL ' + level + ' COMPLETE' : 'BED LEVEL BALANCE';
+    overlay.querySelector('h2').textContent = level > 1 ? '🖨️✨ Bed Leveled!' : '🖨️⚖️ Tilt to Win';
+    const p1 = overlay.querySelectorAll('p')[0];
+    const p2 = overlay.querySelectorAll('p')[1];
+    if (level > 1) {
+      p1.textContent = `Time: ${elapsed.toFixed(1)}s — Bed is level!`;
+      p2.textContent = 'Next level adds more pegs and tighter tolerance.';
+    } else {
+      p1.textContent = 'Roll the calibration ball through the maze of print pegs and into the corner hole — like leveling your print bed with a sheet of paper.';
+      p2.textContent = 'Each level adds more pegs and tighter tolerances.';
+    }
+    startBtn.textContent = level > 1 ? 'NEXT LEVEL' : 'START CALIBRATING';
+  }
+
+  function startGame() {
+    overlay.style.display = 'none';
+    state = STATE.PLAY;
+    startTime = performance.now();
+    generateLevel(level);
+    showToast('LEVEL ' + level);
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 900);
+  }
+
+  function loseLevel(reason) {
+    state = STATE.LOSE;
+    showToast('OFF THE BED!');
+    // explode particles
+    for (let i = 0; i < 20; i++) {
+      particles.push({
+        x: ball.x, y: ball.y,
+        vx: (Math.random() - 0.5) * 6,
+        vy: (Math.random() - 0.5) * 6,
+        life: 1, r: 2 + Math.random() * 3,
+        color: Math.random() < 0.5 ? '#ff6ad5' : '#00f0ff'
+      });
+    }
+    setTimeout(() => {
+      overlay.classList.remove('hidden');
+      overlay.style.display = 'flex';
+      overlay.querySelector('h1').textContent = 'OFF THE BED!';
+      overlay.querySelector('h2').textContent = '🖨️💥 Re-level needed';
+      overlay.querySelectorAll('p')[0].textContent = reason || 'The ball fell off the print bed.';
+      overlay.querySelectorAll('p')[1].textContent = 'Level resets. Stay centered!';
+      startBtn.textContent = 'TRY AGAIN';
+    }, 700);
+  }
+
+  function winLevel() {
+    state = STATE.WIN;
+    elapsed = (performance.now() - startTime) / 1000;
+    if (isNaN(bestTime) || elapsed < bestTime) {
+      bestTime = elapsed;
+      localStorage.setItem('bedLevelBest', String(bestTime));
+      hudBest.textContent = bestTime.toFixed(1) + 's ⭐';
+    } else {
+      hudBest.textContent = bestTime.toFixed(1) + 's';
+    }
+    hudTime.textContent = elapsed.toFixed(1) + 's';
+    // burst
+    for (let i = 0; i < 30; i++) {
+      particles.push({
+        x: hole.x, y: hole.y,
+        vx: (Math.random() - 0.5) * 8,
+        vy: (Math.random() - 0.5) * 8,
+        life: 1, r: 2 + Math.random() * 3,
+        color: Math.random() < 0.5 ? '#00f0ff' : '#ffd700'
+      });
+    }
+    setTimeout(() => {
+      level++;
+      hudLevel.textContent = String(level);
+      resetToMenu();
+    }, 900);
+  }
+
+  function update(dt) {
+    if (state !== STATE.PLAY) return;
+
+    // Smooth tilt
+    tiltXa += (tiltX - tiltXa) * 0.18;
+    tiltYa += (tiltY - tiltYa) * 0.18;
+
+    // Apply tilt accel (gravity-like, scaled by tilt magnitude)
+    const ax = tiltXa * TILT_MAX * 380;
+    const ay = tiltYa * TILT_MAX * 380;
+    ball.vx += ax * dt;
+    ball.vy += ay * dt;
+
+    // Friction
+    ball.vx *= 0.985;
+    ball.vy *= 0.985;
+
+    // Speed cap
+    const maxV = 380;
+    const sp = Math.hypot(ball.vx, ball.vy);
+    if (sp > maxV) {
+      ball.vx = (ball.vx / sp) * maxV;
+      ball.vy = (ball.vy / sp) * maxV;
+    }
+
+    // Move
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+
+    // Wall bounce
+    const pad = 12;
+    if (ball.x < pad + ball.r) { ball.x = pad + ball.r; ball.vx = -ball.vx * 0.55; }
+    if (ball.x > W - pad - ball.r) { ball.x = W - pad - ball.r; ball.vx = -ball.vx * 0.55; }
+    if (ball.y < pad + ball.r) { ball.y = pad + ball.r; ball.vy = -ball.vy * 0.55; }
+    if (ball.y > H - pad - ball.r) { ball.y = H - pad - ball.r; ball.vy = -ball.vy * 0.55; }
+
+    // Peg collision
+    for (const p of pegs) {
+      if (p.broken) continue;
+      const dx = ball.x - p.x, dy = ball.y - p.y;
+      const d = Math.hypot(dx, dy);
+      const minD = ball.r + p.r;
+      if (d < minD && d > 0) {
+        const nx = dx / d, ny = dy / d;
+        const overlap = minD - d;
+        ball.x += nx * overlap;
+        ball.y += ny * overlap;
+        const vDotN = ball.vx * nx + ball.vy * ny;
+        if (vDotN < 0) {
+          ball.vx -= 2 * vDotN * nx * 0.85;
+          ball.vy -= 2 * vDotN * ny * 0.85;
+        }
+        // small impact spark
+        if (Math.abs(vDotN) > 60) {
+          particles.push({
+            x: p.x + nx * p.r, y: p.y + ny * p.r,
+            vx: nx * 1.5, vy: ny * 1.5,
+            life: 0.5, r: 2,
+            color: '#ff6ad5'
+          });
+        }
+      }
+    }
+
+    // Off-bed check (only if ball leaves with significant velocity)
+    if (ball.x < -20 || ball.x > W + 20 || ball.y < -20 || ball.y > H + 20) {
+      loseLevel('Ball flew off the print bed!');
+      return;
+    }
+
+    // Hole capture
+    const dh = Math.hypot(ball.x - hole.x, ball.y - hole.y);
+    if (dh < hole.r * 0.7 && Math.hypot(ball.vx, ball.vy) < 80) {
+      // captured
+      ball.x = hole.x; ball.y = hole.y;
+      ball.vx = 0; ball.vy = 0;
+      winLevel();
+      return;
+    } else if (dh < hole.r) {
+      // suck effect
+      ball.x += (hole.x - ball.x) * 0.1;
+      ball.y += (hole.y - ball.y) * 0.1;
+      ball.vx *= 0.8;
+      ball.vy *= 0.8;
+    }
+
+    // Timer
+    elapsed = (performance.now() - startTime) / 1000;
+    hudTime.textContent = elapsed.toFixed(1) + 's';
+  }
+
+  function render() {
+    // background
+    ctx.fillStyle = '#0a141e';
+    ctx.fillRect(0, 0, W, H);
+
+    // print bed grid
+    ctx.strokeStyle = 'rgba(0,240,255,0.08)';
+    ctx.lineWidth = 1;
+    const gs = 30;
+    for (let x = 0; x < W; x += gs) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gs) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // print bed border (glass plate)
+    ctx.strokeStyle = '#00aacc';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 8;
+    ctx.strokeRect(12, 12, W - 24, H - 24);
+    ctx.shadowBlur = 0;
+
+    // corner clips
+    ctx.fillStyle = '#ff6ad5';
+    for (const [cx, cy] of [[12, 12], [W - 12, 12], [12, H - 12], [W - 12, H - 12]]) {
+      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // pegs (printed tower supports)
+    for (const p of pegs) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      // base shadow
+      ctx.fillStyle = 'rgba(255,106,213,0.3)';
+      ctx.beginPath(); ctx.arc(2, 2, p.r, 0, Math.PI * 2); ctx.fill();
+      // body
+      const grad = ctx.createRadialGradient(-p.r * 0.3, -p.r * 0.3, 1, 0, 0, p.r);
+      grad.addColorStop(0, '#ff9ae5');
+      grad.addColorStop(1, '#a02080');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ff6ad5';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // hole (target)
+    ctx.save();
+    ctx.translate(hole.x, hole.y);
+    // pulsing ring
+    const pulse = 1 + Math.sin(performance.now() / 250) * 0.12;
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(0, 0, hole.r * pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    // inner dark
+    ctx.fillStyle = '#020608';
+    ctx.beginPath(); ctx.arc(0, 0, hole.r * 0.75, 0, Math.PI * 2); ctx.fill();
+    // bullseye
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, hole.r * 0.4, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Z=0', 0, 0);
+    ctx.restore();
+
+    // ball (calibration sphere)
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    const bg = ctx.createRadialGradient(-ball.r * 0.4, -ball.r * 0.4, 1, 0, 0, ball.r);
+    bg.addColorStop(0, '#ffffff');
+    bg.addColorStop(0.5, '#a8f0ff');
+    bg.addColorStop(1, '#006080');
+    ctx.fillStyle = bg;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(0, 0, ball.r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const pt = particles[i];
+      pt.x += pt.vx; pt.y += pt.vy;
+      pt.vx *= 0.94; pt.vy *= 0.94;
+      pt.life -= 0.02;
+      if (pt.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.fillStyle = pt.color;
+      ctx.globalAlpha = Math.max(0, pt.life);
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // tilt indicator
+    if (state === STATE.PLAY) {
+      ctx.save();
+      ctx.translate(W / 2, H - 24);
+      ctx.fillStyle = 'rgba(0,240,255,0.4)';
+      ctx.fillRect(-30, -2, 60, 4);
+      ctx.fillStyle = '#ff6ad5';
+      ctx.shadowColor = '#ff6ad5';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(tiltXa * 28, tiltYa * 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  let lastT = performance.now();
+  function loop(t) {
+    const dt = Math.min(0.033, (t - lastT) / 1000);
+    lastT = t;
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // Input handlers
+  window.addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    keys[k] = true;
+    if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' '].includes(k)) {
+      e.preventDefault();
+    }
+    if (k === ' ' && state === STATE.MENU) startGame();
+  });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+  function applyKeyboardTilt() {
+    let tx = 0, ty = 0;
+    if (keys['arrowleft'] || keys['a']) tx -= 1;
+    if (keys['arrowright'] || keys['d']) tx += 1;
+    if (keys['arrowup'] || keys['w']) ty -= 1;
+    if (keys['arrowdown'] || keys['s']) ty += 1;
+    if (!useDeviceTilt) {
+      tiltX = tx;
+      tiltY = ty;
+    }
+  }
+  setInterval(applyKeyboardTilt, 16);
+
+  // Touch — drag to tilt
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touchActive = true;
+    const t = e.touches[0];
+    touchCX = t.clientX; touchCY = t.clientY;
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!touchActive) return;
+    const t = e.touches[0];
+    const dx = (t.clientX - touchCX) / (W * 0.4);
+    const dy = (t.clientY - touchCY) / (H * 0.4);
+    tiltX = Math.max(-1, Math.min(1, dx));
+    tiltY = Math.max(-1, Math.min(1, dy));
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    touchActive = false;
+    tiltX = 0; tiltY = 0;
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', () => { touchActive = false; tiltX = 0; tiltY = 0; });
+
+  // Mouse drag for desktop testing
+  let mouseActive = false;
+  let mouseSX = 0, mouseSY = 0;
+  canvas.addEventListener('mousedown', (e) => {
+    mouseActive = true;
+    mouseSX = e.clientX; mouseSY = e.clientY;
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!mouseActive) return;
+    const dx = (e.clientX - mouseSX) / (W * 0.4);
+    const dy = (e.clientY - mouseSY) / (H * 0.4);
+    tiltX = Math.max(-1, Math.min(1, dx));
+    tiltY = Math.max(-1, Math.min(1, dy));
+  });
+  window.addEventListener('mouseup', () => { mouseActive = false; tiltX = 0; tiltY = 0; });
+
+  // Device tilt
+  window.addEventListener('deviceorientation', (e) => {
+    if (e.beta == null || e.gamma == null) return;
+    useDeviceTilt = true;
+    const g = Math.max(-30, Math.min(30, e.gamma)) / 30;
+    const b = Math.max(-30, Math.min(30, e.beta - 30)) / 30;
+    tiltX = g;
+    tiltY = b;
+  });
+
+  startBtn.addEventListener('click', startGame);
+  startBtn.addEventListener('touchend', (e) => { e.preventDefault(); startGame(); });
+
+  // Expose for debugging
+  window._bedLevel = { state, level, ball, pegs, hole, startGame, resetToMenu };
+
+})();
+</script>
+</body>
+</html>
