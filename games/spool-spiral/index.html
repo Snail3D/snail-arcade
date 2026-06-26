@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Spool Spiral — 3D Printing Timing Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #05050a; image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; max-height: 100%; }
+  #overlay {
+    position: fixed; inset: 0;
+    background: rgba(5,5,10,0.92);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 20px;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+  }
+  #overlay.hidden { display: none; }
+  #overlay h1 {
+    font-size: clamp(28px, 6vw, 48px);
+    color: #00f0ff;
+    text-shadow: 0 0 24px rgba(0,240,255,0.6), 0 0 4px #00f0ff;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  #overlay .sub {
+    font-size: clamp(12px, 2.4vw, 16px);
+    color: #ff2bd6;
+    text-shadow: 0 0 12px rgba(255,43,214,0.4);
+    margin-bottom: 28px;
+    letter-spacing: 0.1em;
+  }
+  #overlay p {
+    max-width: 480px;
+    line-height: 1.6;
+    font-size: clamp(13px, 2.6vw, 15px);
+    color: #a0a0a8;
+    margin-bottom: 28px;
+  }
+  .btn {
+    background: transparent;
+    color: #00f0ff;
+    border: 2px solid #00f0ff;
+    padding: 14px 36px;
+    font-family: inherit;
+    font-size: 16px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    box-shadow: 0 0 0 rgba(0,240,255,0);
+  }
+  .btn:hover, .btn:active {
+    background: rgba(0,240,255,0.15);
+    box-shadow: 0 0 24px rgba(0,240,255,0.5);
+    transform: translateY(-1px);
+  }
+  #hud {
+    position: fixed;
+    top: 12px; left: 12px; right: 12px;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 5;
+    font-size: clamp(11px, 2.4vw, 14px);
+    letter-spacing: 0.06em;
+  }
+  #hud > div {
+    background: rgba(10,10,20,0.7);
+    padding: 8px 14px;
+    border: 1px solid #252535;
+    border-radius: 4px;
+    color: #d0d0d8;
+  }
+  #hud .label { color: #ff2bd6; margin-right: 6px; }
+  #hud .val { color: #00f0ff; font-weight: bold; }
+  #gameover {
+    position: fixed; inset: 0;
+    background: rgba(5,5,10,0.92);
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 20px;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+  }
+  #gameover.show { display: flex; }
+  #gameover h2 {
+    font-size: clamp(24px, 5vw, 36px);
+    color: #ff2bd6;
+    text-shadow: 0 0 16px rgba(255,43,214,0.6);
+    margin-bottom: 16px;
+  }
+  #gameover .final {
+    font-size: clamp(18px, 3.6vw, 24px);
+    color: #00f0ff;
+    margin-bottom: 24px;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="gameCanvas"></canvas></div>
+
+<div id="hud">
+  <div><span class="label">SCORE</span><span class="val" id="hudScore">0</span></div>
+  <div><span class="label">COMBO</span><span class="val" id="hudCombo">×1</span></div>
+  <div><span class="label">LAYERS</span><span class="val" id="hudLayers">0</span></div>
+</div>
+
+<div id="overlay">
+  <h1>SPOOL SPIRAL</h1>
+  <div class="sub">3D Printing Timing Game</div>
+  <p>Layers roll onto a spinning spool. <b style="color:#00f0ff">Tap or press SPACE</b> at the perfect moment to lay down a clean layer. Land too early or too late and the layer crinkles — miss three in a row and the print fails.</p>
+  <button class="btn" id="startBtn">START PRINT</button>
+</div>
+
+<div id="gameover">
+  <h2>PRINT FAILED</h2>
+  <div class="final">Score: <span id="finalScore">0</span> · Layers: <span id="finalLayers">0</span></div>
+  <button class="btn" id="restartBtn">RETRY</button>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const gameoverEl = document.getElementById('gameover');
+  const hudScore = document.getElementById('hudScore');
+  const hudCombo = document.getElementById('hudCombo');
+  const hudLayers = document.getElementById('hudLayers');
+  const finalScore = document.getElementById('finalScore');
+  const finalLayers = document.getElementById('finalLayers');
+
+  // High-DPI canvas sizing
+  let W = 0, H = 0, dpr = 1;
+  function resize() {
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    W = Math.min(window.innerWidth, 720);
+    H = Math.min(window.innerHeight, 960);
+    if (W / H > 0.6) W = H * 0.6;
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Game state
+  const STATE = { MENU: 0, PLAY: 1, GAMEOVER: 2 };
+  let state = STATE.MENU;
+  let score = 0;
+  let combo = 1;
+  let layers = 0;
+  let misses = 0;
+  let lastHitQuality = -1; // -1 none, 0 perfect, 1 good, 2 ok
+  let comboTimer = 0; // frames remaining before combo resets
+  let spoolRotation = 0;
+  let pulse = 0;
+  let targetZone = 0; // 0..1 around the spool — the "hit window"
+  let layerAngle = 0; // current layer's position
+  let filamentAngle = 0; // animated filament stream
+  let bgParticles = [];
+  let flashAlpha = 0;
+  let flashColor = '#00f0ff';
+  let spoolRadius = 0;
+  let spoolCenter = { x: 0, y: 0 };
+  let cameraShake = 0;
+  let lastFrame = 0;
+  let layerSpeed = 0; // current angular velocity
+  let difficulty = 0;
+  let failMessage = '';
+
+  // Background floating particles (cyberpunk dust)
+  for (let i = 0; i < 30; i++) {
+    bgParticles.push({
+      x: Math.random(), y: Math.random(),
+      vx: (Math.random() - 0.5) * 0.0008,
+      vy: -0.0008 - Math.random() * 0.0015,
+      size: 0.5 + Math.random() * 1.5,
+      hue: Math.random() < 0.5 ? 185 : 310,
+    });
+  }
+
+  function reset() {
+    score = 0;
+    combo = 1;
+    layers = 0;
+    misses = 0;
+    lastHitQuality = -1;
+    comboTimer = 0;
+    spoolRotation = 0;
+    layerAngle = 0;
+    difficulty = 0;
+    flashAlpha = 0;
+    cameraShake = 0;
+    layerSpeed = 0.04; // radians per frame at start
+    spoolRadius = Math.min(W, H) * 0.28;
+    spoolCenter = { x: W / 2, y: H * 0.42 };
+    pulse = 0;
+    targetZone = Math.random() * Math.PI * 2;
+  }
+
+  function startGame() {
+    reset();
+    state = STATE.PLAY;
+    overlay.style.display = 'none';
+    overlay.classList.add('hidden');
+    gameoverEl.classList.remove('show');
+  }
+
+  function endGame() {
+    state = STATE.GAMEOVER;
+    finalScore.textContent = score;
+    finalLayers.textContent = layers;
+    gameoverEl.classList.add('show');
+  }
+
+  function tryHit() {
+    if (state !== STATE.PLAY) return;
+    // Compute distance between layerAngle (normalized 0..2PI) and targetZone
+    let diff = layerAngle - targetZone;
+    diff = ((diff + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+    const absDiff = Math.abs(diff);
+    // Three concentric hit zones — closer = more points
+    // Perfect: < 0.18 rad (~10°)
+    // Good: < 0.40 rad (~23°)
+    // OK: < 0.65 rad (~37°)
+    let quality = -1;
+    let pts = 0;
+    if (absDiff < 0.18) {
+      quality = 0; pts = 100 * combo;
+    } else if (absDiff < 0.40) {
+      quality = 1; pts = 50 * combo;
+    } else if (absDiff < 0.65) {
+      quality = 2; pts = 20 * combo;
+    } else {
+      // complete miss
+      quality = 3;
+    }
+    if (quality >= 0) {
+      score += pts;
+      layers += 1;
+      misses = 0;
+      lastHitQuality = quality;
+      combo += 1;
+      comboTimer = 90; // ~1.5s at 60fps before combo decays
+      flashAlpha = 1.0;
+      flashColor = quality === 0 ? '#00f0ff' : quality === 1 ? '#7dffb0' : '#ffd166';
+      // Increase difficulty every 5 layers
+      if (layers % 5 === 0) {
+        difficulty += 1;
+        layerSpeed = 0.04 + difficulty * 0.006;
+      }
+      // Pick new target zone — biases toward similar angle to avoid trivial snaps
+      targetZone = (targetZone + (Math.random() - 0.5) * 0.6 + Math.PI) % (Math.PI * 2);
+    } else {
+      // Missed — counts as a strike but doesn't reset combo (only 3 misses in a row ends it)
+      misses += 1;
+      lastHitQuality = 3;
+      flashAlpha = 1.0;
+      flashColor = '#ff2b2b';
+      cameraShake = 8;
+      if (misses >= 3) {
+        failMessage = '3 misses in a row — print failed';
+        endGame();
+        return;
+      }
+      // small nudge to a new zone
+      targetZone = (targetZone + (Math.random() - 0.5) * 1.2 + Math.PI) % (Math.PI * 2);
+    }
+    updateHUD();
+  }
+
+  function updateHUD() {
+    hudScore.textContent = score;
+    hudCombo.textContent = '×' + combo;
+    hudLayers.textContent = layers;
+  }
+
+  // Input
+  function onInput(e) {
+    if (e) e.preventDefault();
+    if (state === STATE.PLAY) tryHit();
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      onInput();
+    }
+  });
+  canvas.addEventListener('touchstart', onInput, { passive: false });
+  canvas.addEventListener('mousedown', onInput);
+  startBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
+  restartBtn.addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
+
+  // Render
+  function drawBackground(dt) {
+    // Subtle radial gradient
+    const grad = ctx.createRadialGradient(W/2, H/2, 50, W/2, H/2, Math.max(W, H));
+    grad.addColorStop(0, '#10101f');
+    grad.addColorStop(1, '#03030a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Faint grid (3D printer bed vibe)
+    ctx.strokeStyle = 'rgba(0,240,255,0.04)';
+    ctx.lineWidth = 1;
+    const gridSize = 32;
+    for (let x = (cameraShake ? Math.sin(cameraShake*0.7) * cameraShake : 0); x < W; x += gridSize) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += gridSize) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Drifting dust particles
+    for (const p of bgParticles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.y < -0.05) { p.y = 1.05; p.x = Math.random(); }
+      if (p.x < -0.05 || p.x > 1.05) p.vx *= -1;
+      ctx.fillStyle = `hsla(${p.hue}, 90%, 60%, 0.25)`;
+      ctx.fillRect(p.x * W, p.y * H, p.size, p.size);
+    }
+  }
+
+  function drawSpool() {
+    const cx = spoolCenter.x;
+    const cy = spoolCenter.y;
+    const r = spoolRadius;
+
+    // Outer glow ring
+    const glowGrad = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, r * 1.4);
+    glowGrad.addColorStop(0, 'rgba(0,240,255,0)');
+    glowGrad.addColorStop(0.5, 'rgba(0,240,255,0.12)');
+    glowGrad.addColorStop(1, 'rgba(0,240,255,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill();
+
+    // Spool body — concentric circles
+    ctx.strokeStyle = '#252535';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.95, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.18, 0, Math.PI * 2); ctx.stroke();
+
+    // Spokes — 8 of them
+    ctx.strokeStyle = '#1a1a28';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + spoolRotation * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r * 0.2, cy + Math.sin(a) * r * 0.2);
+      ctx.lineTo(cx + Math.cos(a) * r * 0.92, cy + Math.sin(a) * r * 0.92);
+      ctx.stroke();
+    }
+
+    // Hub
+    ctx.fillStyle = '#15151f';
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.18, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ff2bd6';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.18, 0, Math.PI * 2); ctx.stroke();
+
+    // Inner hub bolt
+    ctx.fillStyle = '#ff2bd6';
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.05, 0, Math.PI * 2); ctx.fill();
+
+    // Layers wound on spool — spirals grow as we add layers
+    ctx.lineWidth = 1.4;
+    const maxLayers = Math.min(layers, 60);
+    for (let i = 0; i < maxLayers; i++) {
+      const t = i / Math.max(1, maxLayers);
+      const layerR = r * 0.22 + t * r * 0.68;
+      const hue = 185 + (i * 3) % 40;
+      ctx.strokeStyle = `hsla(${hue}, 90%, 60%, 0.55)`;
+      ctx.beginPath(); ctx.arc(cx, cy, layerR, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // Currently-winding layer (animated)
+    const curLayerR = r * 0.22 + (maxLayers / Math.max(1, maxLayers + 1)) * r * 0.68;
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, curLayerR, layerAngle - 0.6, layerAngle);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Filament stream from nozzle to current layer position
+    const endX = cx + Math.cos(layerAngle) * curLayerR;
+    const endY = cy + Math.sin(layerAngle) * curLayerR;
+    // nozzle position (slightly outside)
+    const nozAng = layerAngle - 0.05 + Math.sin(filamentAngle) * 0.02;
+    const nozX = cx + Math.cos(nozAng) * (r * 1.05);
+    const nozY = cy + Math.sin(nozAng) * (r * 1.05);
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(nozX, nozY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Nozzle body
+    ctx.fillStyle = '#1a1a28';
+    ctx.strokeStyle = '#ff2bd6';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(nozAng - 0.08) * r * 1.02, cy + Math.sin(nozAng - 0.08) * r * 1.02);
+    ctx.lineTo(cx + Math.cos(nozAng + 0.08) * r * 1.02, cy + Math.sin(nozAng + 0.08) * r * 1.02);
+    ctx.lineTo(cx + Math.cos(nozAng) * r * 1.18, cy + Math.sin(nozAng) * r * 1.18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Target zone indicator — three concentric arcs at targetZone
+    drawTargetZone();
+  }
+
+  function drawTargetZone() {
+    const cx = spoolCenter.x;
+    const cy = spoolCenter.y;
+    const r = spoolRadius;
+    const zoneR = r * 0.95;
+
+    const zones = [
+      { rad: 0.18, color: '#00f0ff', width: 4, glow: 16 },
+      { rad: 0.40, color: '#7dffb0', width: 3, glow: 10 },
+      { rad: 0.65, color: '#ffd166', width: 2, glow: 6 },
+    ];
+    for (const z of zones) {
+      ctx.strokeStyle = z.color;
+      ctx.lineWidth = z.width;
+      ctx.shadowColor = z.color;
+      ctx.shadowBlur = z.glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, zoneR, targetZone - z.rad, targetZone + z.rad);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Center tick at targetZone
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(targetZone) * zoneR * 0.85, cy + Math.sin(targetZone) * zoneR * 0.85);
+    ctx.lineTo(cx + Math.cos(targetZone) * zoneR * 1.04, cy + Math.sin(targetZone) * zoneR * 1.04);
+    ctx.stroke();
+  }
+
+  function drawMissIndicators() {
+    // Show up to 3 "X" marks for current misses
+    for (let i = 0; i < misses; i++) {
+      const x = W - 50 - i * 36;
+      const y = 56;
+      ctx.strokeStyle = '#ff2b2b';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ff2b2b';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(x - 8, y - 8); ctx.lineTo(x + 8, y + 8);
+      ctx.moveTo(x + 8, y - 8); ctx.lineTo(x - 8, y + 8);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function drawFlash() {
+    if (flashAlpha <= 0) return;
+    ctx.fillStyle = flashColor;
+    ctx.globalAlpha = flashAlpha * 0.18;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+    flashAlpha -= 0.04;
+    if (flashAlpha < 0) flashAlpha = 0;
+  }
+
+  function drawQualityPopup() {
+    if (lastHitQuality < 0) return;
+    const texts = ['', 'PERFECT!', 'GOOD', 'OK', 'MISS'];
+    const colors = ['', '#00f0ff', '#7dffb0', '#ffd166', '#ff2b2b'];
+    const labels = ['PERFECT!', 'GOOD', 'OK', 'MISS'];
+    const colorsL = ['#00f0ff', '#7dffb0', '#ffd166', '#ff2b2b'];
+
+    const idx = Math.min(3, Math.max(0, lastHitQuality));
+    if (lastHitQuality === -1) return;
+    const txt = lastHitQuality === 3 ? 'MISS' : labels[idx];
+    const col = lastHitQuality === 3 ? '#ff2b2b' : colorsL[idx];
+
+    // pulse fade
+    pulse += 1;
+    const alpha = Math.max(0, 1 - pulse / 45);
+    if (alpha <= 0) { lastHitQuality = -1; pulse = 0; return; }
+
+    ctx.fillStyle = col;
+    ctx.globalAlpha = alpha;
+    ctx.font = 'bold ' + Math.min(W * 0.12, 56) + 'px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 20;
+    ctx.fillText(txt, W / 2, H * 0.82);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+
+  function drawScanline() {
+    // CRT scanline overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let y = 0; y < H; y += 3) {
+      ctx.fillRect(0, y, W, 1);
+    }
+  }
+
+  // Update loop
+  function update(dt) {
+    if (state !== STATE.PLAY) return;
+    spoolRotation += 0.005;
+    layerAngle += layerSpeed;
+    if (layerAngle > Math.PI * 2) layerAngle -= Math.PI * 2;
+    filamentAngle += 0.4;
+
+    // combo decay
+    if (combo > 1) {
+      comboTimer -= 1;
+      if (comboTimer <= 0) {
+        combo = 1;
+        updateHUD();
+      }
+    }
+
+    // camera shake decay
+    if (cameraShake > 0) cameraShake *= 0.85;
+  }
+
+  function render(dt) {
+    let shakeX = 0, shakeY = 0;
+    if (cameraShake > 0.3) {
+      shakeX = (Math.random() - 0.5) * cameraShake;
+      shakeY = (Math.random() - 0.5) * cameraShake;
+    }
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    drawBackground(dt);
+    drawSpool();
+    drawMissIndicators();
+    drawQualityPopup();
+    drawFlash();
+    drawScanline();
+
+    ctx.restore();
+  }
+
+  let raf = 0;
+  let prevT = 0;
+  function loop(t) {
+    if (!prevT) prevT = t;
+    const dt = Math.min(50, t - prevT);
+    prevT = t;
+    update(dt);
+    render(dt);
+    raf = requestAnimationFrame(loop);
+  }
+
+  // Initial idle render so menu shows the spool animation
+  reset();
+  raf = requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
