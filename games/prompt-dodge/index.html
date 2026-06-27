@@ -168,7 +168,7 @@ function project(x, y, z) {
 }
 
 // ── Game State ──
-let player, prompts, particles, score, lives, level, gameRunning;
+let player, prompts = [], particles = [], score = 0, lives = 3, level = 1, gameRunning = false;
 let spawnTimer, spawnInterval, difficultyTimer, speedMultiplier;
 let frameCount;
 let keys = {};
