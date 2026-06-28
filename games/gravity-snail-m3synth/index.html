@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Gravity Snail</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cfe9c8;
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas {
+    display: block; background: #050608;
+    image-rendering: auto;
+    box-shadow: 0 0 60px rgba(0,0,0,0.7);
+    touch-action: none;
+  }
+  #hint {
+    position: fixed; left: 50%; bottom: 12px;
+    transform: translateX(-50%);
+    font-size: 11px; opacity: 0.55; letter-spacing: 0.05em;
+    pointer-events: none; text-shadow: 0 1px 0 #000;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="480" height="720"></canvas></div>
+<div id="hint">HOLD to thrust · RELEASE to fall · grab the glowing leaves</div>
+<script>
+(() => {
+'use strict';
+
+// =============================================================
+//  GRAVITY SNAIL — synthesis
+//  Vertical cave-fall with jetpack snail. Best of GLM-5.2 + M3.
+//  - Vertical scroll (better feel than horizontal for this genre)
+//  - Three-layer parallax cave silhouettes with stalactites
+//  - Multi-tooth jagged spike geometry
+//  - Rich snail: shell swirl, eye stalks, blinking eyes, jetpack pack,
+//    gradient flame, smile, animated head squash
+//  - Seeded mulberry32 RNG for determinism
+//  - WebAudio synth SFX (no asset deps)
+//  - Golden-leaf combo system, floating score popups, screen shake
+//  - DPR-aware crisp rendering
+// =============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ---------- Responsive sizing ----------
+let DPR = 1;
+const LOGICAL_W = 480;
+const LOGICAL_H = 720;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const w = window.innerWidth, h = window.innerHeight;
+  const targetRatio = LOGICAL_W / LOGICAL_H;
+  const screenRatio = w / h;
+  let cw, ch;
+  if (screenRatio > targetRatio) {
+    ch = Math.min(h, 980);
+    cw = Math.floor(ch * targetRatio);
+  } else {
+    cw = Math.min(w, 800);
+    ch = Math.floor(cw / targetRatio);
+  }
+  canvas.style.width  = cw + 'px';
+  canvas.style.height = ch + 'px';
+  canvas.width  = Math.floor(LOGICAL_W * DPR);
+  canvas.height = Math.floor(LOGICAL_H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Logical game-space size used for all gameplay math (aspect-locked)
+const W = LOGICAL_W;
+const H = LOGICAL_H;
+
+// ---------- Seeded RNG (mulberry32) ----------
+let seed = (Date.now() & 0xffffffff) >>> 0;
+function rand() {
+  seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function rrange(a, b) { return a + rand() * (b - a); }
+function rsign() { return rand() < 0.5 ? -1 : 1; }
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+// ---------- WebAudio synth ----------
+let actx = null;
+function audio() {
+  if (!actx) {
+    try { actx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { actx = null; }
+  }
+  return actx;
+}
+function beep(freq, dur, type = 'square', gain = 0.06, sweep = 0) {
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t0);
+  if (sweep) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + sweep), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(a.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function noiseHit() {
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime;
+  const buf = a.createBuffer(1, a.sampleRate * 0.25, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) {
+    d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  }
+  const src = a.createBufferSource(); src.buffer = buf;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.18, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+  const flt = a.createBiquadFilter(); flt.type = 'lowpass';
+  flt.frequency.setValueAtTime(800, t0);
+  flt.frequency.exponentialRampToValueAtTime(120, t0 + 0.25);
+  src.connect(flt); flt.connect(g); g.connect(a.destination);
+  src.start(t0); src.stop(t0 + 0.26);
+}
+
+// ---------- High score ----------
+const HS_KEY = 'gravitySnailHighScore_v2';
+let highScore = 0;
+try {
+  const v = parseInt(localStorage.getItem(HS_KEY) || '0', 10);
+  if (Number.isFinite(v) && v >= 0) highScore = v;
+} catch (_) {}
+
+// ---------- Game state ----------
+const STATE_MENU = 0, STATE_PLAY = 1, STATE_DEAD = 2;
+let state = STATE_MENU;
+
+let score = 0;            // distance-based
+let distance = 0;
+let scrollY = 0;
+let scrollSpeed = 0;   // current effective scroll speed (px/s); updated each frame
+let speedBase = 220;
+let speedMul = 1;
+let timeAlive = 0;
+let menuT = 0;
+
+// combo: golden leaves chain
+let combo = 0;
+let comboFlash = 0;
+let comboTimer = 0;
+let bestCombo = 0;
+
+// shake
+let shake = 0;
+function addShake(amt) { shake = Math.min(32, shake + amt); }
+
+// snail
+const snail = {
+  x: W * 0.28,
+  y: H * 0.45,
+  vy: 0,
+  r: 16,
+  tilt: 0,
+  thrustGlow: 0,
+  eyeBlink: 0,
+  alive: true,
+  headSquash: 0  // for animated squash on thrust / hit
+};
+
+// worlds
+let obstacles = [];   // {type:'top'|'bottom', x, w, h, worldY, scored, gold}
+let leaves = [];      // {x, y, worldY, collected, t, gold}
+let particles = [];   // generic puffs
+let sparkles = [];    // ambient motes
+let trails = [];      // snail jetpack ribbon
+let popups = [];      // floating score text
+
+let nextSpawnAt = 0;
+
+// ---------- Obstacle generation ----------
+function spawnPair(worldYBase) {
+  const diff = clamp(distance / 6500, 0, 1);
+  const minGap = Math.max(135, 360 - diff * 175);
+  const maxGap = Math.max(205, 445 - diff * 145);
+  const cy = rrange(150, H - 150);
+  const gap = rrange(minGap, maxGap);
+  const topH = Math.max(45, cy - gap / 2);
+  const botH = Math.max(45, H - (cy + gap / 2));
+  const spikeW = rrange(36, 78);
+
+  obstacles.push({ type:'top',    x: rrange(18, W - spikeW - 18), w: spikeW, h: topH, worldY: worldYBase, scored: false });
+  obstacles.push({ type:'bottom', x: rrange(18, W - spikeW - 18), w: spikeW, h: botH, worldY: worldYBase, scored: false });
+
+  // Sometimes a third off-axis spike on one side for variety
+  if (rand() < 0.30 + diff * 0.30) {
+    const w2 = rrange(26, 54);
+    const h2 = rrange(55, 150 + diff * 90);
+    const side = rand() < 0.5 ? 'top' : 'bottom';
+    obstacles.push({
+      type: side,
+      x: rrange(18, W - w2 - 18),
+      w: w2, h: h2, worldY: worldYBase + (rand() < 0.5 ? -rrange(40, 90) : rrange(40, 90)),
+      scored: false
+    });
+  }
+}
+
+function maybeSpawnLeaf(worldYBase) {
+  // Always spawn at least one leaf in the gap, sometimes a golden
+  const isGold = rand() < 0.12 + Math.min(0.10, distance / 60000);
+  if (rand() < 0.85) {
+    leaves.push({
+      x: rrange(40, W - 40),
+      y: rrange(120, H - 120),
+      worldY: worldYBase,
+      collected: false,
+      t: rand() * Math.PI * 2,
+      pulse: 0,
+      gold: isGold
+    });
+  }
+}
+
+function reset() {
+  score = 0; distance = 0; scrollY = 0;
+  speedBase = 220; speedMul = 1;
+  timeAlive = 0;
+  obstacles.length = 0;
+  leaves.length = 0;
+  particles.length = 0;
+  sparkles.length = 0;
+  trails.length = 0;
+  popups.length = 0;
+  snail.x = W * 0.28;
+  snail.y = H * 0.45;
+  snail.vy = 0; snail.tilt = 0;
+  snail.thrustGlow = 0;
+  snail.alive = true;
+  snail.headSquash = 0;
+  nextSpawnAt = 600;
+  shake = 0;
+  combo = 0; comboFlash = 0; comboTimer = 0; bestCombo = 0;
+  // pre-populate a few rows
+  for (let i = 0; i < 5; i++) {
+    const wy = -i * 220;
+    spawnPair(wy);
+    maybeSpawnLeaf(wy - 110);
+  }
+  // ambient sparkles
+  for (let i = 0; i < 70; i++) {
+    sparkles.push({
+      x: rand() * W, y: rand() * H,
+      r: rrange(0.4, 1.5),
+      a: rand() * Math.PI * 2,
+      s: rrange(0.3, 1.2)
+    });
+  }
+}
+reset();
+
+// ---------- Particles ----------
+function spawnLeafBurst(x, y, gold) {
+  const hueA = gold ? 45 : 95;
+  const hueB = gold ? 60 : 135;
+  for (let i = 0; i < 26; i++) {
+    const a = rand() * Math.PI * 2;
+    const sp = rrange(70, 220);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30,
+      life: rrange(0.4, 0.9), age: 0,
+      color: `hsl(${rrange(hueA, hueB)}, 90%, ${55 + rand() * 20}%)`,
+      size: rrange(1.6, 3.4),
+      grav: 130
+    });
+  }
+  particles.push({
+    x, y, vx: 0, vy: 0,
+    life: 0.30, age: 0,
+    color: '#ffffff', size: 40, flash: true, grav: 0
+  });
+  if (gold) {
+    // extra golden sparkles
+    for (let i = 0; i < 14; i++) {
+      const a = rand() * Math.PI * 2;
+      const sp = rrange(40, 140);
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: rrange(0.5, 1.1), age: 0,
+        color: '#ffe066',
+        size: rrange(1.2, 2.4),
+        grav: 0,
+        spark: true
+      });
+    }
+  }
+}
+
+function spawnThrustPuff(dt) {
+  const nx = snail.x - 4;
+  const ny = snail.y + 2 + rrange(-3, 3);
+  for (let i = 0; i < 2; i++) {
+    particles.push({
+      x: nx + rrange(-3, 3),
+      y: ny + rrange(-4, 4),
+      vx: rrange(-50, 50) - 80,
+      vy: rrange(20, 90),
+      life: rrange(0.22, 0.50),
+      age: 0,
+      color: `hsl(${rrange(18, 38)}, 100%, ${55 + rand() * 20}%)`,
+      size: rrange(1.6, 3.2),
+      grav: -30
+    });
+  }
+}
+
+function spawnDeathBurst() {
+  for (let i = 0; i < 70; i++) {
+    const a = rand() * Math.PI * 2;
+    const sp = rrange(80, 360);
+    particles.push({
+      x: snail.x, y: snail.y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50,
+      life: rrange(0.6, 1.3), age: 0,
+      color: ['#ff8a3d', '#ffd166', '#9bf6a1', '#ffffff', '#ff5a3d'][Math.floor(rand() * 5)],
+      size: rrange(1.5, 3.6),
+      grav: 220
+    });
+  }
+}
+
+function spawnTrailPoint() {
+  // jetpack ribbon point
+  trails.push({
+    x: snail.x - 8,
+    y: snail.y + 2,
+    vx: -scrollSpeed * 0.6 + rrange(-20, 20),
+    vy: rrange(-10, 10),
+    life: rrange(0.25, 0.45),
+    age: 0,
+    color: thrusting ? `hsl(${rrange(20, 38)}, 100%, ${60 + rand() * 15}%)` : 'rgba(255,180,80,0.4)',
+    size: rrange(2.2, 3.6)
+  });
+}
+
+// ---------- Popup (floating score text) ----------
+function addPopup(x, y, text, color = '#9bf6a1') {
+  popups.push({ x, y, text, color, life: 0.9, age: 0, vy: -45 });
+}
+
+// ---------- Update ----------
+let thrusting = false;
+function setThrust(v) { thrusting = v; }
+
+canvas.addEventListener('mousedown', e => { e.preventDefault(); setThrust(true); audio(); });
+window.addEventListener('mouseup', () => setThrust(false));
+canvas.addEventListener('mouseleave', () => setThrust(false));
+canvas.addEventListener('touchstart', e => { e.preventDefault(); setThrust(true); audio(); }, { passive: false });
+canvas.addEventListener('touchend',   e => { e.preventDefault(); setThrust(false); }, { passive: false });
+canvas.addEventListener('touchcancel',() => setThrust(false));
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+    setThrust(true); e.preventDefault(); audio();
+  }
+});
+window.addEventListener('keyup', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
+    setThrust(false); e.preventDefault();
+  }
+});
+
+function update(dt) {
+  menuT += dt;
+
+  if (state === STATE_MENU) {
+    snail.y = H * 0.45 + Math.sin(menuT * 1.2) * 8;
+    snail.tilt = Math.sin(menuT * 1.2) * 0.05;
+    snail.eyeBlink += dt;
+    if (snail.eyeBlink > 3 + rand() * 2) snail.eyeBlink = 0;
+    for (const s of sparkles) {
+      s.y += s.s * 14 * dt; s.a += dt;
+      if (s.y > H + 4) s.y = -4;
+    }
+    return;
+  }
+
+  if (state === STATE_DEAD) {
+    snail.vy += 720 * dt;
+    snail.y += snail.vy * dt;
+    snail.tilt += (1.3 - snail.tilt) * Math.min(1, dt * 6);
+    updateParticles(dt);
+    for (const s of sparkles) {
+      s.y += s.s * 14 * dt;
+      if (s.y > H + 4) s.y = -4;
+    }
+    shake = Math.max(0, shake - dt * 30);
+    return;
+  }
+
+  // --- Playing ---
+  timeAlive += dt;
+
+  // Speed ramp
+  speedMul = 1 + Math.min(2.3, timeAlive / 32);
+  scrollSpeed = speedBase * speedMul;
+
+  // Thrust physics
+  const GRAV = 1450;
+  const THRUST = -2150;
+  const MAX_VY = 740;
+  snail.vy += GRAV * dt;
+  if (thrusting) {
+    snail.vy += THRUST * dt;
+    snail.thrustGlow = Math.min(1, snail.thrustGlow + dt * 6);
+    spawnThrustPuff(dt);
+    if (rand() < 0.7) spawnTrailPoint();
+    snail.headSquash += (1 - snail.headSquash) * Math.min(1, dt * 10);
+  } else {
+    snail.thrustGlow = Math.max(0, snail.thrustGlow - dt * 3.5);
+    snail.headSquash += (0 - snail.headSquash) * Math.min(1, dt * 5);
+  }
+  snail.vy = clamp(snail.vy, -MAX_VY, MAX_VY);
+  snail.y += snail.vy * dt;
+
+  // Visual tilt based on vy
+  const targetTilt = clamp(snail.vy / 1300, -0.45, 0.75);
+  snail.tilt += (targetTilt - snail.tilt) * Math.min(1, dt * 9);
+
+  // Eye blink
+  snail.eyeBlink += dt;
+  if (snail.eyeBlink > 3 + rand() * 2) snail.eyeBlink = 0;
+
+  // Scroll world
+  const prevScroll = scrollY;
+  scrollY += scrollSpeed * dt;
+  distance += scrollSpeed * dt;
+  score = Math.floor(distance / 10);
+
+  // Spawn obstacles
+  nextSpawnAt -= scrollSpeed * dt;
+  if (nextSpawnAt <= 0) {
+    const worldYBase = scrollY + H + 30;
+    spawnPair(worldYBase);
+    maybeSpawnLeaf(worldYBase - rrange(80, 260));
+    nextSpawnAt = rrange(195, 320) - Math.min(90, distance / 200);
+  }
+
+  // Cave walls (top/bottom of screen)
+  if (snail.y < snail.r + 8) {
+    snail.y = snail.r + 8;
+    snail.vy = Math.max(snail.vy, 70);
+    addShake(7);
+    beep(180, 0.10, 'square', 0.05, -80);
+  }
+  if (snail.y > H - snail.r - 8) {
+    snail.y = H - snail.r - 8;
+    snail.vy = Math.min(snail.vy, -70);
+    addShake(7);
+    beep(180, 0.10, 'square', 0.05, -80);
+  }
+
+  // Obstacle collisions
+  for (const o of obstacles) {
+    const onY = o.worldY - scrollY;
+    if (onY < -240 || onY > H + 240) continue;
+    const ox = o.x;
+    let oy;
+    if (o.type === 'top') oy = onY - o.h;
+    else                  oy = onY;
+    const rect = { x: ox, y: oy, w: o.w, h: o.h };
+    if (circleRectHit(snail.x, snail.y, snail.r - 2, rect)) {
+      die();
+      return;
+    }
+    // Near-miss shake: horizontal overlap and snail vertically close to the spike base
+    if (
+      snail.x + snail.r > rect.x && snail.x - snail.r < rect.x + rect.w &&
+      Math.abs(snail.y - (oy + (o.type === 'top' ? rect.h : 0))) < 22
+    ) {
+      addShake(0.5);
+    }
+  }
+
+  // Leaf collection
+  for (const l of leaves) {
+    if (l.collected) continue;
+    l.t += dt;
+    const ly = l.y + (l.worldY - scrollY);
+    if (ly < -50 || ly > H + 50) continue;
+    const dx = l.x - snail.x;
+    const dy = ly - snail.y;
+    const d = Math.hypot(dx, dy);
+    const grabR = snail.r + 16;
+    if (d < grabR) {
+      l.collected = true;
+      l.pulse = 1;
+      spawnLeafBurst(l.x, ly, l.gold);
+      if (l.gold) {
+        combo += 1;
+        bestCombo = Math.max(bestCombo, combo);
+        comboTimer = 4.0; // 4s window
+        const pts = 50 + combo * 25;
+        score += pts;
+        addPopup(l.x, ly, '+' + pts + ' x' + (combo + 1), '#ffd166');
+        beep(880, 0.07, 'triangle', 0.06, 220);
+        beep(1320, 0.08, 'triangle', 0.05, 220);
+        addShake(3);
+        comboFlash = 1;
+      } else {
+        score += 25;
+        addPopup(l.x, ly, '+25', '#9bf6a1');
+        beep(660, 0.06, 'triangle', 0.05, 120);
+        addShake(1.5);
+      }
+    }
+  }
+
+  // Combo timer decay
+  if (comboTimer > 0) {
+    comboTimer -= dt;
+    if (comboTimer <= 0) { combo = 0; }
+  }
+  comboFlash = Math.max(0, comboFlash - dt * 3);
+
+  updateParticles(dt);
+
+  // Trails
+  for (let i = trails.length - 1; i >= 0; i--) {
+    const t = trails[i];
+    t.age += dt;
+    t.x += t.vx * dt;
+    t.y += t.vy * dt;
+    if (t.age >= t.life) trails.splice(i, 1);
+  }
+
+  // Sparkles drift with scroll
+  for (const s of sparkles) {
+    s.y += s.s * (12 + scrollSpeed * 0.02) * dt;
+    s.a += dt;
+    if (s.y > H + 4) s.y = -4;
+  }
+
+  // Popups
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const p = popups[i];
+    p.age += dt;
+    p.y += p.vy * dt;
+    p.vy *= 0.96;
+    if (p.age >= p.life) popups.splice(i, 1);
+  }
+
+  // Cleanup
+  obstacles = obstacles.filter(o => (o.worldY - scrollY) > -420);
+  leaves = leaves.filter(l => !l.collected || l.pulse > 0);
+
+  // Decay shake
+  shake = Math.max(0, shake - dt * 24);
+}
+
+function updateParticles(dt) {
+  for (const p of particles) {
+    p.age += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += (p.grav || 0) * dt;
+    p.vx *= 0.985;
+  }
+  particles = particles.filter(p => p.age < p.life);
+  for (const l of leaves) {
+    if (l.pulse > 0) l.pulse = Math.max(0, l.pulse - dt * 1.5);
+  }
+}
+
+function circleRectHit(cx, cy, cr, r) {
+  const nx = clamp(cx, r.x, r.x + r.w);
+  const ny = clamp(cy, r.y, r.y + r.h);
+  const dx = cx - nx, dy = cy - ny;
+  return (dx * dx + dy * dy) < cr * cr;
+}
+
+function die() {
+  if (!snail.alive) return;
+  snail.alive = false;
+  state = STATE_DEAD;
+  addShake(22);
+  spawnDeathBurst();
+  noiseHit();
+  beep(120, 0.30, 'sawtooth', 0.10, -60);
+  if (score > highScore) {
+    highScore = score;
+    try { localStorage.setItem(HS_KEY, String(highScore)); } catch (_) {}
+  }
+}
+
+// ---------- Drawing ----------
+function drawBackground() {
+  // Deep cave gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#070612');
+  g.addColorStop(0.5, '#0a0e1c');
+  g.addColorStop(1, '#04040a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Three parallax cave silhouette layers
+  drawCaveSilhouettes(0.18, '#0d1428', 0.55, 18);
+  drawCaveSilhouettes(0.42, '#131c34', 0.78, 9);
+  drawCaveSilhouettes(0.95, '#1c2748', 1.00, 4);
+
+  // Faint vertical light shaft from above (depth cue)
+  const shaft = ctx.createLinearGradient(W/2, 0, W/2, H);
+  shaft.addColorStop(0, 'rgba(150, 200, 255, 0.05)');
+  shaft.addColorStop(0.5, 'rgba(150, 200, 255, 0.02)');
+  shaft.addColorStop(1, 'rgba(150, 200, 255, 0)');
+  ctx.fillStyle = shaft;
+  ctx.fillRect(W * 0.2, 0, W * 0.6, H);
+
+  // Ambient sparkles
+  for (const s of sparkles) {
+    const flick = 0.5 + 0.5 * Math.sin(s.a * 2 + s.x * 0.03);
+    ctx.fillStyle = `rgba(190, 230, 210, ${0.20 + flick * 0.30})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawCaveSilhouettes(parallax, color, alpha, segments) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  const off = (scrollY * parallax) % 240;
+  // top edge wavy
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  for (let x = 0; x <= W; x += 10) {
+    const n = Math.sin((x + off) * 0.013) * 22 + Math.sin((x + off) * 0.04) * 8;
+    ctx.lineTo(x, -10 + n);
+  }
+  ctx.lineTo(W, 0);
+  ctx.closePath();
+  ctx.fill();
+  // bottom edge wavy
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 10) {
+    const n = Math.sin((x + off) * 0.015) * 24 + Math.sin((x + off) * 0.035) * 10;
+    ctx.lineTo(x, H + 10 + n);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Stalactites / stalagmites for the near layer
+  if (parallax >= 0.9) {
+    ctx.globalAlpha = alpha * 0.95;
+    const seedShift = Math.floor(off / 240) * 13;
+    for (let i = 0; i < segments; i++) {
+      const stride = W / segments;
+      const baseX = (i * stride + ((off * 0.5) % stride) + (i * 37 + seedShift) % stride) % W;
+      const len = 26 + ((i * 53 + Math.floor(off / 240)) % 30);
+      ctx.beginPath();
+      ctx.moveTo(baseX - 9, 0);
+      ctx.lineTo(baseX + 9, 0);
+      ctx.lineTo(baseX, len);
+      ctx.closePath();
+      ctx.fill();
+
+      const baseX2 = ((i * 71 + 19) + (off * 0.5)) % W;
+      const len2 = 20 + ((i * 41) % 24);
+      ctx.beginPath();
+      ctx.moveTo(baseX2 - 7, H);
+      ctx.lineTo(baseX2 + 7, H);
+      ctx.lineTo(baseX2, H - len2);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawObstacles() {
+  for (const o of obstacles) {
+    const onY = o.worldY - scrollY;
+    if (onY < -300 || onY > H + 300) continue;
+    const x = o.x, w = o.w;
+    let y, h;
+    if (o.type === 'top') { y = onY - o.h; h = o.h; }
+    else                  { y = onY;      h = o.h; }
+    drawSpike(x, y, w, h, o.type);
+  }
+}
+
+function drawSpike(x, y, w, h, side) {
+  ctx.save();
+  // Base rock
+  ctx.fillStyle = '#1b2238';
+  ctx.strokeStyle = '#0a0e1c';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (side === 'top') {
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + h - 20);
+    const teeth = Math.max(3, Math.floor(w / 12));
+    const tw = w / teeth;
+    for (let i = 0; i < teeth; i++) {
+      const px = x + i * tw;
+      ctx.lineTo(px + tw * 0.15, y + h - 20 - (i % 2 === 0 ? 9 : 5));
+      ctx.lineTo(px + tw * 0.50, y + h);
+      ctx.lineTo(px + tw * 0.85, y + h - 20 - ((i + 1) % 2 === 0 ? 7 : 11));
+    }
+    ctx.lineTo(x + w, y + h - 20);
+    ctx.lineTo(x + w, y + h);
+  } else {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y + 20);
+    const teeth = Math.max(3, Math.floor(w / 12));
+    const tw = w / teeth;
+    for (let i = 0; i < teeth; i++) {
+      const px = x + i * tw;
+      ctx.lineTo(px + tw * 0.15, y + 20 + (i % 2 === 0 ? 7 : 11));
+      ctx.lineTo(px + tw * 0.50, y);
+      ctx.lineTo(px + tw * 0.85, y + 20 + ((i + 1) % 2 === 0 ? 9 : 5));
+    }
+    ctx.lineTo(x + w, y + 20);
+    ctx.lineTo(x + w, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Highlight rim
+  ctx.strokeStyle = 'rgba(180, 200, 220, 0.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (side === 'top') {
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + h - 20);
+    ctx.lineTo(x + w, y + h - 20);
+    ctx.lineTo(x + w, y + h);
+  } else {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y + 20);
+    ctx.lineTo(x + w, y + 20);
+    ctx.lineTo(x + w, y);
+  }
+  ctx.stroke();
+
+  // glowing edge near the tip
+  ctx.strokeStyle = 'rgba(255, 140, 60, 0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (side === 'top') {
+    ctx.moveTo(x + 2, y + h - 20);
+    ctx.lineTo(x + w - 2, y + h - 20);
+  } else {
+    ctx.moveTo(x + 2, y + 20);
+    ctx.lineTo(x + w - 2, y + 20);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLeaves() {
+  for (const l of leaves) {
+    if (l.collected && l.pulse <= 0) continue;
+    const ly = l.y + (l.worldY - scrollY);
+    if (ly < -50 || ly > H + 50) continue;
+
+    if (l.collected) {
+      // expanding gold/green ring
+      const r = 6 + (1 - l.pulse) * 38;
+      ctx.save();
+      ctx.strokeStyle = l.gold
+        ? `rgba(255, 220, 100, ${l.pulse * 0.7})`
+        : `rgba(180, 255, 160, ${l.pulse * 0.65})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(l.x, ly, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      continue;
+    }
+    const bob = Math.sin(l.t * 3) * 3;
+    drawLeaf(l.x, ly + bob, l.t, l.gold);
+  }
+}
+
+function drawLeaf(x, y, t, gold) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  // glow halo (bigger & warmer for gold)
+  const glowR = gold ? 30 : 22;
+  const hue = gold ? '255, 220, 110' : '160, 255, 140';
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, glowR);
+  glow.addColorStop(0, `rgba(${hue}, ${gold ? 0.65 : 0.55})`);
+  glow.addColorStop(1, `rgba(${hue}, 0)`);
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // rotating leaf body
+  ctx.rotate(Math.sin(t * 2) * 0.28);
+  if (gold) {
+    // outer gold ring
+    ctx.strokeStyle = '#b8860b';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = gold ? '#ffd166' : '#7ee787';
+  ctx.strokeStyle = gold ? '#8a6b00' : '#2f5d2f';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -10);
+  ctx.bezierCurveTo(10, -10, 12, 4, 0, 10);
+  ctx.bezierCurveTo(-12, 4, -10, -10, 0, -10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // vein
+  ctx.strokeStyle = gold ? '#8a6b00' : '#2f5d2f';
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.lineTo(0, 9);
+  ctx.stroke();
+
+  // shine
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.beginPath();
+  ctx.arc(-3, -4, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSnail() {
+  ctx.save();
+  ctx.translate(snail.x, snail.y);
+  ctx.rotate(snail.tilt);
+
+  // Jetpack trail (behind everything)
+  for (const t of trails) {
+    const a = 1 - t.age / t.life;
+    ctx.save();
+    ctx.globalAlpha = a * 0.7;
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.arc(t.x - snail.x, t.y - snail.y, t.size * a, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Jetpack flame (drawn behind body)
+  if (snail.thrustGlow > 0.05 || thrusting) {
+    const len = 16 + snail.thrustGlow * 24 + rand() * 4;
+    const flameGrad = ctx.createLinearGradient(-6, 0, -6 - len, 0);
+    flameGrad.addColorStop(0, 'rgba(255, 235, 130, 0.95)');
+    flameGrad.addColorStop(0.4, 'rgba(255, 140, 50, 0.85)');
+    flameGrad.addColorStop(1, 'rgba(255, 60, 0, 0)');
+    ctx.fillStyle = flameGrad;
+    ctx.beginPath();
+    ctx.moveTo(-6, -8);
+    ctx.lineTo(-6 - len, 0 + (rand() - 0.5) * 3);
+    ctx.lineTo(-6, 8);
+    ctx.closePath();
+    ctx.fill();
+    // inner bright core
+    ctx.fillStyle = 'rgba(255,255,220,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(-6, -3);
+    ctx.lineTo(-6 - len * 0.55, 0 + (rand() - 0.5) * 1.5);
+    ctx.lineTo(-6, 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Jetpack pack on back
+  ctx.fillStyle = '#3a3f55';
+  ctx.strokeStyle = '#1a1e2c';
+  ctx.lineWidth = 1.5;
+  roundRect(-13, -10, 9, 20, 3);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a1e2c';
+  ctx.fillRect(-11, -7, 5, 3);
+  ctx.fillRect(-11, 4, 5, 3);
+  // pack highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(-12, -9, 2, 18);
+
+  // Shell
+  ctx.fillStyle = '#c98b5a';
+  ctx.strokeStyle = '#5a3a1f';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(2, 0, 14, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+  // shell swirl
+  ctx.strokeStyle = '#7a4a26';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(2, 0, 9, 0.5, Math.PI * 1.4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(2, 0, 5, 0.2, Math.PI * 1.7);
+  ctx.stroke();
+  // shell highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.20)';
+  ctx.beginPath();
+  ctx.arc(-2, -4, 4, 0, Math.PI * 2);
+  ctx.fill();
+  // shell rim shadow
+  ctx.strokeStyle = 'rgba(40, 20, 10, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(2, 0, 13.5, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.stroke();
+
+  // Body (with squash on thrust)
+  const sq = snail.headSquash;
+  const bodyW = 10 - sq * 1.5;
+  const bodyH = 7 + sq * 1.5;
+  ctx.fillStyle = '#b6d99a';
+  ctx.strokeStyle = '#3f5a2a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(14, 2, bodyW, bodyH, 0, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // Eye stalks
+  ctx.strokeStyle = '#3f5a2a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(18, -2); ctx.lineTo(22, -10);
+  ctx.moveTo(20, -2); ctx.lineTo(25, -9);
+  ctx.stroke();
+
+  // Eyes (with blink)
+  const blink = snail.eyeBlink < 0.12;
+  ctx.fillStyle = '#1a1a1a';
+  if (blink) {
+    ctx.fillRect(21, -11, 3, 1);
+    ctx.fillRect(24, -10, 3, 1);
+  } else {
+    ctx.beginPath();
+    ctx.arc(22, -10, 1.7, 0, Math.PI * 2);
+    ctx.arc(25, -9, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+    // eye highlight
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(22.5, -10.5, 0.6, 0, Math.PI * 2);
+    ctx.arc(25.5, -9.5, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Smile
+  ctx.strokeStyle = '#3f5a2a';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(17, 4, 3, 0, Math.PI);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const t = p.age / p.life;
+    if (p.flash) {
+      ctx.fillStyle = `rgba(255,255,255,${(1 - t) * 0.85})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (1 - t * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.spark) {
+      // gold sparkle with cross shape
+      const a = 1 - t;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.age * 4);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.moveTo(0, -p.size * 1.5);
+      ctx.lineTo(p.size * 0.4, 0);
+      ctx.lineTo(0, p.size * 1.5);
+      ctx.lineTo(-p.size * 0.4, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = 1 - t;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (1 - t * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function drawPopups() {
+  for (const p of popups) {
+    const a = 1 - p.age / p.life;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.text, p.x + 1, p.y + 1);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+    ctx.restore();
+  }
+}
+
+function drawHUD() {
+  ctx.save();
+
+  // Top-left score panel
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(8, 8, 170, 60);
+  ctx.strokeStyle = 'rgba(160, 200, 180, 0.3)';
+  ctx.strokeRect(8, 8, 170, 60);
+
+  ctx.fillStyle = '#cfe9c8';
+  ctx.font = '11px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('SCORE', 16, 24);
+  ctx.font = 'bold 22px ui-monospace, Menlo, monospace';
+  ctx.fillText(String(score).padStart(5, '0'), 16, 48);
+
+  ctx.textAlign = 'right';
+  ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#9bb8a6';
+  ctx.fillText('HI  ' + String(highScore).padStart(5, '0'), 170, 24);
+  ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = '#9bb8a6';
+  ctx.fillText('SPEED x' + speedMul.toFixed(2), 170, 48);
+
+  // Top-right combo + best combo
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(W - 130, 8, 122, 38);
+  ctx.strokeStyle = combo > 0 ? 'rgba(255, 210, 100, 0.55)' : 'rgba(160, 200, 180, 0.3)';
+  ctx.lineWidth = combo > 0 ? 1.5 : 1;
+  ctx.strokeRect(W - 130, 8, 122, 38);
+  ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = combo > 0 ? '#ffd166' : '#9bb8a6';
+  ctx.fillText('COMBO x' + (combo + 1 > 1 ? combo : 0), W - 18, 24);
+  ctx.fillStyle = '#9bb8a6';
+  ctx.fillText('BEST x' + bestCombo, W - 18, 40);
+
+  // Combo timer bar (under combo panel)
+  if (comboTimer > 0) {
+    const w = 122 * clamp(comboTimer / 4, 0, 1);
+    ctx.fillStyle = 'rgba(255, 210, 100, 0.5)';
+    ctx.fillRect(W - 130, 46, w, 2);
+  }
+
+  // Speed bar at the bottom of the screen
+  const sbarW = W - 32, sbarH = 4;
+  const sbarX = 16, sbarY = H - 18;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(sbarX, sbarY, sbarW, sbarH);
+  const fill = clamp((scrollSpeed - speedBase) / (speedBase * 2.3 - speedBase), 0, 1);
+  const grad = ctx.createLinearGradient(sbarX, 0, sbarX + sbarW, 0);
+  grad.addColorStop(0, '#5fd0ff');
+  grad.addColorStop(1, '#ff7a5a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(sbarX, sbarY, sbarW * fill, sbarH);
+
+  ctx.restore();
+}
+
+function drawMenu() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(W/2 - 200, H/2 - 150, 400, 300);
+  ctx.strokeStyle = 'rgba(160, 200, 180, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(W/2 - 200, H/2 - 150, 400, 300);
+
+  ctx.textAlign = 'center';
+  // Title with shadow + glow
+  ctx.shadowColor = '#9bf6a1';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#cfe9c8';
+  ctx.font = 'bold 40px ui-monospace, Menlo, monospace';
+  ctx.fillText('GRAVITY SNAIL', W/2, H/2 - 78);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#9bb8a6';
+  ctx.font = '13px ui-monospace, Menlo, monospace';
+  ctx.fillText('A jetpack mollusc in an endless cave', W/2, H/2 - 48);
+
+  // Pulsing prompt
+  const pulse = 0.55 + 0.45 * Math.sin(menuT * 4);
+  ctx.fillStyle = `rgba(155, 246, 161, ${pulse})`;
+  ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
+  ctx.fillText('CLICK / TAP TO START', W/2, H/2 + 4);
+
+  ctx.fillStyle = '#9bb8a6';
+  ctx.font = '12px ui-monospace, Menlo, monospace';
+  ctx.fillText('HOLD to thrust  •  Release to fall', W/2, H/2 + 34);
+  ctx.fillText('Green leaves  +25    Golden leaves  +50+combo', W/2, H/2 + 54);
+
+  ctx.fillStyle = '#7a9487';
+  ctx.font = '11px ui-monospace, Menlo, monospace';
+  ctx.fillText('HIGH SCORE  ' + String(highScore).padStart(5, '0'), W/2, H/2 + 100);
+  ctx.restore();
+}
+
+function drawDeathScreen() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff8a3d';
+  ctx.font = 'bold 30px ui-monospace, Menlo, monospace';
+  ctx.fillText('SHELL-CRACKED', W/2, H/2 - 50);
+
+  ctx.fillStyle = '#cfe9c8';
+  ctx.font = 'bold 24px ui-monospace, Menlo, monospace';
+  ctx.fillText('SCORE  ' + String(score).padStart(5, '0'), W/2, H/2 - 12);
+
+  const isNew = score >= highScore && score > 0;
+  if (isNew) {
+    ctx.fillStyle = '#9bf6a1';
+    ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
+    ctx.fillText('NEW HIGH SCORE', W/2, H/2 + 14);
+  } else {
+    ctx.fillStyle = '#9bb8a6';
+    ctx.font = '14px ui-monospace, Menlo, monospace';
+    ctx.fillText('HIGH SCORE  ' + String(highScore).padStart(5, '0'), W/2, H/2 + 14);
+  }
+
+  ctx.fillStyle = '#9bb8a6';
+  ctx.font = '12px ui-monospace, Menlo, monospace';
+  ctx.fillText('BEST COMBO  x' + bestCombo, W/2, H/2 + 36);
+
+  const pulse = 0.55 + 0.45 * Math.sin(menuT * 4);
+  ctx.fillStyle = `rgba(207, 233, 200, ${0.5 + pulse * 0.5})`;
+  ctx.font = 'bold 16px ui-monospace, Menlo, monospace';
+  ctx.fillText('CLICK / TAP TO RETRY', W/2, H/2 + 76);
+  ctx.restore();
+}
+
+// ---------- Render ----------
+function render() {
+  ctx.save();
+  // Screen shake
+  if (shake > 0.1) {
+    const sx = (rand() - 0.5) * shake;
+    const sy = (rand() - 0.5) * shake;
+    ctx.translate(sx, sy);
+  }
+
+  drawBackground();
+
+  if (state === STATE_PLAY || state === STATE_DEAD) {
+    drawObstacles();
+    drawLeaves();
+    drawParticles();
+  }
+
+  if (state !== STATE_DEAD || snail.y < H + 40) drawSnail();
+
+  drawPopups();
+
+  // Combo flash overlay
+  if (comboFlash > 0 && state === STATE_PLAY) {
+    ctx.fillStyle = `rgba(255, 210, 100, ${comboFlash * 0.12})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  ctx.restore();
+
+  drawHUD();
+
+  if (state === STATE_MENU) drawMenu();
+  if (state === STATE_DEAD) drawDeathScreen();
+}
+
+// ---------- Loop ----------
+let last = performance.now();
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+function handleStartClick(e) {
+  if (e) e.preventDefault();
+  audio();
+  if (state === STATE_MENU || state === STATE_DEAD) {
+    reset();
+    state = STATE_PLAY;
+  }
+}
+canvas.addEventListener('mousedown', handleStartClick);
+canvas.addEventListener('touchstart', handleStartClick, { passive: false });
+
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

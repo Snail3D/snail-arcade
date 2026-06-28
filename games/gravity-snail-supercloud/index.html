@@ -23,7 +23,7 @@
 "use strict";
 
 // ============================================================
-//  GRAVITY SNAIL — Ultimate Synthesis
+//  GRAVITY SNAIL — Ultimate Synthesis (A + B)
 // ============================================================
 
 const canvas = document.getElementById("game");
@@ -79,7 +79,7 @@ const LEAF_SPAWN_MAX = 3.0;
 let state = "menu"; // "menu" | "play" | "dead"
 let lastT = performance.now();
 let elapsed = 0;
-let scrollY = 0;
+let scrollY = 0;       // cumulative world scroll (increases as we go up)
 let speedMul = 1.0;
 let distance = 0;
 let shake = 0;
@@ -97,7 +97,7 @@ let leaves = [];
 let particles = [];
 let sparkles = [];
 
-let nextObstacleY = 0;
+let nextObstacleWorldY = 0;
 let leafAccum = 0;
 
 // Parallax layers (cave silhouettes)
@@ -134,7 +134,7 @@ function resetGame() {
   obstacles = [];
   leaves = [];
   particles = [];
-  nextObstacleY = -OBSTACLE_SPACING * 3;
+  nextObstacleWorldY = -OBSTACLE_SPACING * 3;
   leafAccum = 999;
 
   snail = {
@@ -147,10 +147,10 @@ function resetGame() {
     bobPhase: 0
   };
 
-  // Seed obstacles above screen
+  // Seed obstacles above screen (in world coords)
   for (let i = 0; i < 5; i++) {
-    spawnObstaclePair(nextObstacleY);
-    nextObstacleY -= OBSTACLE_SPACING;
+    spawnObstaclePair(nextObstacleWorldY);
+    nextObstacleWorldY -= OBSTACLE_SPACING;
   }
 }
 
@@ -165,19 +165,23 @@ function currentGap() {
 function spawnObstaclePair(worldY) {
   const gap = currentGap();
   const margin = 80;
+  // Gap center in screen-space Y (where the obstacle pair will appear)
   const gapCenter = margin + Math.random() * (H - gap - margin * 2);
   const gapTop = gapCenter - gap / 2;
   const gapBottom = gapCenter + gap / 2;
+
+  // Random X position for the obstacle column
+  const ox = Math.random() * (W - OBSTACLE_W - 40) + 20;
 
   // Ceiling obstacle (stalactite)
   const tCount = 1 + Math.floor(Math.random() * 2);
   obstacles.push({
     worldY: worldY,
     type: "ceiling",
-    topY: 0,
-    botY: gapTop,
+    x: ox,
     w: OBSTACLE_W + Math.random() * 20,
-    spikes: makeSpikeShapes("down", OBSTACLE_W + Math.random() * 20, gapTop, tCount),
+    spikeBaseScreenY: gapTop,   // where spikes end (top of gap)
+    spikes: makeSpikeShapes(tCount),
     scored: false
   });
 
@@ -186,37 +190,32 @@ function spawnObstaclePair(worldY) {
   obstacles.push({
     worldY: worldY,
     type: "floor",
-    topY: gapBottom,
-    botY: H,
+    x: ox,
     w: OBSTACLE_W + Math.random() * 20,
-    spikes: makeSpikeShapes("up", OBSTACLE_W + Math.random() * 20, H - gapBottom, bCount),
+    spikeBaseScreenY: gapBottom, // where spikes start (bottom of gap)
+    spikes: makeSpikeShapes(bCount),
     scored: false
   });
 
   // Sometimes drop a leaf in the gap
   if (Math.random() < 0.6) {
     leaves.push({
-      x: W * 0.3 + Math.random() * W * 0.4,
+      x: ox + (Math.random() - 0.5) * 40,
       y: gapTop + gap * 0.5 + (Math.random() - 0.5) * gap * 0.3,
       r: 11,
       phase: Math.random() * Math.PI * 2,
       collected: false,
       fade: 1,
-      worldY: worldY + (gapTop + gap * 0.5 - H / 2)
+      worldY: worldY
     });
   }
 }
 
-function makeSpikeShapes(dir, width, length, count) {
+function makeSpikeShapes(count) {
   const spikes = [];
-  const segW = width / count;
   for (let i = 0; i < count; i++) {
-    const cx0 = i * segW;
-    const cx1 = (i + 1) * segW;
-    const tipDepth = length * (0.7 + Math.random() * 0.3);
     spikes.push({
-      x0: cx0, x1: cx1,
-      depth: tipDepth,
+      depth: 25 + Math.random() * 40,
       jitter: (Math.random() - 0.5) * 8
     });
   }
@@ -231,7 +230,7 @@ function spawnFloatingLeaf() {
     phase: Math.random() * Math.PI * 2,
     collected: false,
     fade: 1,
-    worldY: scrollY - 40 + H / 2
+    worldY: scrollY - H * 0.5
   });
 }
 
@@ -255,7 +254,7 @@ function emitLeafBurst(x, y) {
   particles.push({
     x, y, vx: 0, vy: 0,
     life: 0.3, maxLife: 0.3,
-    r: 40, type: "flash"
+    r: 42, type: "flash"
   });
 }
 
@@ -347,49 +346,46 @@ function update(dt) {
   // ---- Obstacles ----
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const o = obstacles[i];
-    // Obstacles move down as we scroll up
+
+    // Move obstacle down as world scrolls up
     if (state === "play") {
       o.worldY -= scrollSpeed * dt;
     }
 
+    // Compute screen Y of spike base
+    const onScreenY = o.worldY - scrollY + H * 0.5;
+
     // Remove off-screen obstacles
-    const onScreenY = o.worldY - scrollY;
-    if (onScreenY < -H || onScreenY > H * 2) {
+    if (onScreenY < -H * 1.5 || onScreenY > H * 2) {
       obstacles.splice(i, 1);
       continue;
     }
 
-    // Score when passed
+    // Score when passed (obstacle fully below screen for ceiling, above for floor)
     if (state === "play" && !o.scored) {
-      const onScreenTop = o.worldY - scrollY;
-      if (onScreenTop > H) {
+      if (o.type === "ceiling" && onScreenY > H + 60) {
         o.scored = true;
-        // Near-miss check for ceiling obstacles (check bottom edge)
-        if (o.type === "ceiling") {
-          checkNearMiss(o);
-        } else if (o.type === "floor") {
-          checkNearMiss(o);
-        }
+        checkNearMiss(o, onScreenY);
+      } else if (o.type === "floor" && onScreenY < -60) {
+        o.scored = true;
+        checkNearMiss(o, onScreenY);
       }
     }
 
-    // Collision detection
-    if (state === "play") {
-      const onScreenY = o.worldY - scrollY;
-      if (onScreenY > -H && onScreenY < H) {
-        const rect = getObstacleRect(o, onScreenY);
-        if (circleRectHit(snail.x, snail.y, SNAIL_R - 2, rect)) {
-          die();
-        }
+    // Collision detection (only when on screen)
+    if (state === "play" && onScreenY > -H && onScreenY < H) {
+      const rect = getObstacleRect(o, onScreenY);
+      if (circleRectHit(snail.x, snail.y, SNAIL_R - 2, rect)) {
+        die();
       }
     }
   }
 
   // Spawn new obstacles
-  nextObstacleY -= scrollSpeed * dt;
-  if (nextObstacleY < scrollY - H) {
-    spawnObstaclePair(nextObstacleY);
-    nextObstacleY -= OBSTACLE_SPACING;
+  nextObstacleWorldY -= scrollSpeed * dt;
+  if (nextObstacleWorldY < scrollY - H) {
+    spawnObstaclePair(nextObstacleWorldY);
+    nextObstacleWorldY -= OBSTACLE_SPACING;
   }
 
   // ---- Leaves ----
@@ -408,8 +404,10 @@ function update(dt) {
       if (lf.fade <= 0) { leaves.splice(i, 1); continue; }
     }
 
-    // Remove off-screen
+    // Compute screen Y
     const onScreenY = lf.y + (lf.worldY - scrollY);
+
+    // Remove off-screen
     if (onScreenY < -50 || onScreenY > H + 50) {
       if (!lf.collected) leaves.splice(i, 1);
       continue;
@@ -436,7 +434,7 @@ function update(dt) {
     if (p.life <= 0) { particles.splice(i, 1); continue; }
 
     if (p.type === "flash") {
-      // Flash just expands and fades
+      // Flash just expands and fades — no movement
       continue;
     }
 
@@ -473,19 +471,26 @@ function update(dt) {
 
 function getObstacleRect(o, onScreenY) {
   if (o.type === "ceiling") {
-    return { x: o.x || 0, y: onScreenY - (o.botY - o.topY), w: o.w, h: o.botY - o.topY };
+    // Spike base is at onScreenY, spikes hang down from there
+    const spikeLen = o.spikes.reduce((max, s) => Math.max(max, s.depth), 0);
+    return { x: o.x, y: onScreenY, w: o.w, h: spikeLen };
   } else {
-    return { x: o.x || 0, y: onScreenY, w: o.w, h: o.botY - o.topY };
+    // Spike base is at onScreenY, spikes point up from there
+    const spikeLen = o.spikes.reduce((max, s) => Math.max(max, s.depth), 0);
+    return { x: o.x, y: onScreenY - spikeLen, w: o.w, h: spikeLen };
   }
 }
 
-function checkNearMiss(o) {
-  const onScreenY = o.worldY - scrollY;
+function checkNearMiss(o, onScreenY) {
   let edgeY;
   if (o.type === "ceiling") {
-    edgeY = onScreenY - (o.botY - o.topY); // bottom of ceiling
+    // Bottom of ceiling spike column = onScreenY + spike length
+    const spikeLen = o.spikes.reduce((max, s) => Math.max(max, s.depth), 0);
+    edgeY = onScreenY + spikeLen;
   } else {
-    edgeY = onScreenY; // top of floor
+    // Top of floor spike column = onScreenY - spike length
+    const spikeLen = o.spikes.reduce((max, s) => Math.max(max, s.depth), 0);
+    edgeY = onScreenY - spikeLen;
   }
 
   const dy = Math.abs(snail.y - edgeY);
@@ -610,8 +615,8 @@ function draw() {
   // ---- Obstacles ----
   for (let i = 0; i < obstacles.length; i++) {
     const o = obstacles[i];
-    const onScreenY = o.worldY - scrollY;
-    if (onScreenY < -H || onScreenY > H * 2) continue;
+    const onScreenY = o.worldY - scrollY + H * 0.5;
+    if (onScreenY < -H || onScreenY > H * 1.5) continue;
     drawObstacle(o, onScreenY);
   }
 
@@ -668,27 +673,31 @@ function draw() {
 }
 
 function drawObstacle(o, onScreenY) {
-  const x = W * 0.15 + Math.random() * W * 0.7; // Randomize X for variety
+  const x = o.x;
   const w = o.w;
 
+  // Compute max spike length for this obstacle
+  const maxSpikeLen = o.spikes.reduce((max, s) => Math.max(max, s.depth), 0);
+
   if (o.type === "ceiling") {
-    // Body from top to spike base
+    // Body from top of screen down to spike base
     const grad = ctx.createLinearGradient(x, 0, x + w, 0);
     grad.addColorStop(0, "#1a2235");
     grad.addColorStop(0.5, "#28354a");
     grad.addColorStop(1, "#1a2235");
     ctx.fillStyle = grad;
-    ctx.fillRect(x, 0, w, onScreenY - (o.botY - o.topY));
+    ctx.fillRect(x, 0, w, onScreenY);
 
-    // Spikes hang down
+    // Spikes hang down from spike base
     ctx.fillStyle = "#28354a";
     ctx.beginPath();
-    const spikeBaseY = onScreenY - (o.botY - o.topY);
+    const spikeBaseY = onScreenY;
     ctx.moveTo(x, spikeBaseY);
     for (let i = 0; i < o.spikes.length; i++) {
       const s = o.spikes[i];
-      const leftX = x + s.x0;
-      const rightX = x + s.x1;
+      const segW = w / o.spikes.length;
+      const leftX = x + i * segW;
+      const rightX = x + (i + 1) * segW;
       const midX = (leftX + rightX) / 2 + s.jitter;
       const tipY = spikeBaseY + s.depth;
       ctx.lineTo(leftX, spikeBaseY);
@@ -711,8 +720,9 @@ function drawObstacle(o, onScreenY) {
     ctx.beginPath();
     for (let i = 0; i < o.spikes.length; i++) {
       const s = o.spikes[i];
-      const leftX = x + s.x0;
-      const rightX = x + s.x1;
+      const segW = w / o.spikes.length;
+      const leftX = x + i * segW;
+      const rightX = x + (i + 1) * segW;
       const midX = (leftX + rightX) / 2 + s.jitter;
       const tipY = spikeBaseY + s.depth;
       ctx.moveTo(midX, tipY);
@@ -722,27 +732,29 @@ function drawObstacle(o, onScreenY) {
     ctx.fill();
 
   } else {
-    // Floor obstacle
-    const grad = ctx.createLinearGradient(x, onScreenY, x + w, onScreenY);
+    // Floor obstacle — body from spike base to bottom of screen
+    const grad = ctx.createLinearGradient(x, onScreenY - maxSpikeLen, x + w, onScreenY - maxSpikeLen);
     grad.addColorStop(0, "#1a2235");
     grad.addColorStop(0.5, "#28354a");
     grad.addColorStop(1, "#1a2235");
     ctx.fillStyle = grad;
-    ctx.fillRect(x, onScreenY, w, o.botY - onScreenY);
+    ctx.fillRect(x, onScreenY - maxSpikeLen, w, H - (onScreenY - maxSpikeLen));
 
-    // Spikes point up
+    // Spikes point up from spike base
     ctx.fillStyle = "#28354a";
     ctx.beginPath();
-    ctx.moveTo(x, onScreenY);
+    const spikeBaseY = onScreenY;
+    ctx.moveTo(x, spikeBaseY);
     for (let i = 0; i < o.spikes.length; i++) {
       const s = o.spikes[i];
-      const leftX = x + s.x0;
-      const rightX = x + s.x1;
+      const segW = w / o.spikes.length;
+      const leftX = x + i * segW;
+      const rightX = x + (i + 1) * segW;
       const midX = (leftX + rightX) / 2 + s.jitter;
-      const tipY = onScreenY - s.depth;
-      ctx.lineTo(leftX, onScreenY);
+      const tipY = spikeBaseY - s.depth;
+      ctx.lineTo(leftX, spikeBaseY);
       ctx.lineTo(midX, tipY);
-      ctx.lineTo(rightX, onScreenY);
+      ctx.lineTo(rightX, spikeBaseY);
     }
     ctx.closePath();
     ctx.fill();
@@ -751,8 +763,8 @@ function drawObstacle(o, onScreenY) {
     ctx.strokeStyle = "rgba(130,165,200,0.28)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(x + 2, onScreenY);
-    ctx.lineTo(x + 2, o.botY);
+    ctx.moveTo(x + 2, onScreenY - maxSpikeLen);
+    ctx.lineTo(x + 2, H);
     ctx.stroke();
   }
 }
