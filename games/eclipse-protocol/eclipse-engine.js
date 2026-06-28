@@ -350,9 +350,10 @@
      */
     constructor(galaxy, opts = {}) {
       this.galaxy = galaxy;
-      // Defaults sized so ~50-70% of a 10k-system galaxy is reachable from
-      // any given starting system. Tighter networks make the game feel
-      // claustrophobic; looser ones make exploration trivial.
+      // Defaults chosen so the resulting gate graph is a single connected
+      // component spanning the vast majority of the galaxy while still
+      // preserving locality: most gates are short, only a handful of long
+      // "bridge" links stitch distant clusters together.
       this.maxLinksPerSystem = opts.maxLinksPerSystem ?? 5;
       this.maxLinkDistance = opts.maxLinkDistance ?? 380;
       this.baseCost = opts.baseCost ?? 1;
@@ -365,9 +366,12 @@
       const linksPerSystem = new Array(sys.length).fill(0);
       const edgeSet = new Set();
 
-      // First pass: for every system, find K nearest within maxLinkDistance.
+      // --- Phase 1: KNN — connect each system to its K nearest within range.
+      // We deliberately do NOT cap based on the neighbor's saturation here;
+      // saturation is checked symmetrically only AFTER the candidate pair is
+      // chosen. This ensures short bridges aren't starved by greedy local
+      // choices.
       for (const s of sys) {
-        // Track candidate neighbors by distance (KNN-style).
         const candidates = [];
         for (const n of idx.neighbors(s.x, s.y, this.maxLinkDistance)) {
           if (n.id === s.id) continue;
@@ -377,29 +381,23 @@
         }
         candidates.sort((a, b) => a.d - b.d);
 
-        // Connect up to maxLinksPerSystem, biased toward nearer ones.
         let added = 0;
         for (const c of candidates) {
           if (added >= this.maxLinksPerSystem) break;
           if (linksPerSystem[s.id] >= this.maxLinksPerSystem) break;
-          if (linksPerSystem[c.n.id] >= this.maxLinksPerSystem) break;
-          // Skip if either endpoint is already saturated.
+          if (linksPerSystem[c.n.id] >= this.maxLinksPerSystem) continue;
           const key = s.id < c.n.id ? `${s.id}|${c.n.id}` : `${c.n.id}|${s.id}`;
           if (edgeSet.has(key)) continue;
           edgeSet.add(key);
-
-          const cost = this.baseCost + c.d * this.distanceFactor;
-          s.gates.push({ to: c.n.id, cost: Math.round(cost * 10) / 10 });
-          // Symmetric — undirected jump network.
-          c.n.gates.push({ to: s.id, cost: Math.round(cost * 10) / 10 });
+          this._connect(s, c.n, c.d);
           linksPerSystem[s.id]++;
           linksPerSystem[c.n.id]++;
           added++;
         }
       }
 
-      // Second pass: ensure no isolated systems by force-linking the closest
-      // reachable neighbor for any system with no gates at all.
+      // --- Phase 2: isolated systems — link each to its single nearest
+      // reachable neighbor regardless of saturation.
       for (const s of sys) {
         if (s.gates.length > 0) continue;
         let best = null, bestD = Infinity;
@@ -409,11 +407,104 @@
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d < bestD) { bestD = d; best = n; }
         }
-        if (best) {
-          const cost = this.baseCost + bestD * this.distanceFactor;
-          s.gates.push({ to: best.id, cost: Math.round(cost * 10) / 10 });
-          best.gates.push({ to: s.id, cost: Math.round(cost * 10) / 10 });
+        if (best) this._connect(s, best, bestD);
+      }
+
+      // --- Phase 3: stitch disconnected components together. A purely local
+      // KNN pass leaves clusters separated by density gaps; we walk the
+      // components and draw short bridges between nearest pairs.
+      this._stitchComponents(linksPerSystem);
+    }
+
+    _connect(a, b, distance) {
+      const cost = this.baseCost + distance * this.distanceFactor;
+      const c = Math.round(cost * 10) / 10;
+      a.gates.push({ to: b.id, cost: c });
+      b.gates.push({ to: a.id, cost: c });
+    }
+
+    /** Find connected components and bridge them. */
+    _stitchComponents(linksPerSystem) {
+      const sys = this.galaxy.systems;
+      const idx = this.galaxy.spatialIndex;
+      const compOf = new Array(sys.length).fill(-1);
+      const components = [];
+      for (const s of sys) {
+        if (compOf[s.id] !== -1) continue;
+        const cid = components.length;
+        const queue = [s.id];
+        compOf[s.id] = cid;
+        const members = [];
+        while (queue.length) {
+          const id = queue.shift();
+          members.push(id);
+          const ss = this.galaxy.get(id);
+          for (const g of ss.gates) {
+            if (compOf[g.to] !== -1) continue;
+            compOf[g.to] = cid;
+            queue.push(g.to);
+          }
         }
+        components.push(members);
+      }
+      if (components.length <= 1) return;
+
+      // Bridge components greedily by repeatedly joining the closest pair.
+      // Use centroid-to-centroid distance as a cheap estimate.
+      const centroids = components.map(members => {
+        let cx = 0, cy = 0;
+        for (const id of members) {
+          const s = this.galaxy.get(id);
+          cx += s.x; cy += s.y;
+        }
+        return { x: cx / members.length, y: cy / members.length };
+      });
+      while (true) {
+        let bestPair = null, bestDist = Infinity;
+        for (let i = 0; i < components.length; i++) {
+          for (let j = i + 1; j < components.length; j++) {
+            const a = centroids[i], b = centroids[j];
+            const d = Math.hypot(a.x - b.x, a.y - b.y);
+            if (d < bestDist) { bestDist = d; bestPair = [i, j]; }
+          }
+        }
+        if (!bestPair) break;
+        const [ci, cj] = bestPair;
+
+        // Find the actual nearest pair between the two components.
+        // To avoid O(N*M), sample: pick the system in `cj` closest to
+        // `centroids[ci]`, then find its nearest neighbor in `ci`.
+        let seed = null, seedD = Infinity;
+        for (const id of components[cj]) {
+          const s = this.galaxy.get(id);
+          const d = Math.hypot(s.x - centroids[ci].x, s.y - centroids[ci].y);
+          if (d < seedD) { seedD = d; seed = s; }
+        }
+        let bridge = null, bridgeD = Infinity;
+        // Look around `seed` for nearest member of component `ci`.
+        for (const n of idx.neighbors(seed.x, seed.y, this.maxLinkDistance * 2)) {
+          if (compOf[n.id] !== ci) continue;
+          const d = Math.hypot(n.x - seed.x, n.y - seed.y);
+          if (d < bridgeD) { bridgeD = d; bridge = n; }
+        }
+        if (!bridge) {
+          // Components are farther apart than maxLinkDistance — give up.
+          // (Shouldn't happen in practice with our default galaxy settings.)
+          break;
+        }
+        this._connect(seed, bridge, bridgeD);
+
+        // Merge components: move `cj` into `ci`, update compOf + centroids.
+        const mergedMembers = components[ci].concat(components[cj]);
+        components[ci] = mergedMembers;
+        for (const id of components[cj]) compOf[id] = ci;
+        components.splice(cj, 1);
+        centroids.splice(cj, 1);
+        const cx = centroids[ci].x, cy = centroids[ci].y;
+        let nx = 0, ny = 0;
+        for (const id of mergedMembers) { const s = this.galaxy.get(id); nx += s.x; ny += s.y; }
+        centroids[ci] = { x: nx / mergedMembers.length, y: ny / mergedMembers.length };
+        if (components.length <= 1) break;
       }
     }
   }
@@ -1676,7 +1767,9 @@
       const owner = s.owner != null ? this.state.factions.find(f => f.id === s.owner) : null;
       const isPlayer = s.owner === this.state.playerFactionId;
       const reachable = this._reachableFromPlayer();
+      const ownedReachable = this._ownedReachableFromPlayer();
       const isReachable = reachable.has(s.id);
+      const canClaim = ownedReachable.has(s.id);
 
       // Cost to travel here = BFS cost
       let travelCost = 0;
@@ -1693,8 +1786,8 @@
           actions.push(`<button class="ep-btn" data-act="upgrade" ${this.state.player().resources.credits >= cost ? '' : 'disabled'}>Upgrade (${cost}cr)</button>`);
         }
         actions.push(`<button class="ep-btn ep-danger" data-act="abandon">Abandon</button>`);
-      } else if (!owner && s.discovered && s.type !== 'black_hole' && s.type !== 'anomaly') {
-        const canColonize = s.type === 'habitable' || s.type === 'desert' || s.type === 'ice';
+      } else if (!owner && s.discovered && s.type !== 'black_hole' && s.type !== 'anomaly' && canClaim) {
+        const canColonize = s.type === 'habitable' || s.type === 'desert' || s.type === 'ice' || s.type === 'asteroid';
         const playerHasTerraforming = this.state.player().unlockedTechs.has('terraforming');
         const tfOk = (s.type !== 'desert' && s.type !== 'ice') || playerHasTerraforming;
         actions.push(`<button class="ep-btn" data-act="colonize" ${(canColonize && tfOk) ? '' : 'disabled'}>Colonize</button>`);
@@ -1937,6 +2030,11 @@
         s.explored = true;
         s.stationLevel = Math.max(s.stationLevel, 2);
       }
+      // Guarantee the player starts with a contiguous empire: if the home
+      // systems aren't already connected via a path of player-owned gates,
+      // claim the best bridge system(s) between them so the player can move
+      // and colonize from day 1.
+      this._ensurePlayerConnectivity(player, galaxy);
       state.factions = factions;
       state.playerFactionId = 'player';
       state.addEvent('intro', `Welcome, Commander. The ${factions[0].name} controls ${homeIds.length} system(s).`);
@@ -1951,7 +2049,100 @@
       this._loop();
     }
 
-    /** Load saved game into this instance. */
+    /** Ensure all player-owned homes are mutually reachable through the
+     *  player's own gate network. If not, claim a small chain of bridge
+     *  systems so the empire is contiguous from turn 1. */
+    _ensurePlayerConnectivity(player, galaxy) {
+      const owned = Array.from(player.ownedSystems);
+      if (owned.length < 2) return;
+      // Dijkstra over owned + unowned (treat unowned as traversable but
+      // stop expanding at them). Returns Map<id, prevId> for the shortest
+      // owned-rooted path.
+      const prev = new Map();
+      const dist = new Map();
+      for (const id of owned) { prev.set(id, null); dist.set(id, 0); }
+      // Multi-source BFS
+      const queue = [...owned];
+      while (queue.length) {
+        const id = queue.shift();
+        const s = galaxy.get(id);
+        if (!s) continue;
+        const d = dist.get(id);
+        // Expand only through player-owned systems
+        if (s.owner !== player.id) continue;
+        for (const g of s.gates) {
+          if (dist.has(g.to)) continue;
+          dist.set(g.to, d + 1);
+          prev.set(g.to, id);
+          queue.push(g.to);
+        }
+      }
+      // For each pair of owned homes, check if they're connected through
+      // owned nodes already. If any are not, claim the bridge nodes along
+      // the BFS shortest path between the closest pair.
+      const reachable = (id) => {
+        const seen = new Set([id]);
+        const q = [id];
+        while (q.length) {
+          const cur = q.shift();
+          const ss = galaxy.get(cur);
+          if (!ss || ss.owner !== player.id) continue;
+          for (const g of ss.gates) {
+            if (seen.has(g.to)) continue;
+            seen.add(g.to);
+            q.push(g.to);
+          }
+        }
+        return seen;
+      };
+      for (const id of owned) {
+        const r = reachable(id);
+        for (const other of owned) {
+          if (other === id) continue;
+          if (r.has(other)) continue;
+          // Not connected. Find shortest path between them through ANY gates,
+          // then claim intermediate nodes for the player.
+          const path = this._bfsShortestPath(galaxy, id, other);
+          if (!path) continue;
+          for (const pid of path.slice(1, -1)) { // exclude endpoints
+            const ps = galaxy.get(pid);
+            if (ps.owner === null) {
+              ps.owner = player.id;
+              ps.discovered = true;
+              ps.stationLevel = 1;
+              player.ownedSystems.add(pid);
+            }
+          }
+          break; // re-evaluate connectivity on next outer loop
+        }
+      }
+    }
+
+    /** BFS returning the shortest gate-path from start to goal (any nodes). */
+    _bfsShortestPath(galaxy, startId, goalId) {
+      if (startId === goalId) return [startId];
+      const prev = new Map();
+      const seen = new Set([startId]);
+      const queue = [startId];
+      while (queue.length) {
+        const id = queue.shift();
+        if (id === goalId) {
+          const path = [id];
+          let cur = id;
+          while (prev.has(cur)) { cur = prev.get(cur); path.push(cur); }
+          return path.reverse();
+        }
+        const s = galaxy.get(id);
+        if (!s) continue;
+        for (const g of s.gates) {
+          if (seen.has(g.to)) continue;
+          seen.add(g.to);
+          prev.set(g.to, id);
+          queue.push(g.to);
+        }
+      }
+      return null;
+    }
     load() {
       const gs = GameState.load();
       if (!gs) { this.ui && this.ui.toast('No saved game.'); return false; }
@@ -2124,7 +2315,7 @@
         if (f.resources.energy > 20 && f.resources.food > 10) {
           const reachable = this.state.galaxy.bfs(
             Array.from(f.ownedSystems)[0],
-            { faction: f.id }
+            { faction: f.id, ownedOnly: true }
           );
           const targets = [];
           for (const [id, hops] of reachable) {

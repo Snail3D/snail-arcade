@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eclipse Protocol — 4X Space Empire Builder</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e17;--panel:#0f1524;--border:#1a2340;--text:#c8d6e5;--dim:#576574;--accent:#0abde3;--warn:#f39c12;--danger:#e74c3c;--success:#2ecc71;--purple:#9b59b6}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px}
+#game-container{display:flex;flex-direction:column;height:100vh;width:100vw}
+#top-bar{height:36px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;gap:16px;z-index:10;flex-shrink:0}
+#top-bar .title{font-weight:700;color:var(--accent);letter-spacing:1px;font-size:14px}
+#top-bar .stat{color:var(--dim);font-size:12px}
+#top-bar .stat span{color:var(--text);font-weight:600}
+#top-bar .phase-indicator{padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;text-transform:uppercase}
+.phase-explore{background:#1a5276;color:#85c1e9}.phase-expand{background:#1e8449;color:#82e0aa}.phase-exploit{background:#7d3c98;color:#d2b4de}.phase-exterminate{background:#922b21;color:#f1948a}
+#main{display:flex;flex:1;overflow:hidden}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;background:#050810}
+#galaxy-canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+#sidebar{width:280px;background:var(--panel);border-left:1px solid var(--border);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column}
+#sidebar .section{padding:10px 12px;border-bottom:1px solid var(--border)}
+#sidebar .section h3{font-size:11px;text-transform:uppercase;color:var(--dim);letter-spacing:.5px;margin-bottom:6px}
+#sidebar .faction-header{display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(10,189,227,.06)}
+#sidebar .faction-header .dot{width:10px;height:10px;border-radius:50%}
+#sidebar .faction-header .name{font-weight:700;font-size:14px}
+#sidebar .resource-row{display:flex;justify-content:space-between;padding:2px 0;font-size:12px}
+#sidebar .resource-row .label{color:var(--dim)}
+#sidebar .resource-row .value{font-weight:600}
+#system-panel{position:absolute;bottom:0;left:0;right:280px;background:var(--panel);border-top:1px solid var(--border);padding:10px 14px;max-height:200px;overflow-y:auto;z-index:5}
+#system-panel h3{font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+#system-panel .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#system-panel .actions button{padding:4px 10px;background:var(--border);color:var(--text);border:1px solid #2a3f60;border-radius:3px;cursor:pointer;font-size:11px}
+#system-panel .actions button:hover{background:#2a3f60;border-color:var(--accent)}
+#system-panel .actions button.primary{background:#1a5276;border-color:var(--accent)}
+#system-panel .actions button.danger{background:#7b241c;border-color:var(--danger)}
+#event-panel{position:absolute;top:36px;right:280px;width:340px;max-height:calc(100vh - 250px);overflow-y:auto;z-index:6;display:none}
+#event-panel.active{display:block}
+.event-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:6px}
+.event-card h4{color:var(--accent);font-size:12px;margin-bottom:4px}
+.event-card p{color:var(--dim);font-size:12px;line-height:1.4;margin-bottom:6px}
+.event-card .choices{display:flex;flex-direction:column;gap:4px}
+.event-card .choices button{padding:5px 10px;background:#1a2340;color:var(--text);border:1px solid #2a3f60;border-radius:3px;cursor:pointer;font-size:11px;text-align:left}
+.event-card .choices button:hover{background:#2a3f60;border-color:var(--accent)}
+#tech-panel{position:absolute;top:36px;left:0;width:280px;bottom:0;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;z-index:6;display:none}
+#tech-panel.active{display:block}
+#tech-panel .section{padding:8px 12px;border-bottom:1px solid var(--border)}
+#tech-panel .section h3{font-size:11px;text-transform:uppercase;color:var(--dim);letter-spacing:.5px;margin-bottom:6px}
+.tech-item{padding:4px 0;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.tech-item.researched{color:var(--success)}
+.tech-item.available{color:var(--accent);cursor:pointer}
+.tech-item.available:hover{text-decoration:underline}
+.tech-item.locked{color:var(--dim)}
+#diplomacy-panel{position:absolute;top:36px;left:280px;right:280px;bottom:0;background:rgba(15,21,36,.95);z-index:7;display:none;overflow-y:auto;padding:16px}
+#diplomacy-panel.active{display:block}
+.faction-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:8px}
+.faction-card h3{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.faction-card h3 .dot{width:12px;height:12px;border-radius:50%}
+.faction-card .rel-bar{height:6px;background:#1a2340;border-radius:3px;margin:4px 0;overflow:hidden}
+.faction-card .rel-bar .fill{height:100%;border-radius:3px;transition:width .3s}
+.faction-card .traits{font-size:11px;color:var(--dim);margin-top:4px}
+#combat-overlay{position:absolute;top:0;left:0;right:280px;bottom:0;background:rgba(5,8,16,.9);z-index:8;display:none;flex-direction:column}
+#combat-overlay.active{display:flex}
+#combat-canvas{flex:1}
+#combat-info{background:var(--panel);border-top:1px solid var(--border);padding:8px 14px;display:flex;gap:16px;font-size:12px}
+#combat-info .side{flex:1}
+#combat-log{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(15,21,36,.9);border:1px solid var(--border);border-radius:4px;padding:8px 12px;max-width:500px;font-size:12px;z-index:9;display:none}
+#combat-log.active{display:block}
+#minimap{position:absolute;bottom:8px;left:8px;width:160px;height:120px;background:rgba(5,8,16,.8);border:1px solid var(--border);border-radius:3px;z-index:4}
+#help-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(5,8,16,.92);z-index:20;display:none;align-items:center;justify-content:center}
+#help-overlay.active{display:flex}
+#help-box{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:24px;max-width:500px;max-height:80vh;overflow-y:auto}
+#help-box h2{color:var(--accent);margin-bottom:12px;font-size:18px}
+#help-box h3{color:var(--text);margin:12px 0 6px;font-size:14px}
+#help-box p,#help-box li{color:var(--dim);font-size:12px;line-height:1.5}
+#help-box ul{padding-left:16px}
+#help-box button{margin-top:12px;padding:6px 16px;background:var(--accent);color:#0a0e17;border:none;border-radius:3px;cursor:pointer;font-weight:600}
+#start-screen{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#start-screen h1{font-size:36px;color:var(--accent);letter-spacing:3px;margin-bottom:4px}
+#start-screen .subtitle{color:var(--dim);font-size:14px;margin-bottom:32px}
+#start-screen .faction-select{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:24px}
+#start-screen .faction-btn{padding:8px 16px;background:var(--panel);border:2px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;font-size:12px;transition:all .2s}
+#start-screen .faction-btn:hover{border-color:var(--accent);background:#1a2340}
+#start-screen .faction-btn.selected{border-color:var(--accent);background:#1a5276}
+#start-screen .start-btn{padding:10px 32px;background:var(--accent);color:#0a0e17;border:none;border-radius:4px;font-size:16px;font-weight:700;cursor:pointer}
+#start-screen .start-btn:hover{opacity:.85}
+#tooltip{position:absolute;background:var(--panel);border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;z-index:15;display:none;pointer-events:none;max-width:200px}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:#2a3f60;border-radius:3px}
+@media(max-width:768px){#sidebar{width:200px}#event-panel{right:200px;width:auto}}
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="top-bar">
+    <span class="title">⬡ ECLIPSE PROTOCOL</span>
+    <span class="stat">Turn: <span id="turn-num">1</span></span>
+    <span class="stat">Phase: <span id="phase-ind" class="phase-indicator phase-explore">Explore</span></span>
+    <span class="stat" id="speed-controls"><button onclick="G.setSpeed(0)" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 6px;cursor:pointer;border-radius:2px;font-size:10px">⏸</button><button onclick="G.setSpeed(1)" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 6px;cursor:pointer;border-radius:2px;font-size:10px">▶</button><button onclick="G.setSpeed(2)" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 6px;cursor:pointer;border-radius:2px;font-size:10px">▶▶</button></span>
+    <span class="stat" style="margin-left:auto"><button onclick="G.toggleTech()" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 8px;cursor:pointer;border-radius:2px;font-size:10px">🔬 Tech</button><button onclick="G.toggleDiplomacy()" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 8px;cursor:pointer;border-radius:2px;font-size:10px">🤝 Diplomacy</button><button onclick="G.toggleHelp()" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 8px;cursor:pointer;border-radius:2px;font-size:10px">❓</button><button onclick="G.saveGame()" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 8px;cursor:pointer;border-radius:2px;font-size:10px">💾 Save</button><button onclick="G.loadGame()" style="background:none;border:1px solid #2a3f60;color:#c8d6e5;padding:1px 8px;cursor:pointer;border-radius:2px;font-size:10px">📂 Load</button></span>
+  </div>
+  <div id="main">
+    <div id="canvas-wrap"><canvas id="galaxy-canvas"></canvas><canvas id="minimap"></canvas></div>
+    <div id="sidebar">
+      <div class="faction-header"><div class="dot" id="player-dot"></div><span class="name" id="player-name">Player</span></div>
+      <div class="section"><h3>Resources</h3><div id="resources"></div></div>
+      <div class="section"><h3>Factions</h3><div id="faction-list"></div></div>
+      <div class="section"><h3>Fleet</h3><div id="fleet-info"></div></div>
+      <div class="section"><h3>Stability</h3><div id="stability-info"></div></div>
+      <div class="section"><h3>Inflation</h3><div id="inflation-info"></div></div>
+    </div>
+  </div>
+  <div id="system-panel"></div>
+  <div id="event-panel"></div>
+  <div id="tech-panel"><div class="section" style="padding-top:12px"><h3>Research</h3><div id="tech-list"></div></div></div>
+  <div id="diplomacy-panel"><h2 style="color:var(--accent);margin-bottom:12px">Diplomacy</h2><div id="diplomacy-list"></div></div>
+  <div id="combat-overlay"><canvas id="combat-canvas"></canvas><div id="combat-info"></div></div>
+  <div id="combat-log"></div>
+  <div id="tooltip"></div>
+  <div id="help-overlay"><div id="help-box"><h2>Eclipse Protocol</h2><h3>The Hero Loop</h3><ul><li><b>Explore</b> — Send scouts to discover anomalies, make first contact with alien civilizations</li><li><b>Expand</b> — Colonize new systems, manage growth vs stability</li><li><b>Exploit</b> — Trade with allies, spy on rivals, sabotage supply chains</li><li><b>Exterminate</b> — War is inevitable. How you fight defines your legacy.</li></ul><h3>Controls</h3><ul><li><b>Click</b> system to select it</li><li><b>Scroll</b> to zoom, <b>drag</b> to pan the galaxy map</li><li><b>T</b> toggle tech tree, <b>D</b> toggle diplomacy, <b>H</b> toggle help</li><li><b>Space</b> end turn / advance phase</li></ul><h3>Ship Counters</h3><p>Scout → countered by Fighters | Fighter → countered by Destroyers | Destroyer → countered by Battleships | Cruiser → countered by Bombers | Battleship → countered by Bombers & Swarm | Bomber → countered by Fighters/Destroyers | Carrier → countered by Bombers | Swarm → countered by Area damage (Bombers)</p><h3>Terrain</h3><ul><li>Asteroid Fields: -20% accuracy, +30% Scout speed</li><li>Nebulae: -40% range, sensors disabled</li><li>Black Holes: +50% damage taken, ships can be pulled in</li></ul><button onclick="G.toggleHelp()">Close</button></div></div>
+  <div id="start-screen"><h1>ECLIPSE PROTOCOL</h1><p class="subtitle">4X Space Empire Builder</p><div id="faction-select" class="faction-select"></div><button class="start-btn" onclick="G.startGame()">Begin Conquest</button></div>
+</div>
+
+<script>
+// ============================================================
+// ECLIPSE PROTOCOL — Full 4X Space Empire Builder
+// Single-file HTML5 game. Vanilla JS, no dependencies.
+// ============================================================
+
+// --- SEEDED PRNG (Mulberry32) ---
+function mulberry32(seed){let t=seed+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}
+function hashStr(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return Math.abs(h)}
+
+// --- CONSTANTS ---
+const SYSTEM_TYPES=['gas_giant','asteroid_belt','habitable','nebula','anomaly','black_hole','dead_world','ice_world','lava_world','ocean_world'];
+const SYSTEM_COLORS={gas_giant:'#e67e22',asteroid_belt:'#95a5a6',habitable:'#2ecc71',nebula:'#9b59b6',black_hole:'#2c3e50',dead_world:'#7f8c8d',ice_world:'#aed6f1',lava_world:'#e74c3c',ocean_world:'#3498db',anomaly:'#f1c40f'};
+const SHIP_CLASSES={scout:{name:'Scout',hp:30,atk:5,def:2,spd:8,rng:1,cost:{minerals:10,energy:5},ability:'recon',counters:['fighter'],countered_by:[]},
+fighter:{name:'Fighter',hp:50,atk:12,def:4,spd:7,rng:1,cost:{minerals:20,energy:15},ability:'dogfight',counters:['scout'],countered_by:['destroyer']},
+destroyer:{name:'Destroyer',hp:100,atk:20,def:10,spd:5,rng:2,cost:{minerals:60,energy:40},ability:'torpedo',counters:['fighter'],countered_by:['battleship']},
+cruiser:{name:'Cruiser',hp:150,atk:25,def:15,spd:4,rng:2,cost:{minerals:100,energy:80},ability:'barrage',counters:[],countered_by:['bomber']},
+battleship:{name:'Battleship',hp:300,atk:40,def:25,spd:2,rng:3,cost:{minerals:200,energy:150},ability:'supercharge',counters:['destroyer'],countered_by:['bomber','swarm']},
+bomber:{name:'Bomber',hp:60,atk:35,def:5,spd:6,rng:2,cost:{minerals:40,energy:60},ability:'armor_piercing',counters:['cruiser','battleship'],countered_by:['fighter','destroyer']},
+carrier:{name:'Carrier',hp:180,atk:15,def:20,spd:3,rng:2,cost:{minerals:150,energy:120},ability:'deploy_fighters',counters:[],countered_by:['bomber']},
+swarm:{name:'Swarm',hp:15,atk:8,def:1,spd:9,rng:1,cost:{minerals:5,energy:2},ability:'overwhelm',counters:[],countered_by:['bomber']}};
+
+const TECH_PATHS=['engineering','weapons','defense','science','diplomacy','biology','economy','espionage'];
+const TECH_PATH_COLORS={engineering:'#3498db',weapons:'#e74c3c',defense:'#f39c12',science:'#9b59b6',diplomacy:'#2ecc71',biology:'#1abc9c',economy:'#f1c40f',espionage:'#2c3e50'};
+
+// --- 200+ TECH TREE ---
+function generateTechTree(){
+const techs=[];let id=0;
+const entries=[
+// Engineering (25)
+['basic_hull','Basic Hull Construction',10,30,'engineering',['none'],['hull+20%']],
+['advanced_alloys','Advanced Alloys',40,80,'engineering',['basic_hull'],['hull+40%']],
+['quantum_drive','Quantum Drive',80,150,'engineering',['advanced_alloys'],['speed+2']],
+['ftl_engine','FTL Engine',150,300,'engineering',['quantum_drive'],['unlock_ftl']],
+['warp_strike','Warp Strike',250,500,'engineering',['ftl_engine'],['instant_deploy']],
+['shield_gen','Shield Generator',60,120,'engineering',['advanced_alloys'],['unlock_shields']],
+['nano_repair','Nano-Repair Systems',120,250,'engineering',['shield_gen'],['regen+5%']],
+['cloaking_dev','Cloaking Device',200,400,'engineering',['nano_repair'],['stealth']],
+['hyperdrive','Hyperdrive',350,700,'engineering',['warp_strike'],['range+3']],
+['terraforming','Terraforming',180,350,'engineering',['ftl_engine'],['habitable_bonus']],
+['orbital_station','Orbital Station',90,180,'engineering',['basic_hull'],['defense+15']],
+['mining_drone','Mining Drones',40,70,'engineering',['basic_hull'],['mining+30%']],
+['refinery','Refinery',70,140,'engineering',['mining_drone'],['processing+25%']],
+['factory','Factory',130,260,'engineering',['refinery'],['production+40%']],
+['shipyard','Shipyard',200,400,'engineering',['factory'],['unlock_ship_classes']],
+['arsenal','Arsenal',160,320,'engineering',['shipyard'],['fleet_power+20%']],
+['dock','Dock',100,200,'engineering',['shipyard'],['repair+50%']],
+['habitat','Habitat Module',80,160,'engineering',['terraforming'],['pop_capacity+50%']],
+['colony_pod','Colony Pod',60,120,'engineering',['ftl_engine'],['colonize_speed']],
+['gate_builder','Gate Builder',300,600,'engineering',['ftl_engine'],['build_gates']],
+['wormhole','Wormhole Tech',500,1000,'engineering',['gate_builder'],['instant_travel']],
+['dark_matter','Dark Matter Engine',400,800,'engineering',['hyperdrive'],['energy+100%']],
+['antimatter','Antimatter Reactor',350,700,'engineering',['dark_matter'],['atk+30%']],
+['plasma_cannon','Plasma Cannon',280,560,'engineering',['antimatter'],['range+1']],
+['gravity_manip','Gravity Manipulation',450,900,'engineering',['dark_matter'],['terrain_negate']],
+// Weapons (25)
+['plasma_gun','Plasma Gun',30,60,'weapons',['none'],['atk+5']],
+['laser_array','Laser Array',60,120,'weapons',['plasma_gun'],['range+1']],
+['missile_battery','Missile Battery',90,180,'weapons',['laser_array'],['atk+15']],
+['ion_cannon','Ion Cannon',120,240,'weapons',['missile_battery'],['stun']],
+['disruptor','Disruptor Beam',180,360,'weapons',['ion_cannon'],['def_negate']],
+['plasma_torpedo','Plasma Torpedoes',150,300,'weapons',['missile_battery'],['armor_pierce']],
+['photon_bomb','Photon Bomb',250,500,'weapons',['disruptor'],['aoe_damage']],
+['singularity','Singularity Weapon',400,800,'weapons',['photon_bomb'],['system_destroy']],
+['neutron_pulse','Neutron Pulse',200,400,'weapons',['disruptor'],['shield_break']],
+['EMP_burst','EMP Burst',100,200,'weapons',['ion_cannon'],['disable_ships']],
+['kinetic_rail','Kinetic Railgun',130,260,'weapons',['laser_array'],['penetration']],
+['vaporizer','Vaporizer',300,600,'weapons',['kinetic_rail'],['instant_kill']],
+['plasma_net','Plasma Net',80,160,'weapons',['plasma_gun'],['capture']],
+['sonic_warhead','Sonic Warhead',170,340,'weapons',['vaporizer'],['crew_damage']],
+['bio_weapon','Bio-Weapon',220,440,'weapons',['sonic_warhead'],['pop_damage']],
+['nano_swarm','Nano-Swarm',350,700,'weapons',['vaporizer'],['drain']],
+['gravity_well','Gravity Well',400,800,'weapons',['singularity'],['trap']],
+['pulsar_beam','Pulsar Beam',280,560,'weapons',['neutron_pulse'],['chain_damage']],
+['quantum_lance','Quantum Lance',500,1000,'weapons',['pulsar_beam'],['ignore_def']],
+['annihilator','Annihilator',600,1200,'weapons',['quantum_lance'],['planet_destroy']],
+['death_ray','Death Ray',800,1600,'weapons',['annihilator'],['system_annihilate']],
+['omega_weapon','Omega Weapon',1000,2000,'weapons',['death_ray'],['galaxy_threat']],
+['fleet_coord','Fleet Coordination',50,100,'weapons',['plasma_gun'],['fleet_atk+20%']],
+['targeting_sys','Targeting System',140,280,'weapons',['fleet_coord'],['accuracy+30%']],
+['battle_computer','Battle Computer',250,500,'weapons',['targeting_sys'],['first_strike']],
+// Defense (25)
+['basic_armor','Basic Armor',20,40,'defense',['none'],['def+5']],
+['composite_armor','Composite Armor',60,120,'defense',['basic_armor'],['def+15']],
+['reactive_armor','Reactive Armor',100,200,'defense',['composite_armor'],['explosion_resist']],
+['energy_shield','Energy Shield',120,240,'defense',['reactive_armor'],['shield+30%']],
+['phase_shield','Phase Shield',200,400,'defense',['energy_shield'],['phase_dodge']],
+['force_field','Force Field',300,600,'defense',['phase_shield'],['absorb']],
+['point_defense','Point Defense',80,160,'defense',['basic_armor'],['anti_missile']],
+['cloak_field','Cloak Field',180,360,'defense',['force_field'],['evasion+40%']],
+['hull_regen','Hull Regeneration',150,300,'defense',['point_defense'],['regen+10%']],
+['emergency_shield','Emergency Shield',250,500,'defense',['hull_regen'],['last_stand']],
+['armor_weave','Armor Weave',110,220,'defense',['composite_armor'],['vs_physical+50%']],
+['plasma_barrier','Plasma Barrier',230,460,'defense',['armor_weave'],['vs_energy+50%']],
+['quantum_armor','Quantum Armor',380,760,'defense',['plasma_barrier'],['random_teleport']],
+['nano_armor','Nano-Armor',320,640,'defense',['hull_regen'],['self_repair']],
+['dampener','Dampener',160,320,'defense',['energy_shield'],['damage_reduction']],
+['absorber','Absorber',280,560,'defense',['dampener'],['convert_damage']],
+['reflector','Reflector',350,700,'defense',['absorber'],['reflect_shots']],
+['void_shell','Void Shell',450,900,'defense',['reflector'],['nullify_aoe']],
+['temporal_shield','Temporal Shield',500,1000,'defense',['void_shell'],['time_stop']],
+['dimensional','Dimensional Shield',650,1300,'defense',['temporal_shield'],['phase_out']],
+['ultimate_armor','Ultimate Armor',800,1600,'defense',['dimensional'],['invincible_turn']],
+['fleet_shield','Fleet Shield',200,400,'defense',['energy_shield'],['shared_shield']],
+['scan_jammer','Scan Jammer',130,260,'defense',['point_defense'],['anti_scan']],
+['decoy','Decoy System',90,180,'defense',['point_defense'],['decoy_launch']],
+['repair_bay','Repair Bay',170,340,'defense',['hull_regen'],['fleet_repair']],
+// Science (25)
+['basic_science','Basic Research',10,20,'science',['none'],['research+20%']],
+['advanced_lab','Advanced Lab',40,80,'science',['basic_science'],['research+40%']],
+['quantum_comp','Quantum Computer',80,160,'science',['advanced_lab'],['research+60%']],
+['ai_assist','AI Research Assist',150,300,'science',['quantum_comp'],['auto_research']],
+['anomaly_scan','Anomaly Scanner',100,200,'science',['advanced_lab'],['discover_anomalies']],
+['deep_scan','Deep Scanner',200,400,'science',['anomaly_scan'],['long_range_scan']],
+['telepathy','Telepathic Communication',300,600,'science',['ai_assist'],['diplomacy_bonus']],
+['time_study','Time Study',400,800,'science',['telepathy'],['precognition']],
+['matter_trans','Matter Transducer',250,500,'science',['quantum_comp'],['resource_convert']],
+['energy_siphon','Energy Siphon',180,360,'science',['matter_trans'],['steal_energy']],
+['bio_scan','Bio Scanner',120,240,'science',['anomaly_scan'],['species_detect']],
+['xeno_lang','Xenolinguistics',200,400,'science',['bio_scan'],['first_contact']],
+['psionic','Psionic Research',350,700,'science',['telepathy'],['mind_control']],
+['dark_matter_res','Dark Matter Research',450,900,'science',['quantum_comp'],['unlock_dark_matter']],
+['warp_res','Warp Research',300,600,'science',['quantum_comp'],['warp_tech']],
+['gravity_res','Gravity Research',400,800,'science',['warp_res'],['gravity_tech']],
+['quantum_ent','Quantum Entanglement',500,1000,'science',['warp_res'],['instant_comm']],
+['singularity_res','Singularity Research',600,1200,'science',['gravity_res'],['singularity_tech']],
+['unified_field','Unified Field Theory',800,1600,'science',['singularity_res'],['omni_tech']],
+['transcendence','Transcendence',1500,3000,'science',['unified_field'],['win_condition']],
+['scan_array','Scan Array',60,120,'science',['basic_science'],['map_reveal']],
+['data_mining','Data Mining',100,200,'science',['scan_array'],['intel_gather']],
+['reverse_eng','Reverse Engineering',250,500,'science',['data_mining'],['steal_tech']],
+['prototype','Prototype Lab',350,700,'science',['reverse_eng'],['custom_tech']],
+['singularity_ai','Singularity AI',700,1400,'science',['unified_field'],['super_ai']],
+// Diplomacy (25)
+['embassy','Embassy',20,40,'diplomacy',['none'],['rel+5']],
+['trade_agree','Trade Agreement',60,120,'diplomacy',['embassy'],['trade_route']],
+['non_aggr','Non-Aggression Pact',100,200,'diplomacy',['trade_agree'],['peace']],
+['alliance','Alliance',150,300,'diplomacy',['non_aggr'],['military_alliance']],
+['federation','Federation',300,600,'diplomacy',['alliance'],['super_alliance']],
+['cultural_exch','Cultural Exchange',80,160,'diplomacy',['embassy'],['influence']],
+['propaganda','Propaganda',120,240,'diplomacy',['cultural_exch'],['rel_manip']],
+['espionage_net','Espionage Network',200,400,'diplomacy',['propaganda'],['spy_network']],
+['black_ops','Black Operations',350,700,'diplomacy',['espionage_net'],['sabotage']],
+['peace_treaty','Peace Treaty',180,360,'diplomacy',['non_aggr'],['end_war']],
+['resource_share','Resource Sharing',140,280,'diplomacy',['trade_agree'],['shared_resources']],
+['tech_share','Tech Sharing',250,500,'diplomacy',['resource_share'],['shared_tech']],
+['joint_mil','Joint Military',300,600,'diplomacy',['alliance'],['shared_fleet']],
+['vassal','Vassal State',400,800,'diplomacy',['federation'],['subjugate']],
+['annex','Annexation',500,1000,'diplomacy',['vassal'],['absorb']],
+['galactic_council','Galactic Council',600,1200,'diplomacy',['federation'],['galactic_gov']],
+['unified_command','Unified Command',450,900,'diplomacy',['joint_mil'],['fleet_union']],
+['economic_union','Economic Union',350,700,'diplomacy',['resource_share'],['trade_boom']],
+['cultural_heg','Cultural Hegemony',500,1000,'diplomacy',['propaganda'],['soft_power']],
+['psych_ops','Psychological Operations',400,800,'diplomacy',['black_ops'],['fear']],
+['diplomatic_imm','Diplomatic Immunity',200,400,'diplomacy',['embassy'],['safe_travel']],
+['summit','Summit',150,300,'diplomacy',['embassy'],['negotiate']],
+['sanctions','Sanctions',250,500,'diplomacy',['non_aggr'],['economic_war']],
+['blockade_treaty','Blockade Treaty',300,600,'diplomacy',['sanctions'],['legal_blockade']],
+['peace_keeper','Peacekeeper Force',350,700,'diplomacy',['alliance'],['peace_enforce']],
+// Biology (25)
+['agritech','Agritech',10,20,'biology',['none'],['food+30%']],
+['gene_mod','Gene Modification',50,100,'biology',['agritech'],['pop_growth']],
+['bio_armor','Bio-Armor',80,160,'biology',['gene_mod'],['natural_def']],
+['rapid_growth','Rapid Growth',120,240,'biology',['gene_mod'],['colonize_fast']],
+['adapt_gen','Adaptive Genetics',200,400,'biology',['bio_armor'],['terrain_resist']],
+['hybrid','Hybrid Species',300,600,'biology',['adapt_gen'],['versatile_pop']],
+['telepathic','Telepathic Species',400,800,'biology',['hybrid'],['mind_link']],
+['immortal','Immortal Species',600,1200,'biology',['telepathic'],['no_death']],
+['bio_ship','Bio-Ship',150,300,'biology',['gene_mod'],['living_fleet']],
+['spore_cloud','Spore Cloud',180,360,'biology',['bio_ship'],['biological_aoe']],
+['plague','Plague Vector',250,500,'biology',['spore_cloud'],['bio_warfare']],
+['healing_spray','Healing Spray',100,200,'biology',['agritech'],['pop_heal']],
+['extremophile','Extremophile',130,260,'biology',['adapt_gen'],['survive_anywhere']],
+['symbiosis','Symbiosis',200,400,'biology',['hybrid'],['mutual_benefit']],
+['hive_mind','Hive Mind',500,1000,'biology',['telepathic'],['unified_action']],
+['genetic_bank','Genetic Bank',160,320,'biology',['gene_mod'],['pop_reserve']],
+['bio_reactor','Bio-Reactor',220,440,'biology',['hybrid'],['bio_energy']],
+['terra_spores','Terra Spores',350,700,'biology',['extremophile'],['planet_make']],
+['evolution_boost','Evolution Boost',450,900,'biology',['hive_mind'],['rapid_evolve']],
+['bio_fortress','Bio-Fortress',400,800,'biology',['bio_armor'],['living_defense']],
+['neural_link','Neural Link',300,600,'biology',['hive_mind'],['fleet_bond']],
+['chromosome','Chromosome Edit',250,500,'biology',['gene_mod'],['custom_traits']],
+['bio_scan_tech','Bio-Scan Tech',140,280,'biology',['agritech'],['disease_detect']],
+['regeneration','Regeneration',280,560,'biology',['healing_spray'],['pop_regen']],
+['apex_predator','Apex Predator',700,1400,'biology',['immortal'],['dominant_species']],
+// Economy (25)
+['trade_post','Trade Post',10,20,'economy',['none'],['trade+20%']],
+['market','Market',40,80,'economy',['trade_post'],['trade+40%']],
+['exchange','Exchange',80,160,'economy',['market'],['price_control']],
+['bank','Bank',120,240,'economy',['exchange'],['interest']],
+['corporation','Corporation',200,400,'economy',['bank'],['monopoly']],
+['cartel','Cartel',350,700,'economy',['corporation'],['price_manip']],
+['black_market','Black Market',300,600,'economy',['cartel'],['illegal_trade']],
+['resource_pool','Resource Pool',150,300,'economy',['market'],['shared_supply']],
+['inflation_ctrl','Inflation Control',250,500,'economy',['exchange'],['stabilize']],
+['subsidy','Subsidy',180,360,'economy',['bank'],['pop_happy']],
+['tariff','Tariff',130,260,'economy',['trade_post'],['import_tax']],
+['embargo','Embargo',280,560,'economy',['tariff'],['trade_block']],
+['sanction_econ','Economic Sanctions',350,700,'economy',['embargo'],['crash_econ']],
+['trade_war','Trade War',450,900,'economy',['sanction_econ'],['destroy_econ']],
+['resource_mine','Resource Mine',60,120,'economy',['trade_post'],['mine+50%']],
+['refinery_tech','Refinery Tech',100,200,'economy',['resource_mine'],['process+40%']],
+['factory_tech','Factory Tech',160,320,'economy',['refinery_tech'],['produce+50%']],
+['logistics','Logistics',200,400,'economy',['factory_tech'],['supply_chain']],
+['just_in_time','Just-in-Time',300,600,'economy',['logistics'],['efficiency+60%']],
+['quantum_eco','Quantum Economy',500,1000,'economy',['just_in_time'],['post_scarcity']],
+['debt_trap','Debt Trap',250,500,'economy',['bank'],['enslave_econ']],
+['gold_standard','Gold Standard',350,700,'economy',['exchange'],['stable_currency']],
+['crypto','Crypto Economy',400,800,'economy',['gold_standard'],['untraceable']],
+['resource_fut','Resource Futures',300,600,'economy',['exchange'],['speculate']],
+['monopoly_law','Monopoly Law',500,1000,'economy',['corporation'],['market_dom']],
+// Espionage (25)
+['spy','Spy',10,20,'espionage',['none'],['intel+10%']],
+['agent','Agent',40,80,'espionage',['spy'],['deep_cover']],
+['saboteur','Saboteur',80,160,'espionage',['agent'],['destroy_facility']],
+['assassin','Assassin',150,300,'espionage',['saboteur'],['eliminate_leader']],
+['mole','Mole',200,400,'espionage',['agent'],['inside_info']],
+['counter_intel','Counter-Intelligence',120,240,'espionage',['spy'],['detect_spies']],
+['propaganda_op','Propaganda Operation',180,360,'espionage',['mole'],['turn_pop']],
+['false_flag','False Flag',300,600,'espionage',['assassin'],['frame_rival']],
+['cyber_war','Cyber Warfare',250,500,'espionage',['counter_intel'],['hack_systems']],
+['data_theft','Data Theft',200,400,'espionage',['cyber_war'],['steal_tech']],
+['deep_fake','Deep Fake',350,700,'espionage',['data_theft'],['manipulate']],
+['blackmail','Blackmail',280,560,'espionage',['mole'],['coerce']],
+['extraction','Extraction',400,800,'espionage',['assassin'],['capture_scientist']],
+['infiltrate','Infiltration',350,700,'espionage',['deep_cover'],['penetrate']],
+['psycho_hist','Psychohistory',500,1000,'espionage',['deep_fake'],['predict_future']],
+['omniscience','Omniscience',800,1600,'espionage',['psycho_hist'],['know_all']],
+['shadow_gov','Shadow Government',450,900,'espionage',['infiltrate'],['rule_from_shadow']],
+['puppet','Puppet Leader',400,800,'espionage',['blackmail'],['control_leader']],
+['code_break','Code Breaking',300,600,'espionage',['cyber_war'],['decrypt']],
+['stealth_ops','Stealth Operations',350,700,'espionage',['infiltrate'],['undetectable']],
+['dead_drop','Dead Drop',150,300,'espionage',['spy'],['secure_comm']],
+['surveillance','Surveillance',250,500,'espionage',['counter_intel'],['watch_all']],
+['agent_network','Agent Network',500,1000,'espionage',['omniscience'],['global_spies']],
+['ultimate_spy','Ultimate Spy',700,1400,'espionage',['agents_network'],['perfect_infiltration']],
+['mind_control_t','Mind Control Tech',600,1200,'espionage',['omniscience'],['control_factions']]
+];
+for(const e of entries){techs.push({id:id++,name:e[0],displayName:e[1],cost:e[2],researchTime:e[3],path:e[4],prereqs:e[5],effect:e[6]})}
+return techs;
+}
+
+// --- FACTION DEFINITIONS ---
+const FACTION_DEFS=[
+{name:'Terran Ascendancy',color:'#3498db',personality:'diplomatic',traits:{expansion:0.4,trade:0.9,military:0.5,research:0.7,espionage:0.3}},
+{name:'Krynn Dominion',color:'#e74c3c',personality:'militaristic',traits:{expansion:0.9,trade:0.3,military:0.95,research:0.4,espionage:0.2}},
+{name:'Veln Collective',color:'#9b59b6',personality:'technological',traits:{expansion:0.3,trade:0.4,military:0.3,research:1.0,espionage:0.5}},
+{name:'Oshiri Trade Federation',color:'#f1c40f',personality:'economic',traits:{expansion:0.5,trade:1.0,military:0.2,research:0.5,espionage:0.6}},
+{name:'Zhar Imperium',color:'#2c3e50',personality:'xenophobic',traits:{expansion:0.7,trade:0.2,military:0.8,research:0.3,espionage:0.4}},
+{name:'Nyx Pirates',color:'#e67e22',personality:'pirate',traits:{expansion:0.6,trade:0.1,military:0.7,research:0.2,espionage:0.8}},
+{name:'Aethel Guard',color:'#1abc9c',personality:'isolationist',traits:{expansion:0.2,trade:0.5,military:0.6,research:0.6,espionage:0.1}}
+];
+
+// --- GAME STATE ---
+let G={
+turn:1,phase:'explore',speed:0,tickInterval:null,
+playerFactionId:0,selectedSystem:null,combatActive:false,
+galaxy:[],factions:[],techs:[],events:[],playerTechs:new Set(),
+cam:{x:0,y:0,zoom:1},dragging:false,dragStart:{x:0,y:0},camStart:{x:0,y:0},
+lastTick:0,combatState:null,
+// --- INITIALIZATION ---
+init(){this.generateTechTree();this.buildStartScreen()},
+generateTechTree(){this.techs=generateTechTree()},
+
+buildStartScreen(){
+const c=document.getElementById('faction-select');
+FACTION_DEFS.forEach((f,i)=>{
+const b=document.createElement('button');b.className='faction-btn';b.textContent=f.name;b.style.borderColor=f.color;
+b.onclick=()=>{document.querySelectorAll('.faction-btn').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');this.playerFactionId=i};
+if(i===0)b.classList.add('selected');c.appendChild(b)})},
+
+startGame(){
+document.getElementById('start-screen').style.display='none';
+this.generateGalaxy();
+this.initFactions();
+this.initPlayerResources();
+this.renderSidebar();
+this.setupInput();
+this.gameLoop(0);
+this.saveGame()},
+
+// --- GALAXY GENERATION ---
+generateGalaxy(){
+const rng=mulberry32(Date.now());
+this.galaxy=[];
+const arms=4,armLength=3000,armSpread=200;
+const armAngles=[0,Math.PI/2,Math.PI,3*Math.PI/2];
+const targetSystems=10500;
+
+// Generate systems along spiral arms
+for(let i=0;i<targetSystems;i++){
+const armIdx=Math.floor(rng()*arms);
+const angle=armAngles[armIdx]+rng()*0.8-0.4;
+const dist=rng()*armLength+50;
+const spread=(rng()-0.5)*armSpread*(1+dist/armLength*0.5);
+const x=Math.cos(angle)*dist+spread*(rng()-0.5);
+const y=Math.sin(angle)*dist+spread*(rng()-0.5);
+
+// Higher density near center
+const centerDist=Math.sqrt(x*x+y*y);
+if(centerDist>armLength+500)continue;
+
+const typeRoll=rng();
+let type;
+if(typeRoll<0.15)type='habitable';
+else if(typeRoll<0.30)type='gas_giant';
+else if(typeRoll<0.42)type='asteroid_belt';
+else if(typeRoll<0.50)type='nebula';
+else if(typeRoll<0.56)type='anomaly';
+else if(typeRoll<0.60)type='black_hole';
+else if(typeRoll<0.72)type='dead_world';
+else if(typeRoll<0.82)type='ice_world';
+else if(typeRoll<0.90)type='lava_world';
+else type='ocean_world';
+
+const resources={
+minerals:Math.floor(50+rng()*200*(type==='asteroid_belt'?3:type==='gas_giant'?2:1)),
+energy:Math.floor(30+rng()*150*(type==='gas_giant'?3:type==='nebula'?2:1)),
+food:Math.floor(40+rng()*180*(type==='habitable'?3:type==='ocean_world'?2:1)),
+tech:Math.floor(10+rng()*80*(type==='anomaly'?4:type==='nebula'?2:1))
+};
+
+const name=this.generateSystemName(rng);
+this.galaxy.push({id:i,name,x,y,type,resources,population:0,maxPop:type==='habitable'?500:type==='ocean_world'?300:100,owner:null,gates:[],discovered:false,buildings:[],fleetId:null});
+}
+
+// Generate jump gates (connect nearby systems)
+const gateDist=250;
+for(let i=0;i<this.galaxy.length;i++){
+const a=this.galaxy[i];
+let connections=0;
+for(let j=i+1;j<this.galaxy.length&&connections<4;j++){
+const b=this.galaxy[j];
+const d=Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);
+if(d<gateDist&&rng()<0.6){
+a.gates.push(j);b.gates.push(i);connections++;
+}}
+// Ensure connectivity: connect isolated systems to nearest
+if(a.gates.length===0&&this.galaxy.length>1){
+let nearest=-1,nearestDist=Infinity;
+for(let j=0;j<this.galaxy.length;j++){
+if(j===i)continue;
+const d=Math.sqrt((a.x-this.galaxy[j].x)**2+(a.y-this.galaxy[j].y)**2);
+if(d<nearestDist){nearestDist=d;nearest=j}
+}
+a.gates.push(nearest);this.galaxy[nearest].gates.push(i);}}
+
+// Player starts with 2 systems near center
+const playerSystems=this.galaxy.filter(s=>s.type==='habitable'&&Math.sqrt(s.x*s.x+s.y*s.y)<800);
+const ps=playerSystems.slice(0,2).map(s=>({...s}));
+// Actually use indices from galaxy array
+const pIdx=playerSystems.slice(0,2).map(s=>this.galaxy.indexOf(s));
+pIdx.forEach(idx=>{this.galaxy[idx].owner=0;this.galaxy[idx].discovered=true;this.galaxy[idx].population=100});
+// Discover connected systems
+const queue=[...pIdx];const seen=new Set(queue);
+while(queue.length){const cur=queue.shift();for(const g of this.galaxy[cur].gates){if(!seen.has(g)){seen.add(g);this.galaxy[g].discovered=true;queue.push(g)}}}},
+
+generateSystemName(rng){
+const prefixes=['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta','Iota','Kappa','Lambda','Mu','Nu','Xi','Omicron','Pi','Rho','Sigma','Tau','Upsilon','Phi','Chi','Psi','Omega','Proxima','Cygni','Lyrae','Aquilae','Corvi','Draconis','Eridani','Fomalhauti','Gacrux','Hadar','Izar','Kaus','Luyten','Merak','Nashira','Pulcherrima','Quamash','Rastaban','Sadr','Toliman','Unukalhai','Vindemiatrix','Wezen','Xanadu','Yed Prior','Zaurak'];
+const suffixes=['Prime','Major','Minor','System','Station','Outpost','Colony','Haven','Reach','Expanse','Void','Nexus','Core','Edge','Frontier','Deep','Bright','Dark','Silent','Wild','Ancient','New','Old','High','Low','Great','Small','Lost','Found','Hidden','Open'];
+return prefixes[Math.floor(rng()*prefixes.length)]+' '+suffixes[Math.floor(rng()*suffixes.length)];},
+
+// --- FACTIONS ---
+initFactions(){
+this.factions=FACTION_DEFS.map((f,i)=>({
+id:i,name:f.name,color:f.color,personality:f.personality,traits:{...f.traits},
+relations:{},memory:[],techs:new Set(),ships:[],systems:[],alliances:[],
+atWarWith:[],resources:{minerals:200,energy:150,food:100,tech:50},
+stability:80,reputation:50,warsFought:0,alliancesMade:0,betrayalsCommitted:0
+}));
+// Init relations
+for(let i=0;i<this.factions.length;i++){
+this.factions[i].relations={};
+for(let j=0;j<this.factions.length;j++){
+if(i===j)continue;
+const compat=this.relationCompat(this.factions[i],this.factions[j]);
+this.factions[i].relations[j]=compat}}},
+
+relationCompat(a,b){
+const pa=a.traits,pb=b.traits;
+let base=0;
+if(a.personality==='diplomatic'&&b.personality==='economic')base=30;
+else if(a.personality==='militaristic'&&b.personality==='xenophobic')base=20;
+else if(a.personality==='militaristic'&&b.personality==='diplomatic')base=-10;
+else if(a.personality==='pirate'&&b.personality!=='pirate')base=-40;
+else if(a.personality==='isolationist'&&b.personality==='expansionist')base=-20;
+else if(a.personality==='technological'&&b.personality==='technological')base=25;
+else base=Math.floor((rng()-0.5)*30);
+return Math.max(-100,Math.min(100,base))},
+
+initPlayerResources(){
+const pf=this.factions[0];pf.resources={minerals:300,energy:200,food:150,tech:100};pf.stability=90},
+
+// --- ECONOMY ENGINE ---
+updateEconomy(){
+const pf=this.factions[this.playerFactionId];
+let totalMinerals=0,totalEnergy=0,totalFood=0;
+const playerSystems=this.galaxy.filter(s=>s.owner===this.playerFactionId);
+
+// Production per system
+for(const sys of playerSystems){
+const mult=sys.buildings.includes('mine')?1.5:sys.buildings.includes('farm')?1.3:sys.buildings.includes('refinery')?1.4:1;
+const popFactor=Math.min(1,sys.population/200);
+totalMinerals+=Math.floor(sys.resources.minerals*mult*popFactor*0.1);
+totalEnergy+=Math.floor(sys.resources.energy*mult*popFactor*0.08);
+totalFood+=Math.floor(sys.resources.food*mult*popFactor*0.12);
+// Food consumption
+const foodCost=Math.floor(sys.population*0.05);
+totalFood-=foodCost;
+// Tech production from research buildings
+if(sys.buildings.includes('lab'))totalMinerals+=Math.floor(sys.resources.tech*0.05)}
+
+// Inflation check
+const inflation={minerals:1,energy:1,food:1};
+for(const f of this.factions){
+const controlledMin=this.galaxy.filter(s=>s.owner===f.id).reduce((a,s)=>a+s.resources.minerals,0);
+const totalM=this.galaxy.reduce((a,s)=>a+s.resources.minerals,0);
+if(totalM>0&&controlledMin/totalM>0.6)inflation.minerals=1+(controlledMin/totalM-0.6)*2;
+const controlledE=this.galaxy.filter(s=>s.owner===f.id).reduce((a,s)=>a+s.resources.energy,0);
+const totalE=this.galaxy.reduce((a,s)=>a+s.resources.energy,0);
+if(totalE>0&&controlledE/totalE>0.6)inflation.energy=1+(controlledE/totalE-0.6)*2;
+const controlledF=this.galaxy.filter(s=>s.owner===f.id).reduce((a,s)=>a+s.resources.food,0);
+const totalF=this.galaxy.reduce((a,s)=>a+s.resources.food,0);
+if(totalF>0&&controlledF/totalF>0.6)inflation.food=1+(controlledF/totalF-0.6)*2}
+
+pf.resources.minerals=Math.floor(totalMinerals*inflation.minerals);
+pf.resources.energy=Math.floor(totalEnergy*inflation.energy);
+pf.resources.food=Math.floor(totalFood*inflation.food);
+
+// Tech research
+const researchSpeed=pf.techs.size>0?1+pf.techs.size*0.2:0.5;
+const labBonus=playerSystems.filter(s=>s.buildings.includes('lab')).length*0.3;
+const techGain=Math.floor((pf.resources.tech+10)*researchSpeed*(1+labBonus)*0.1);
+if(techGain>0){
+const unrec=pf.techs.size<this.techs.length?this.techs.find(t=>!pf.techs.has(t.id)&&t.prereqs.every(p=>pf.techs.has(p))):null;
+if(unrec){unrec.researchTime-=techGain;if(unrec.researchTime<=0){pf.techs.add(unrec.id);this.addEvent('tech_complete',`Researched: ${unrec.displayName}`)}}}
+
+// Stability from food
+if(pf.resources.food<0){pf.stability=Math.max(0,pf.stability-2);if(pf.stability<20)this.addEvent('starvation',`Food shortage! Stability dropping. Systems may rebel.`)}
+else pf.stability=Math.min(100,pf.stability+0.5)},
+
+// --- DIPLOMACY AI ---
+updateAI(){
+for(let i=1;i<this.factions.length;i++){
+const f=this.factions[i];
+if(f.stability<10)continue; // collapsed
+
+// Check for civil war
+if(f.stability<20&&rng()<0.1){this.addEvent('civil_war',`${f.name} has collapsed into civil war!`);f.stability=10;continue}
+
+// AI decision making based on personality
+const roll=rng();
+if(f.traits.expansion>0.6&&roll<0.4){this.aiExpand(f)}
+else if(f.traits.trade>0.7&&roll<0.3){this.aiTrade(f)}
+else if(f.traits.military>0.7&&roll<0.3){this.aiMilitary(f)}
+else if(f.traits.research>0.7&&roll<0.3){this.aiResearch(f)}
+else if(roll<0.1){this.aiDiplomacy(f)}
+
+// Update relations based on proximity
+for(const other of this.factions){
+if(other.id===f.id)continue;
+const fSys=this.galaxy.filter(s=>s.owner===f.id);
+const oSys=this.galaxy.filter(s=>s.owner===other.id);
+let sharedBorder=false;
+for(const fs of fSys)for(const os of oSys){
+if(fs.gates.some(g=>this.galaxy[g].owner===other.id)){sharedBorder=true;break}}
+if(sharedBorder){f.relations[other.id]=Math.max(-100,f.relations[other.id]-2)}
+else{f.relations[other.id]=Math.min(100,f.relations[other.id]+1)}}
+
+// Alliance formation
+for(const [aid,rel] of Object.entries(f.relations)){
+const other=this.factions[parseInt(aid)];
+if(rel>60&&!f.alliances.includes(parseInt(aid))&&other.stability>30&&rng()<0.1){
+f.alliances.push(parseInt(aid));other.alliances.push(f.id);
+f.relations[parseInt(aid)]=Math.min(100,f.relations[parseInt(aid)]+20);
+other.relations[f.id]=Math.min(100,other.relations[f.id]+20);
+this.addEvent('alliance',`${f.name} and ${other.name} formed an alliance!`)}
+
+// War declaration
+if(rel<-50&&f.traits.military>0.5&&!f.atWarWith.includes(parseInt(aid))&&other.stability<60&&rng()<0.15){
+f.atWarWith.push(parseInt(aid));other.atWarWith.push(f.id);
+f.relations[parseInt(aid)]=-100;other.relations[f.id]=-100;
+f.warsFought++;this.addEvent('war',`${f.name} declared war on ${other.name}!`)}
+
+// Betrayal detection
+if(f.alliances.includes(parseInt(aid))&&f.atWarWith.includes(parseInt(aid))){
+f.betrayalsCommitted++;this.addEvent('betrayal',`${f.name} betrayed ${other.name}!`);
+for(const g of this.factions){if(g.id!==f.id&&g.id!==parseInt(aid)){g.relations[f.id]=Math.max(-100,g.relations[f.id]-20)}}
+f.alliances=f.alliances.filter(a=>a!==parseInt(aid));other.alliances=other.alliances.filter(a=>a!==f.id)}}}}},
+
+aiExpand(f){
+const owned=this.galaxy.filter(s=>s.owner===f.id);
+const targets=[];
+for(const sys of this.galaxy){
+if(sys.owner!==null||!sys.discovered)continue;
+for(const o of owned){const d=Math.sqrt((sys.x-o.x)**2+(sys.y-o.y)**2);if(d<400)targets.push({sys,d})}}
+if(targets.length===0)return;
+targets.sort((a,b)=>a.d-b.d);
+const t=targets[0].sys;
+t.owner=f.id;t.discovered=true;t.population=Math.floor(50+rng()*100);
+f.resources.minerals-=20;f.resources.energy-=15;
+this.addEvent('colonize',`${f.name} colonized ${t.name}`)},
+
+aiTrade(f){
+const allies=f.alliances.map(id=>this.factions[id]).filter(Boolean);
+for(const a of allies){
+if(a.resources.minerals>100&&f.resources.energy>50){
+a.resources.minerals-=20;f.resources.minerals+=30;a.resources.energy+=15;f.resources.energy-=25;
+this.addEvent('trade',`${f.name} traded with ${a.name}`)}}},
+
+aiMilitary(f){
+const targets=this.galaxy.filter(s=>s.owner!==null&&s.owner!==f.id);
+if(targets.length===0)return;
+targets.sort((a,b)=>(b.resources.minerals+a.resources.energy)-(a.resources.minerals+b.resources.energy));
+const t=targets[0];if(t.owner!==null){t.owner=null;t.population=Math.floor(t.population*0.5);f.resources.minerals+=Math.floor(t.resources.minerals*0.3)}},
+
+aiResearch(f){
+const unrec=this.techs.filter(t=>!f.techs.has(t.id)&&t.prereqs.every(p=>f.techs.has(p)));
+if(unrec.length>0){const best=unrec.sort((a,b)=>b.cost-a.cost)[0];f.techs.add(best.id)}},
+
+aiDiplomacy(f){
+for(const [oid,rel] of Object.entries(f.relations)){
+const o=this.factions[parseInt(oid)];if(o.id===f.id)continue;
+if(rel>30&&rel<80){f.relations[parseInt(oid)]=Math.min(100,f.relations[parseInt(oid)]+5);o.relations[f.id]=Math.min(100,o.relations[f.id]+5)}
+else if(rel<-30){f.relations[parseInt(oid)]=Math.max(-100,f.relations[parseInt(oid)]-3)}}},
+
+// --- NARRATIVE ENGINE ---
+addEvent(type,desc){
+const event={turn:this.turn,type,description:desc,choices:[],resolved:false};
+this.generateEventChoices(event);
+this.events.push(event);
+if(this.events.length>50)this.events.shift();
+this.showEvent(event)},
+
+generateEventChoices(e){
+switch(e.type){
+case'tech_complete':e.choices=[{text:'Continue research',action:()=>{}}];break;
+case'colonize':e.choices=[{text:'Send more colonists',action:()=>{}},{text:'Focus on defense',action:()=>{}}];break;
+case'war':e.choices=[{text:'Prepare for war',action:()=>{}},{text:'Seek peace',action:()=>{}}];break;
+case'alliance':e.choices=[{text:'Strengthen alliance',action:()=>{}},{text:'Stay independent',action:()=>{}}];break;
+case'betrayal':e.choices=[{text:'Retaliate',action:()=>{}},{text:'Forgive and move on',action:()=>{}}];break;
+case'civil_war':e.choices=[{text:'Offer aid',action:()=>{}},{text:'Exploit the weakness',action:()=>{}}];break;
+case'starvation':e.choices=[{text:'Ration food',action:()=>{}},{text:'Import from allies',action:()=>{}}];break;
+case'anomaly_discovered':e.choices=[{text:'Investigate',action:()=>{}},{text:'Mark for later',action:()=>{}}];break;
+case'first_contact':e.choices=[{text:'Attempt communication',action:()=>{}},{text:'Observe from distance',action:()=>{}}];break;
+case'economic_crisis':e.choices=[{text:'Austerity measures',action:()=>{}},{text:'Print credits',action:()=>{}}];break;
+case'diplomatic_summit':e.choices=[{text:'Attend summit',action:()=>{}},{text:'Boycott',action:()=>{}}];break;
+case'pirate_attack':e.choices=[{text:'Fight back',action:()=>{}},{text:'Pay tribute',action:()=>{}}];break;
+case'rebel_colony':e.choices=[{text:'Send fleet',action:()=>{}},{text:'Negotiate',action:()=>{}}];break;
+case'ancient_artifact':e.choices=[{text:'Study it',action:()=>{}},{text:'Weaponize it',action:()=>{}}];break;
+default:e.choices=[{text:'Acknowledge',action:()=>{}}]}}},
+
+showEvent(e){
+const panel=document.getElementById('event-panel');panel.classList.add('active');
+let html=`<div class="event-card"><h4>⚡ Turn ${e.turn}</h4><p>${e.description}</p>`;
+if(!e.resolved){html+='<div class="choices">';for(const c of e.choices)html+=`<button onclick="G.resolveEvent(${this.events.indexOf(e)})">${c.text}</button>`;html+='</div>'}
+html+='</div>';panel.innerHTML=html},
+
+resolveEvent(idx){
+if(this.events[idx])this.events[idx].resolved=true;
+document.getElementById('event-panel').classList.remove('active')},
+
+// --- COMBAT SYSTEM ---
+startCombat(attackerSys,defenderSys){
+const atkFleet=this.getFleet(attackerSys);
+const defFleet=this.getFleet(defenderSys);
+if(!atkFleet||!defFleet)return;
+
+this.combatActive=true;
+const overlay=document.getElementById('combat-overlay');overlay.classList.add('active');
+const canvas=document.getElementById('combat-canvas');
+canvas.width=canvas.parentElement.clientWidth;canvas.height=canvas.parentElement.clientHeight-40;
+
+const ctx=canvas.getContext('2d');
+this.combatState={attacker:atkFleet,defender:defFleet,turn:0,maxTurns:10,log:[],phase:'attack',winner:null};
+
+// Position fleets
+const atkShips=[];for(const[s,c]of Object.entries(atkFleet))if(c>0)for(let i=0;i<c;i++)atkShips.push({...SHIP_CLASSES[s],x:50+Math.random()*100,y:50+Math.random()*(canvas.height-100)});
+const defShips=[];for(const[s,c]of Object.entries(defFleet))if(c>0)for(let i=0;i<c;i++)defShips.push({...SHIP_CLASSES[s],x:canvas.width-150-Math.random()*100,y:50+Math.random()*(canvas.height-100)});
+this.combatState.atkShips=atkShips;this.combatState.defShips=defShips;
+
+const log=document.getElementById('combat-log');log.classList.add('active');
+this.renderCombat();this.combatLoop()},
+
+getFleet(sys){
+if(!sys.fleetId)return null;
+return JSON.parse(localStorage.getItem('fleet_'+sys.fleetId)||'{}')},
+
+combatLoop(){
+if(!this.combatActive)return;
+const cs=this.combatState;if(cs.winner){this.endCombat();return}
+cs.turn++;
+// Combat resolution
+const atkPower=this.calcFleetPower(cs.atkShips,cs.defShips);
+const defPower=this.calcFleetPower(cs.defShips,cs.atkShips);
+const atkDmg=Math.max(0,Math.floor(atkPower-defPower*0.5));
+const defDmg=Math.max(0,Math.floor(defPower-atkPower*0.5));
+
+// Apply damage
+this.applyDamage(cs.atkShips,defDmg);this.applyDamage(cs.defShips,atkDmg);
+cs.log.push(`Turn ${cs.turn}: You deal ${atkDmg} dmg, enemy deals ${defDmg} dmg`);
+
+// Check win
+if(cs.atkShips.filter(s=>s.hp>0).length===0){cs.winner='defender';cs.log.push('Your fleet was destroyed!')}
+else if(cs.defShips.filter(s=>s.hp>0).length===0){cs.winner='attacker';cs.log.push('Enemy fleet destroyed!')}
+else if(cs.turn>=cs.maxTurns){cs.winner=cs.atkShips.filter(s=>s.hp>0).length>=cs.defShips.filter(s=>s.hp>0).length?'attacker':'defender'}
+
+this.renderCombat();
+if(!cs.winner)setTimeout(()=>this.combatLoop(),800)},
+
+calcFleetPower(ships,enemy){
+let power=0;const alive=ships.filter(s=>s.hp>0);
+for(const s of alive){
+let atk=s.atk;
+// Counter bonus
+for(const e of enemy.filter(e=>e.hp>0)){
+if(s.counters.includes(e.name.toLowerCase()))atk*=1.5;
+if(s.countered_by.includes(e.name.toLowerCase()))atk*=0.7}
+power+=atk*s.hp/100}return power},
+
+applyDamage(ships,dmg){
+const alive=ships.filter(s=>s.hp>0);if(alive.length===0)return;
+const perShip=Math.floor(dmg/alive.length);
+for(const s of alive){s.hp-=perShip}
+ships.forEach(s=>{if(s.hp<=0)s.hp=0})},
+
+renderCombat(){
+const canvas=document.getElementById('combat-canvas');if(!canvas)return;
+const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);
+// Draw ships
+for(const s of(this.combatState?.atkShips||[])){if(s.hp>0){ctx.fillStyle='#3498db';ctx.beginPath();ctx.arc(s.x,s.y,6,0,Math.PI*2);ctx.fill()}}
+for(const s of(this.combatState?.defShips||[])){if(s.hp>0){ctx.fillStyle='#e74c3c';ctx.beginPath();ctx.arc(s.x,s.y,6,0,Math.PI*2);ctx.fill()}}
+// Draw log
+const log=document.getElementById('combat-log');log.innerHTML=this.combatState?.log.slice(-5).map(l=>`<div>${l}</div>`).join('')||''},
+
+endCombat(){
+this.combatActive=false;
+document.getElementById('combat-overlay').classList.remove('active');
+document.getElementById('combat-log').classList.remove('active');
+if(this.combatState?.winner==='attacker'){
+const defSys=this.galaxy.find(s=>s.id===this.selectedSystem);
+if(defSys){defSys.owner=this.playerFactionId;defSys.population=Math.floor(defSys.population*0.7)}}
+this.combatState=null},
+
+// --- UI RENDERING ---
+renderSidebar(){
+const pf=this.factions[this.playerFactionId];
+document.getElementById('player-dot').style.background=pf.color;
+document.getElementById('player-name').textContent=pf.name;
+
+const sys=this.galaxy[this.selectedSystem];
+let resHtml='';
+for(const[r,v]of Object.entries(pf.resources))resHtml+=`<div class="resource-row"><span class="label">${r}</span><span class="value">${v}</span></div>`;
+document.getElementById('resources').innerHTML=resHtml;
+
+let facHtml='';for(const f of this.factions){
+const rel=f.relations[this.playerFactionId]||0;
+facHtml+=`<div class="resource-row"><span class="label" style="color:${f.color}">${f.name}</span><span class="value">${rel>0?'+'+rel:rel}</span></div>`}
+document.getElementById('faction-list').innerHTML=facHtml;
+
+const owned=this.galaxy.filter(s=>s.owner===this.playerFactionId).length;
+document.getElementById('fleet-info').innerHTML=`<div class="resource-row"><span class="label">Systems</span><span class="value">${owned}</span></div>`;
+
+document.getElementById('stability-info').innerHTML=`<div class="resource-row"><span class="label">Stability</span><span class="value">${Math.floor(pf.stability)}%</span></div>`;
+
+const inf=this.getInflation();
+document.getElementById('inflation-info').innerHTML=`<div class="resource-row"><span class="label">Mineral Price</span><span class="value">${inf.minerals.toFixed(2)}x</span></div>
+<div class="resource-row"><span class="label">Energy Price</span><span class="value">${inf.energy.toFixed(2)}x</span></div>
+<div class="resource-row"><span class="label">Food Price</span><span class="value">${inf.food.toFixed(2)}x</span></div>`},
+
+getInflation(){
+const pf=this.playerFactionId;
+const owned=this.galaxy.filter(s=>s.owner===pf);
+const totalM=this.galaxy.reduce((a,s)=>a+s.resources.minerals,0);
+const totalE=this.galaxy.reduce((a,s)=>a+s.resources.energy,0);
+const totalF=this.galaxy.reduce((a,s)=>a+s.resources.food,0);
+return{minerals:totalM>0?1+(owned.reduce((a,s)=>a+s.resources.minerals,0)/totalM-0.6)*2:1,
+energy:totalE>0?1+(owned.reduce((a,s)=>a+s.resources.energy,0)/totalE-0.6)*2:1,
+food:totalF>0?1+(owned.reduce((a,s)=>a+s.resources.food,0)/totalF-0.6)*2:1}},
+
+renderSystemPanel(){
+const sys=this.galaxy[this.selectedSystem];if(!sys){document.getElementById('system-panel').innerHTML='';return}
+const pf=this.factions[this.playerFactionId];
+let html=`<h3><span style="color:${SYSTEM_COLORS[sys.type]}">●</span> ${sys.name} <small style="color:var(--dim)">(${sys.type})</small></h3>`;
+html+=`<div style="font-size:12px;color:var(--dim)">Pop: ${sys.population}/${sys.maxPop} | Owner: ${sys.owner!==null?this.factions[sys.owner].name:'None'}</div>`;
+html+=`<div style="font-size:12px;color:var(--dim);margin-top:4px">Minerals: ${sys.resources.minerals} | Energy: ${sys.resources.energy} | Food: ${sys.resources.food} | Tech: ${sys.resources.tech}</div>`;
+
+if(sys.owner===this.playerFactionId){
+html+=`<div class="actions">`;
+if(sys.type==='habitable'||sys.type==='ocean_world')html+=`<button class="primary" onclick="G.buildSystem('farm')">Build Farm</button>`;
+if(sys.type==='asteroid_belt'||sys.type==='gas_giant')html+=`<button class="primary" onclick="G.buildSystem('mine')">Build Mine</button>`;
+html+=`<button class="primary" onclick="G.buildSystem('refinery')">Build Refinery</button>`;
+html+=`<button class="primary" onclick="G.buildSystem('lab')">Build Lab</button>`;
+html+=`<button class="primary" onclick="G.buildSystem('shipyard')">Build Shipyard</button>`;
+html+=`<button class="primary" onclick="G.buildSystem('defense')">Build Defense</button>`;
+// Build fleet
+html+=`<button class="primary" onclick="G.buildFleet('${sys.id}')">Build Fleet</button>`;
+// Colonize if unowned and connected
+if(sys.owner===null&&sys.gates.some(g=>this.galaxy[g].owner===this.playerFactionId)){
+html+=`<button class="primary" onclick="G.colonize(${sys.id})">Colonize</button>`}
+// Attack if enemy owned
+if(sys.owner!==null&&sys.owner!==this.playerFactionId){
+html+=`<button class="danger" onclick="G.attackSystem(${sys.id})">Attack</button>`}
+html+=`</div>`}
+
+document.getElementById('system-panel').innerHTML=html},
+
+buildSystem(type){
+const sys=this.galaxy[this.selectedSystem];if(!sys||sys.owner!==this.playerFactionId)return;
+const pf=this.factions[this.playerFactionId];
+const costs={farm:{minerals:30,energy:10},mine:{minerals:40,energy:20},refinery:{minerals:60,energy:30},lab:{minerals:50,energy:40},shipyard:{minerals:100,energy:80},defense:{minerals:80,energy:60}};
+const cost=costs[type];if(!cost)return;
+if(pf.resources.minerals<cost.minerals||pf.resources.energy<cost.energy){this.addEvent('insufficient_resources',`Not enough resources to build ${type}`);return}
+pf.resources.minerals-=cost.minerals;pf.resources.energy-=cost.energy;
+sys.buildings.push(type);this.addEvent('build',`Built ${type} at ${sys.name}`);this.renderSidebar()},
+
+colonize(sysId){
+const sys=this.galaxy[sysId];if(!sys)return;
+sys.owner=this.playerFactionId;sys.discovered=true;sys.population=100;
+this.addEvent('colonize',`Colonized ${sys.name}!`);this.renderSidebar()},
+
+attackSystem(sysId){
+const sys=this.galaxy[sysId];if(!sys)return;
+this.selectedSystem=sysId;this.startCombat(this.selectedSystem,sysId)},
+
+buildFleet(sysId){
+const sys=this.galaxy[sysId];if(!sys||sys.owner!==this.playerFactionId)return;
+const pf=this.factions[this.playerFactionId];
+const fleet={scout:2,fighter:3};
+const cost={minerals:70,energy:50};
+if(pf.resources.minerals<cost.minerals||pf.resources.energy<cost.energy){this.addEvent('insufficient_resources','Not enough resources to build fleet');return}
+pf.resources.minerals-=cost.minerals;pf.resources.energy-=cost.energy;
+const fid='fleet_'+Date.now();localStorage.setItem(fid,JSON.stringify(fleet));
+sys.fleetId=fid;this.addEvent('fleet_built',`Built fleet at ${sys.name}`);this.renderSidebar()},
+
+// --- TECH PANEL ---
+toggleTech(){const p=document.getElementById('tech-panel');p.classList.toggle('active')},
+
+renderTechPanel(){
+const pf=this.factions[this.playerFactionId];
+let html='';for(const path of TECH_PATHS){
+html+=`<div class="section"><h3 style="color:${TECH_PATH_COLORS[path]}">${path.toUpperCase()}</h3>`;
+const pathTechs=this.techs.filter(t=>t.path===path);
+for(const t of pathTechs){
+const researched=pf.techs.has(t.id);
+const available=!researched&&t.prereqs.every(p=>pf.techs.has(p));
+const cls=researched?'researched':available?'available':'locked';
+html+=`<div class="tech-item ${cls}" onclick="${available?`G.researchTech(${t.id})`:''}">${t.displayName}<small>${researched?'✓':available?t.cost+'⚡':'🔒'}</small></div>`}
+html+='</div>'}
+document.getElementById('tech-list').innerHTML=html},
+
+researchTech(techId){
+const pf=this.factions[this.playerFactionId];const tech=this.techs.find(t=>t.id===techId);
+if(!tech||pf.techs.has(tech.id))return;
+if(pf.resources.tech<tech.cost){this.addEvent('insufficient_tech','Not enough tech points');return}
+pf.resources.tech-=tech.cost;tech.researchTime=tech.cost;
+this.addEvent('research_start',`Started researching: ${tech.displayName}`)},
+
+// --- DIPLOMACY PANEL ---
+toggleDiplomacy(){const p=document.getElementById('diplomacy-panel');p.classList.toggle('active')},
+
+renderDiplomacyPanel(){
+const pf=this.factions[this.playerFactionId];
+let html='';for(const f of this.factions){
+if(f.id===this.playerFactionId)continue;
+const rel=f.relations[this.playerFactionId]||0;
+const relColor=rel>50?'#2ecc71':rel>-20?'#f39c12':'#e74c3c';
+const relPct=((rel+100)/2)*1;
+html+=`<div class="faction-card"><h3><span class="dot" style="background:${f.color}"></span>${f.name}</h3>`;
+html+=`<div class="rel-bar"><div class="fill" style="width:${relPct}%;background:${relColor}"></div></div>`;
+html+=`<div style="font-size:12px;color:${relColor}">Relation: ${rel}</div>`;
+html+=`<div class="traits">Personality: ${f.personality} | Stability: ${Math.floor(f.stability)}% | Wars: ${f.warsFought} | Alliances: ${f.alliances.length}</div>`;
+if(rel>40)html+=`<button onclick="G.proposeAlliance(${f.id})" style="margin-top:6px;padding:3px 8px;background:#1a5276;color:white;border:none;border-radius:2px;cursor:pointer;font-size:10px">Propose Alliance</button>`;
+if(rel<-30)html+=`<button onclick="G.declareWar(${f.id})" style="margin-top:6px;padding:3px 8px;background:#7b241c;color:white;border:none;border-radius:2px;cursor:pointer;font-size:10px">Declare War</button>`;
+html+=`</div>`}
+document.getElementById('diplomacy-list').innerHTML=html},
+
+proposeAlliance(fid){const f=this.factions[fid];if(f.relations[this.playerFactionId]>40){f.alliances.push(this.playerFactionId);this.factions[this.playerFactionId].alliances.push(fid);f.relations[this.playerFactionId]=Math.min(100,f.relations[this.playerFactionId]+20);this.addEvent('alliance',`Alliance proposed to ${f.name}`)}else{this.addEvent('diplomacy_failed',`${f.name} rejected the alliance`)}},
+
+declareWar(fid){const f=this.factions[fid];f.atWarWith.push(this.playerFactionId);this.factions[this.playerFactionId].atWarWith.push(fid);f.relations[this.playerFactionId]=-100;this.factions[this.playerFactionId].relations[fid]=-100;this.addEvent('war',`War declared on ${f.name}!`)},
+
+// --- GALAXY RENDERING ---
+setupInput(){
+const canvas=document.getElementById('galaxy-canvas');
+canvas.addEventListener('wheel',e=>{e.preventDefault();const factor=e.deltaY>0?0.9:1.1;this.cam.zoom=Math.max(0.1,Math.min(5,this.cam.zoom*factor))},{passive:false});
+canvas.addEventListener('mousedown',e=>{this.dragging=true;this.dragStart={x:e.clientX,y:e.clientY};this.camStart={...this.cam}});
+canvas.addEventListener('mousemove',e=>{if(!this.dragging)return;this.cam.x=this.camStart.x+(e.clientX-this.dragStart.x);this.cam.y=this.camStart.y+(e.clientY-this.dragStart.y)});
+canvas.addEventListener('mouseup',()=>this.dragging=false);
+canvas.addEventListener('click',e=>{if(Math.abs(e.clientX-this.dragStart.x)>5||Math.abs(e.clientY-this.dragStart.y)>5)return;this.onSystemClick(e)});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{if(e.key==='t'||e.key==='T')this.toggleTech();else if(e.key==='d'||e.key==='D')this.toggleDiplomacy();else if(e.key==='h'||e.key==='H')this.toggleHelp();else if(e.key===' '){e.preventDefault();this.endTurn()}})},
+
+onSystemClick(e){
+const canvas=document.getElementById('galaxy-canvas');
+const rect=canvas.getBoundingClientRect();
+const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+const wx=(mx-this.cam.x)/this.cam.zoom,wy=(my-this.cam.y)/this.cam.zoom;
+
+let closest=null,minDist=30/this.cam.zoom;
+for(const sys of this.galaxy){if(!sys.discovered)continue;const d=Math.sqrt((wx-sys.x)**2+(wy-sys.y)**2);if(d<minDist){minDist=d;closest=sys}}
+if(closest){this.selectedSystem=closest.id;this.renderSystemPanel();this.renderSidebar()}},
+
+renderGalaxy(){
+const canvas=document.getElementById('galaxy-canvas');if(!canvas)return;
+const ctx=canvas.getContext('2d');
+ctx.fillStyle='#050810';ctx.fillRect(0,0,canvas.width,canvas.height);
+
+// Draw stars background
+ctx.fillStyle='rgba(255,255,255,0.3)';
+for(let i=0;i<100;i++){const sx=(i*137.5+this.cam.x*0.1)%canvas.width,sy=(i*243.7+this.cam.y*0.1)%canvas.height;ctx.fillRect(sx,sy,1,1)}
+
+// Draw jump gates
+ctx.strokeStyle='rgba(10,189,227,0.15)';ctx.lineWidth=1;
+for(const sys of this.galaxy){if(!sys.discovered)continue;
+const sx=sys.x*this.cam.zoom+this.cam.x,sy=sys.y*this.cam.zoom+this.cam.y;
+for(const g of sys.gates){const gs=this.galaxy[g];if(!gs.discovered)continue;
+const gx=gs.x*this.cam.zoom+this.cam.x,gy=gs.y*this.cam.zoom+this.cam.y;
+ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(gx,gy);ctx.stroke()}}
+
+// Draw systems
+const showLabels=this.cam.zoom>0.5;
+for(const sys of this.galaxy){if(!sys.discovered)continue;
+const sx=sys.x*this.cam.zoom+this.cam.x,sy=sys.y*this.cam.zoom+this.cam.y;
+const size=Math.max(2,Math.min(8,this.cam.zoom*3));
+
+// Nebula/asteroid terrain
+if(sys.type==='nebula'){ctx.fillStyle='rgba(155,89,182,0.1)';ctx.beginPath();ctx.arc(sx,sy,size*4,0,Math.PI*2);ctx.fill()}
+if(sys.type==='asteroid_belt'){ctx.fillStyle='rgba(149,165,166,0.1)';ctx.beginPath();ctx.arc(sx,sy,size*3,0,Math.PI*2);ctx.fill()}
+
+// System dot
+const color=sys.owner!==null?this.factions[sys.owner].color:SYSTEM_COLORS[sys.type]||'#666';
+ctx.fillStyle=color;ctx.beginPath();ctx.arc(sx,sy,size,0,Math.PI*2);ctx.fill();
+
+// Selection highlight
+if(sys.id===this.selectedSystem){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(sx,sy,size+4,0,Math.PI*2);ctx.stroke()}
+
+// Label
+if(showLabels){ctx.fillStyle='rgba(200,214,229,0.7)';ctx.font='10px sans-serif';ctx.fillText(sys.name,sx+size+3,sy+3)}
+
+// Owner indicator
+if(sys.owner!==null){ctx.fillStyle=this.factions[sys.owner].color;ctx.beginPath();ctx.arc(sx,sy,size*0.4,0,Math.PI*2);ctx.fill()}}
+
+// Minimap
+this.renderMinimap()},
+
+renderMinimap(){
+const mc=document.getElementById('minimap');if(!mc)return;
+const mctx=mc.getContext('2d');mctx.clearRect(0,0,160,120);
+const scale=0.03;
+for(const sys of this.galaxy){if(!sys.discovered)continue;
+const mx=80+sys.x*scale,my=60+sys.y*scale;
+if(mx<0||mx>160||my<0||my>120)continue;
+mctx.fillStyle=sys.owner!==null?this.factions[sys.owner].color:SYSTEM_COLORS[sys.type]||'#333';
+mctx.fillRect(mx,my,1,1)}}},
+
+// --- GAME LOOP ---
+gameLoop(timestamp){
+if(!G.lastTick)G.lastTick=timestamp;
+const dt=timestamp-G.lastTick;
+
+if(G.speed>0&&dt>2000/G.speed){
+G.lastTick=timestamp;G.turn++;
+G.updateEconomy();G.updateAI();G.checkNarrativeEvents();
+document.getElementById('turn-num').textContent=G.turn;
+
+// Phase progression
+const phases=['explore','expand','exploit','exterminate'];
+const phaseIdx=phases.indexOf(G.phase);
+if(phaseIdx<3&&G.turn%(phases.length)===0){G.phase=phases[phaseIdx+1];document.getElementById('phase-ind').textContent=G.phase.charAt(0).toUpperCase()+G.phase.slice(1);document.getElementById('phase-ind').className='phase-indicator phase-'+G.phase}
+
+G.renderSidebar();
+if(document.getElementById('tech-panel').classList.contains('active'))G.renderTechPanel();
+if(document.getElementById('diplomacy-panel').classList.contains('active'))G.renderDiplomacyPanel();
+if(G.selectedSystem!==null)G.renderSystemPanel()}
+
+G.renderGalaxy();
+requestAnimationFrame(t=>G.gameLoop(t))},
+
+checkNarrativeEvents(){
+// Consequence-based events
+const pf=this.factions[this.playerFactionId];
+const owned=this.galaxy.filter(s=>s.owner===this.playerFactionId);
+
+// Check for anomaly discovery
+for(const sys of owned){if(sys.type==='anomaly'&&!sys.buildings.includes('lab')){
+this.addEvent('anomaly_discovered',`An anomaly detected at ${sys.name}! Send researchers.`);break}}
+
+// Check for first contact (factions near player)
+for(const f of this.factions){if(f.id===this.playerFactionId)continue;
+const fSys=this.galaxy.filter(s=>s.owner===f.id);
+for(const fs of owned){for(const ffs of fSys){
+const d=Math.sqrt((fs.x-ffs.x)**2+(fs.y-ffs.y)**2);
+if(d<300&&f.relations[this.playerFactionId]===undefined){
+this.addEvent('first_contact',`First contact with ${f.name}! Relations: ${(f.relations[this.playerFactionId]||0)}`);
+return}}}}
+
+// Economic crisis check
+const totalF=this.galaxy.reduce((a,s)=>a+s.resources.food,0);
+if(totalF<50){this.addEvent('economic_crisis','Resource scarcity causing inflation across the galaxy!')}
+
+// Rebel colony check
+for(const sys of owned){if(sys.population>sys.maxPop*0.9&&pf.stability<50){
+this.addEvent('rebel_colony',`${sys.name} is restless! High population and low stability.`);break}}},
+
+endTurn(){this.turn++;this.updateEconomy();this.updateAI();document.getElementById('turn-num').textContent=this.turn;this.renderSidebar()},
+
+setSpeed(s){this.speed=s;if(s===0&&this.tickInterval){clearInterval(this.tickInterval);this.tickInterval=null}else if(s>0&&!this.tickInterval){this.tickInterval=setInterval(()=>this.endTurn(),2000/s)}},
+
+toggleHelp(){document.getElementById('help-overlay').classList.toggle('active')},
+
+saveGame(){const data={turn:this.turn,phase:this.phase,factions:this.factions,galaxy:this.galaxy.map(s=>({...s})),playerTechs:[...this.playerTechs],events:this.events};localStorage.setItem('eclipse_save',JSON.stringify(data));this.addEvent('game_saved','Game saved!')},
+
+loadGame(){const raw=localStorage.getItem('eclipse_save');if(!raw){this.addEvent('no_save','No save found.');return}
+const data=JSON.parse(raw);Object.assign(this,data);this.playerTechs=new Set(data.playerTechs||[]);
+document.getElementById('start-screen').style.display='none';this.renderSidebar();this.addEvent('game_loaded','Game loaded!')}
+};
+
+// --- INIT ---
+window.addEventListener('load',()=>G.init());
+</script>
+</body>
+</html>
