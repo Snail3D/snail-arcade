@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Gravity Snail</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #05060a;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #game { display: block; width: 100vw; height: 100vh; cursor: pointer; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+"use strict";
+
+// ============================================================
+//  GRAVITY SNAIL — single-file canvas game
+// ============================================================
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+// --------------------- Input ---------------------
+let thrusting = false;
+function pressDown(e) { e.preventDefault(); thrusting = true; }
+function pressUp(e)   { e.preventDefault(); thrusting = false; }
+canvas.addEventListener("mousedown", pressDown);
+canvas.addEventListener("mouseup", pressUp);
+canvas.addEventListener("mouseleave", pressUp);
+canvas.addEventListener("touchstart", pressDown, { passive: false });
+canvas.addEventListener("touchend", pressUp, { passive: false });
+canvas.addEventListener("touchcancel", pressUp, { passive: false });
+// Keyboard assist
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); thrusting = true; }
+});
+window.addEventListener("keyup", e => {
+  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") { e.preventDefault(); thrusting = false; }
+});
+
+// --------------------- Constants ---------------------
+const GRAVITY        = 1500;   // px/s^2
+const THRUST         = -2600;  // px/s^2 upward when holding
+const MAX_FALL       = 900;
+const SNAIL_R        = 16;
+const BASE_SPEED     = 260;    // horizontal scroll px/s at start
+const SPEED_GROW     = 14;     // px/s added per second
+const SPEED_MAX      = 760;
+const GAP_BASE       = 320;    // vertical gap between obstacles shrinks over time
+const GAP_MIN        = 165;
+const OBSTACLE_W     = 64;
+const OBSTACLE_GAP   = 420;    // horizontal px between obstacle pairs (tuned with width)
+const LEAF_SPAWN_MIN = 0.45;
+const LEAF_SPAWN_MAX = 1.4;
+
+// --------------------- State ---------------------
+let state = "menu"; // "menu" | "play" | "dead"
+let lastT = performance.now();
+let elapsed = 0;
+let scrollSpeed = BASE_SPEED;
+let distance = 0;
+let shake = 0;
+let flashTimer = 0;
+let bestScore = 0;
+try { bestScore = parseInt(localStorage.getItem("gravitySnail_best") || "0", 10) || 0; } catch (e) {}
+
+let score = 0;
+let leafCombo = 0;
+
+let snail = null;
+let obstacles = [];
+let leaves = [];
+let particles = [];
+let stars = [];
+let stalactiteSides = []; // decorative parallax wall bits
+
+let spawnAccum = 0;
+let leafAccum = 0;
+let nextObstacleX = 0;
+let nearMissCooldown = 0;
+
+// Parallax layers
+const parallax = [
+  { speed: 0.12, items: [] }, // far
+  { speed: 0.32, items: [] }, // mid
+  { speed: 0.62, items: [] }  // near
+];
+
+function initParallax() {
+  parallax.forEach((layer, idx) => {
+    layer.items = [];
+    const count = [9, 7, 5][idx];
+    for (let i = 0; i < count; i++) {
+      layer.items.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: 30 + Math.random() * (idx === 0 ? 60 : idx === 1 ? 45 : 30),
+        shape: Math.floor(Math.random() * 3),
+        alpha: [0.06, 0.10, 0.15][idx]
+      });
+    }
+  });
+  // background dust motes
+  stars = [];
+  for (let i = 0; i < 60; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 1.6 + 0.4,
+      a: Math.random() * 0.5 + 0.2,
+      sp: 0.15 + Math.random() * 0.5
+    });
+  }
+}
+initParallax();
+
+function resetGame() {
+  score = 0;
+  leafCombo = 0;
+  elapsed = 0;
+  scrollSpeed = BASE_SPEED;
+  distance = 0;
+  shake = 0;
+  flashTimer = 0;
+  nearMissCooldown = 0;
+  obstacles = [];
+  leaves = [];
+  particles = [];
+  spawnAccum = 0;
+  leafAccum = 0;
+  nextObstacleX = W + 200;
+
+  snail = {
+    x: W * 0.28,
+    y: H * 0.5,
+    vy: 0,
+    angle: 0,
+    bobPhase: 0,
+    trailTimer: 0
+  };
+
+  // Seed a few obstacles ahead
+  for (let i = 0; i < 4; i++) {
+    spawnObstaclePair(nextObstacleX);
+    nextObstacleX += OBSTACLE_GAP + OBSTACLE_W;
+  }
+}
+
+resetGame();
+
+// --------------------- Spawning ---------------------
+function currentGap() {
+  const t = Math.min(1, elapsed / 75);
+  return GAP_BASE + (GAP_MIN - GAP_BASE) * t;
+}
+
+function spawnObstaclePair(x) {
+  const gap = currentGap();
+  const margin = 70;
+  const gapTop = margin + Math.random() * (H - gap - margin * 2);
+  const gapBottom = gapTop + gap;
+  const tCount = 1 + Math.floor(Math.random() * 2); // 1-2 ceiling spikes
+  obstacles.push({
+    x: x, w: OBSTACLE_W,
+    type: "ceiling",
+    topY: 0, botY: gapTop,
+    spikes: makeSpikeShapes("down", OBSTACLE_W, gapTop, tCount),
+    scored: false,
+    nearMissed: false
+  });
+  const bCount = 1 + Math.floor(Math.random() * 2);
+  obstacles.push({
+    x: x, w: OBSTACLE_W,
+    type: "floor",
+    topY: gapBottom, botY: H,
+    spikes: makeSpikeShapes("up", OBSTACLE_W, H - gapBottom, bCount),
+    scored: false,
+    nearMissed: false
+  });
+
+  // Sometimes drop a leaf in the gap
+  if (Math.random() < 0.55) {
+    leaves.push({
+      x: x + OBSTACLE_W * 0.5,
+      y: gapTop + gap * 0.5 + (Math.random() - 0.5) * gap * 0.3,
+      r: 11,
+      phase: Math.random() * Math.PI * 2,
+      collected: false,
+      fade: 1
+    });
+  }
+}
+
+function makeSpikeShapes(dir, width, length, count) {
+  // returns array of polygon points arrays relative to top-left of obstacle column
+  const spikes = [];
+  const baseY = dir === "down" ? 0 : 0; // we'll offset at draw time
+  const segW = width / count;
+  for (let i = 0; i < count; i++) {
+    const cx0 = i * segW;
+    const cx1 = (i + 1) * segW;
+    // jagged triangle with a little inner zigzag
+    const tipDepth = length * (0.7 + Math.random() * 0.3);
+    spikes.push({
+      x0: cx0, x1: cx1,
+      depth: tipDepth,
+      jitter: (Math.random() - 0.5) * 8
+    });
+  }
+  return spikes;
+}
+
+function spawnFloatingLeaf() {
+  const margin = 60;
+  leaves.push({
+    x: W + 40,
+    y: margin + Math.random() * (H - margin * 2),
+    r: 11,
+    phase: Math.random() * Math.PI * 2,
+    collected: false,
+    fade: 1,
+    float: true
+  });
+}
+
+// --------------------- Particles ---------------------
+function emitLeafBurst(x, y) {
+  for (let i = 0; i < 22; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 60 + Math.random() * 220;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 30,
+      life: 0.6 + Math.random() * 0.5,
+      maxLife: 0.9,
+      r: 2 + Math.random() * 3.5,
+      color: Math.random() < 0.5 ? "#7CFFB2" : "#B8FFD8",
+      type: "leaf"
+    });
+  }
+  // a few sparkle bits
+  for (let i = 0; i < 6; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 120,
+      vy: (Math.random() - 0.5) * 120,
+      life: 0.4 + Math.random() * 0.3,
+      maxLife: 0.6,
+      r: 1 + Math.random() * 1.5,
+      color: "#FFFFFF",
+      type: "spark"
+    });
+  }
+}
+
+function emitThrust(x, y) {
+  for (let i = 0; i < 2; i++) {
+    const spread = (Math.random() - 0.5) * 10;
+    particles.push({
+      x: x + spread,
+      y: y,
+      vx: -scrollSpeed * 0.4 + (Math.random() - 0.5) * 40,
+      vy: 60 + Math.random() * 80,
+      life: 0.3 + Math.random() * 0.3,
+      maxLife: 0.5,
+      r: 2 + Math.random() * 3,
+      color: Math.random() < 0.4 ? "#FFD27A" : (Math.random() < 0.5 ? "#FF9A4D" : "#FF6A2D"),
+      type: "thrust"
+    });
+  }
+}
+
+function emitDeath(x, y) {
+  for (let i = 0; i < 40; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 80 + Math.random() * 300;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd,
+      life: 0.6 + Math.random() * 0.7,
+      maxLife: 1.2,
+      r: 2 + Math.random() * 4,
+      color: Math.random() < 0.3 ? "#FF5A3D" : (Math.random() < 0.5 ? "#FFAA55" : "#C8E8FF"),
+      type: "death"
+    });
+  }
+}
+
+// --------------------- Update ---------------------
+function update(dt) {
+  elapsed += dt;
+  scrollSpeed = Math.min(SPEED_MAX, BASE_SPEED + elapsed * SPEED_GROW);
+  distance += scrollSpeed * dt;
+
+  // ---- Snail physics ----
+  if (state === "play") {
+    const accel = thrusting ? THRUST : GRAVITY;
+    snail.vy += accel * dt;
+    snail.vy = Math.max(-650, Math.min(MAX_FALL, snail.vy));
+    snail.y += snail.vy * dt;
+    snail.bobPhase += dt * 10;
+    // tilt based on velocity
+    const targetAngle = Math.max(-0.5, Math.min(0.9, snail.vy / 900));
+    snail.angle += (targetAngle - snail.angle) * Math.min(1, dt * 8);
+
+    if (thrusting) {
+      emitThrust(snail.x - 6, snail.y + 10);
+    }
+
+    // bounds
+    if (snail.y < SNAIL_R) { snail.y = SNAIL_R; snail.vy = Math.max(0, snail.vy); }
+    if (snail.y > H - SNAIL_R) { die(); }
+  }
+
+  // ---- Obstacles ----
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= scrollSpeed * dt;
+    if (o.x + o.w < -20) {
+      obstacles.splice(i, 1);
+      continue;
+    }
+    // Score when passing the snail x
+    if (state === "play" && !o.scored && o.x + o.w < snail.x) {
+      o.scored = true;
+      if (o.type === "ceiling") { // count once per pair (ceiling sentinel)
+        score += 1;
+      }
+      // near-miss check
+      checkNearMiss(o);
+    }
+  }
+
+  // spawn new obstacles
+  nextObstacleX -= scrollSpeed * dt;
+  while (nextObstacleX < W + OBSTACLE_GAP) {
+    spawnObstaclePair(nextObstacleX);
+    nextObstacleX += OBSTACLE_GAP + OBSTACLE_W;
+  }
+
+  // ---- Leaves ----
+  leafAccum += dt;
+  if (state === "play" && leafAccum > LEAF_SPAWN_MIN + Math.random() * (LEAF_SPAWN_MAX - LEAF_SPAWN_MIN)) {
+    leafAccum = 0;
+    // only float-spawn if there's room; pair-spawned ones are common enough
+    if (Math.random() < 0.5) spawnFloatingLeaf();
+  }
+  for (let i = leaves.length - 1; i >= 0; i--) {
+    const lf = leaves[i];
+    lf.x -= scrollSpeed * dt;
+    lf.phase += dt * 4;
+    if (lf.collected) {
+      lf.fade -= dt * 4;
+      if (lf.fade <= 0) { leaves.splice(i, 1); continue; }
+    }
+    if (lf.x < -30) { leaves.splice(i, 1); continue; }
+    // collision with snail
+    if (state === "play" && !lf.collected) {
+      const dx = snail.x - lf.x;
+      const dy = snail.y - lf.y;
+      if (dx*dx + dy*dy < (SNAIL_R + lf.r) * (SNAIL_R + lf.r)) {
+        lf.collected = true;
+        leafCombo += 1;
+        score += 5;
+        emitLeafBurst(lf.x, lf.y);
+        flashTimer = 0.12;
+      }
+    }
+  }
+
+  // ---- Particles ----
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.type === "leaf") { p.vy += 220 * dt; p.vx *= (1 - dt * 1.2); }
+    else if (p.type === "thrust") { p.vy += 40 * dt; p.vx -= scrollSpeed * 0.3 * dt; }
+    else if (p.type === "death") { p.vy += 180 * dt; p.vx *= (1 - dt * 0.8); }
+    else if (p.type === "spark") { p.vx *= (1 - dt * 2); p.vy *= (1 - dt * 2); }
+  }
+
+  // ---- Parallax ----
+  for (let li = 0; li < parallax.length; li++) {
+    const layer = parallax[li];
+    for (let i = 0; i < layer.items.length; i++) {
+      const it = layer.items[i];
+      it.x -= scrollSpeed * layer.speed * dt;
+      if (it.x < -it.r * 2) {
+        it.x = W + it.r;
+        it.y = Math.random() * H;
+      }
+    }
+  }
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    s.x -= scrollSpeed * s.sp * dt;
+    if (s.x < -4) { s.x = W + 4; s.y = Math.random() * H; }
+  }
+
+  // ---- Shake / flash decay ----
+  if (shake > 0) shake = Math.max(0, shake - dt * 3.2);
+  if (flashTimer > 0) flashTimer = Math.max(0, flashTimer - dt);
+  if (nearMissCooldown > 0) nearMissCooldown -= dt;
+}
+
+function checkNearMiss(o) {
+  // Determine the dangerous edge facing the gap
+  let edgeY;
+  if (o.type === "ceiling") edgeY = o.botY; // bottom of ceiling obstacle
+  else edgeY = o.topY; // top of floor obstacle
+  const dy = Math.abs(snail.y - edgeY);
+  if (dy < 30 && nearMissCooldown <= 0) {
+    shake = Math.max(shake, 0.7);
+    nearMissCooldown = 0.4;
+  }
+}
+
+function die() {
+  if (state !== "play") return;
+  state = "dead";
+  emitDeath(snail.x, snail.y);
+  shake = 1.2;
+  if (score > bestScore) {
+    bestScore = score;
+    try { localStorage.setItem("gravitySnail_best", String(bestScore)); } catch (e) {}
+  }
+}
+
+function startGame() {
+  resetGame();
+  state = "play";
+}
+
+// --------------------- Rendering ---------------------
+function draw() {
+  // screen shake offset
+  let sx = 0, sy = 0;
+  if (shake > 0) {
+    const m = shake * 10;
+    sx = (Math.random() - 0.5) * m;
+    sy = (Math.random() - 0.5) * m;
+  }
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // ---- Background gradient ----
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0a0c14");
+  bg.addColorStop(0.5, "#070912");
+  bg.addColorStop(1, "#05060c");
+  ctx.fillStyle = bg;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  // ---- Parallax blobs ----
+  for (let li = 0; li < parallax.length; li++) {
+    const layer = parallax[li];
+    for (let i = 0; i < layer.items.length; i++) {
+      const it = layer.items[i];
+      ctx.globalAlpha = it.alpha;
+      ctx.fillStyle = li === 0 ? "#1a2336" : (li === 1 ? "#23304a" : "#2e3d5c");
+      drawBlob(it.x, it.y, it.r, it.shape);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- Dust motes ----
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    ctx.globalAlpha = s.a;
+    ctx.fillStyle = "#9fb4d8";
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- Obstacles ----
+  for (let i = 0; i < obstacles.length; i++) {
+    drawObstacle(obstacles[i]);
+  }
+
+  // ---- Leaves ----
+  for (let i = 0; i < leaves.length; i++) {
+    drawLeaf(leaves[i]);
+  }
+
+  // ---- Particles (behind snail except sparks) ----
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.type === "spark") continue;
+    drawParticle(p);
+  }
+
+  // ---- Snail ----
+  if (state !== "dead") drawSnail();
+
+  // ---- Spark particles on top ----
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.type !== "spark") continue;
+    drawParticle(p);
+  }
+
+  // ---- Leaf flash ----
+  if (flashTimer > 0) {
+    ctx.globalAlpha = (flashTimer / 0.12) * 0.18;
+    ctx.fillStyle = "#9CFFC4";
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- Vignette ----
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.restore();
+
+  // ---- HUD (no shake) ----
+  drawHUD();
+
+  // ---- Overlays ----
+  if (state === "menu") drawMenu();
+  else if (state === "dead") drawDeath();
+}
+
+function drawBlob(x, y, r, shape) {
+  ctx.beginPath();
+  if (shape === 0) {
+    // jagged rock
+    const pts = 7;
+    for (let i = 0; i < pts; i++) {
+      const a = (i / pts) * Math.PI * 2;
+      const rr = r * (0.7 + ((i * 37) % 10) / 12);
+      const px = x + Math.cos(a) * rr;
+      const py = y + Math.sin(a) * rr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+  } else if (shape === 1) {
+    // stalactite-ish triangle
+    ctx.moveTo(x - r, y - r * 0.6);
+    ctx.lineTo(x + r, y - r * 0.4);
+    ctx.lineTo(x, y + r);
+  } else {
+    // blob
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawObstacle(o) {
+  const x = o.x;
+  const w = o.w;
+  // Body color
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, "#1b2230");
+  grad.addColorStop(0.5, "#2b3548");
+  grad.addColorStop(1, "#1b2230");
+
+  // draw column body then spike tips
+  if (o.type === "ceiling") {
+    // body from 0 to botY minus spike depth region handled by spikes
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, 0, w, o.botY);
+    // spikes hang down from botY
+    ctx.fillStyle = "#2b3548";
+    ctx.beginPath();
+    ctx.moveTo(x, o.botY);
+    for (let i = 0; i < o.spikes.length; i++) {
+      const s = o.spikes[i];
+      const leftX = x + s.x0;
+      const rightX = x + s.x1;
+      const midX = (leftX + rightX) / 2 + s.jitter;
+      const tipY = o.botY + s.depth;
+      ctx.lineTo(leftX, o.botY);
+      ctx.lineTo(midX, tipY);
+      ctx.lineTo(rightX, o.botY);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // highlight on left edge
+    ctx.strokeStyle = "rgba(120,150,190,0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 2, 0);
+    ctx.lineTo(x + 2, o.botY);
+    ctx.stroke();
+    // tip shading
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    for (let i = 0; i < o.spikes.length; i++) {
+      const s = o.spikes[i];
+      const leftX = x + s.x0;
+      const rightX = x + s.x1;
+      const midX = (leftX + rightX) / 2 + s.jitter;
+      const tipY = o.botY + s.depth;
+      ctx.moveTo(midX, tipY);
+      ctx.lineTo(rightX, o.botY);
+      ctx.lineTo(midX, o.botY + s.depth * 0.4);
+    }
+    ctx.fill();
+  } else {
+    // floor
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, o.topY, w, o.botY - o.topY);
+    ctx.fillStyle = "#2b3548";
+    ctx.beginPath();
+    ctx.moveTo(x, o.topY);
+    for (let i = 0; i < o.spikes.length; i++) {
+      const s = o.spikes[i];
+      const leftX = x + s.x0;
+      const rightX = x + s.x1;
+      const midX = (leftX + rightX) / 2 + s.jitter;
+      const tipY = o.topY - s.depth;
+      ctx.lineTo(leftX, o.topY);
+      ctx.lineTo(midX, tipY);
+      ctx.lineTo(rightX, o.topY);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,150,190,0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 2, o.topY);
+    ctx.lineTo(x + 2, o.botY);
+    ctx.stroke();
+  }
+}
+
+function drawLeaf(lf) {
+  const wob = Math.sin(lf.phase) * 4;
+  const y = lf.y + wob;
+  const a = lf.collected ? Math.max(0, lf.fade) : 1;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.translate(lf.x, y);
+  ctx.rotate(Math.sin(lf.phase * 0.7) * 0.4);
+
+  // glow
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, lf.r * 3);
+  glow.addColorStop(0, "rgba(150,255,180,0.55)");
+  glow.addColorStop(1, "rgba(150,255,180,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, lf.r * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // leaf shape
+  ctx.fillStyle = "#7CFFB2";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, lf.r * 0.8, lf.r, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // vein
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, -lf.r);
+  ctx.lineTo(0, lf.r);
+  ctx.stroke();
+  // shine
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.beginPath();
+  ctx.ellipse(-lf.r * 0.25, -lf.r * 0.3, lf.r * 0.18, lf.r * 0.3, 0, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawParticle(p) {
+  const a = Math.max(0, p.life / p.maxLife);
+  ctx.globalAlpha = a;
+  ctx.fillStyle = p.color;
+  if (p.type === "spark") {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * a, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSnail() {
+  const s = snail;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(s.angle);
+
+  // Shell (swirl)
+  const shellX = -2;
+  const shellY = -2;
+  const shellR = 13;
+  // shell base shadow
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.arc(shellX + 1, shellY + 2, shellR, 0, Math.PI * 2);
+  ctx.fill();
+  // shell gradient
+  const sg = ctx.createRadialGradient(shellX - 4, shellY - 4, 2, shellX, shellY, shellR);
+  sg.addColorStop(0, "#ffcaa0");
+  sg.addColorStop(0.5, "#e88b4a");
+  sg.addColorStop(1, "#a04a1c");
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(shellX, shellY, shellR, 0, Math.PI * 2);
+  ctx.fill();
+  // swirl
+  ctx.strokeStyle = "rgba(90,30,10,0.7)";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let a = 0; a < Math.PI * 3; a += 0.2) {
+    const rr = (a / (Math.PI * 3)) * (shellR - 2);
+    const px = shellX + Math.cos(a) * rr;
+    const py = shellY + Math.sin(a) * rr;
+    if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Body (head extends forward)
+  ctx.fillStyle = "#cde6a0";
+  ctx.beginPath();
+  ctx.ellipse(10, 0, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // belly
+  ctx.fillStyle = "#a8cf70";
+  ctx.beginPath();
+  ctx.ellipse(10, 3, 10, 5, 0, 0, Math.PI);
+  ctx.fill();
+
+  // Eye stalks
+  ctx.strokeStyle = "#cde6a0";
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(16, -3);
+  ctx.lineTo(20, -10);
+  ctx.moveTo(20, -2);
+  ctx.lineTo(25, -9);
+  ctx.stroke();
+  // eyes
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.arc(20, -11, 2.4, 0, Math.PI * 2);
+  ctx.arc(25, -10, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(20.6, -11.5, 0.8, 0, Math.PI * 2);
+  ctx.arc(25.6, -10.5, 0.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Jetpack on the back (below shell)
+  ctx.fillStyle = "#445";
+  ctx.fillRect(-12, 6, 8, 6);
+  ctx.fillStyle = "#667";
+  ctx.fillRect(-11, 5, 6, 2);
+  if (thrusting && state === "play") {
+    // flame
+    ctx.fillStyle = "#FFD27A";
+    ctx.beginPath();
+    ctx.moveTo(-12, 12);
+    ctx.lineTo(-4, 12);
+    ctx.lineTo(-8, 18 + Math.random() * 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#FF6A2D";
+    ctx.beginPath();
+    ctx.moveTo(-10, 12);
+    ctx.lineTo(-6, 12);
+    ctx.lineTo(-8, 15 + Math.random() * 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawHUD() {
+  if (state === "menu") return;
+  ctx.save();
+  // Score
+  ctx.font = "bold 34px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillText(String(score), W / 2 + 2, 22);
+  ctx.fillStyle = "#eaf4ff";
+  ctx.fillText(String(score), W / 2, 20);
+
+  // Best (small, top-left)
+  ctx.font = "600 14px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(180,200,230,0.75)";
+  ctx.fillText("BEST " + bestScore, 16, 22);
+
+  // Speed bar (top right)
+  const sp = (scrollSpeed - BASE_SPEED) / (SPEED_MAX - BASE_SPEED);
+  const barW = 90, barH = 6;
+  const bx = W - barW - 16, by = 28;
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(bx, by, barW, barH);
+  const spdGrad = ctx.createLinearGradient(bx, 0, bx + barW, 0);
+  spdGrad.addColorStop(0, "#5fd0ff");
+  spdGrad.addColorStop(1, "#ff7a5a");
+  ctx.fillStyle = spdGrad;
+  ctx.fillRect(bx, by, barW * Math.max(0, Math.min(1, sp)), barH);
+  ctx.font = "600 11px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(180,200,230,0.65)";
+  ctx.fillText("SPEED", W - 16, 12);
+
+  ctx.restore();
+}
+
+function drawMenu() {
+  ctx.save();
+  // dim
+  ctx.fillStyle = "rgba(5,6,12,0.55)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Title
+  ctx.font = "bold 56px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillText("GRAVITY SNAIL", W / 2 + 3, H / 2 - 80 + 3);
+  const tg = ctx.createLinearGradient(0, H/2 - 110, 0, H/2 - 50);
+  tg.addColorStop(0, "#ffd9a0");
+  tg.addColorStop(1, "#ff8a5a");
+  ctx.fillStyle = tg;
+  ctx.fillText("GRAVITY SNAIL", W / 2, H / 2 - 80);
+
+  // Subtitle pulse
+  const pulse = 0.7 + Math.sin(elapsed * 3) * 0.3;
+  ctx.globalAlpha = pulse;
+  ctx.font = "600 20px system-ui, sans-serif";
+  ctx.fillStyle = "#9fd0ff";
+  ctx.fillText("Hold to thrust. Release to fall.", W / 2, H / 2 - 20);
+  ctx.globalAlpha = 1;
+
+  // Best
+  if (bestScore > 0) {
+    ctx.font = "500 16px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(200,220,250,0.7)";
+    ctx.fillText("Best Score: " + bestScore, W / 2, H / 2 + 20);
+  }
+
+  // Tap prompt
+  ctx.font = "bold 22px system-ui, sans-serif";
+  ctx.fillStyle = "#7CFFB2";
+  ctx.fillText("TAP / CLICK TO START", W / 2, H / 2 + 70);
+
+  // tiny hint
+  ctx.font = "500 13px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(180,200,230,0.5)";
+  ctx.fillText("Dodge the spikes. Grab the glowing leaves.", W / 2, H / 2 + 110);
+
+  ctx.restore();
+}
+
+function drawDeath() {
+  ctx.save();
+  ctx.fillStyle = "rgba(5,6,12,0.62)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.font = "bold 48px system-ui, sans-serif";
+  ctx.fillStyle = "#ff6a4a";
+  ctx.fillText("SQUISHED", W / 2, H / 2 - 90);
+
+  // score
+  ctx.font = "500 18px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(200,220,250,0.8)";
+  ctx.fillText("Score", W / 2, H / 2 - 30);
+  ctx.font = "bold 54px system-ui, sans-serif";
+  ctx.fillStyle = "#eaf4ff";
+  ctx.fillText(String(score), W / 2, H / 2 + 12);
+
+  // best
+  const isNew = score >= bestScore && score > 0;
+  ctx.font = "600 16px system-ui, sans-serif";
+  ctx.fillStyle = isNew ? "#7CFFB2" : "rgba(200,220,250,0.7)";
+  ctx.fillText(isNew ? "NEW BEST!" : ("Best " + bestScore), W / 2, H / 2 + 56);
+
+  // restart prompt
+  const pulse = 0.7 + Math.sin(elapsed * 4) * 0.3;
+  ctx.globalAlpha = pulse;
+  ctx.font = "bold 20px system-ui, sans-serif";
+  ctx.fillStyle = "#9fd0ff";
+  ctx.fillText("TAP TO RESTART", W / 2, H / 2 + 110);
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// --------------------- Main loop ---------------------
+function frame(now) {
+  let dt = (now - lastT) / 1000;
+  lastT = now;
+  if (dt > 0.05) dt = 0.05; // clamp for tab-switch spikes
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(now => { lastT = now; requestAnimationFrame(frame); });
+
+// --------------------- Tap to start / restart ---------------------
+function handleTap() {
+  if (state === "menu") startGame();
+  else if (state === "dead") {
+    // small delay handled by input event; restart now
+    startGame();
+  }
+}
+canvas.addEventListener("click", handleTap);
+canvas.addEventListener("touchstart", () => {
+  // On menu/dead, the same touch that starts thrust also should begin/restart.
+  // We let pressDown set thrusting=true; if game starts, thrust applies.
+  if (state === "menu" || state === "dead") handleTap();
+}, { passive: false });
+
+</script>
+</body>
+</html>

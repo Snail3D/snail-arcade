@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Gravity Snail</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #cfe9c8;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #050608;
+    image-rendering: pixelated;
+    box-shadow: 0 0 40px rgba(0,0,0,0.6);
+    touch-action: none;
+  }
+  #hint {
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    font-size: 12px;
+    opacity: 0.55;
+    letter-spacing: 0.05em;
+    pointer-events: none;
+    text-shadow: 0 1px 0 #000;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="480" height="720"></canvas></div>
+<div id="hint">HOLD MOUSE / TAP TO THRUST — RELEASE TO FALL</div>
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  // ---------- Responsive sizing ----------
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const targetRatio = 480 / 720;
+    const screenRatio = w / h;
+    let cw, ch;
+    if (screenRatio > targetRatio) {
+      ch = Math.min(h, 900);
+      cw = Math.floor(ch * targetRatio);
+    } else {
+      cw = Math.min(w, 800);
+      ch = Math.floor(cw / targetRatio);
+    }
+    canvas.style.width = cw + 'px';
+    canvas.style.height = ch + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const W = 480;
+  const H = 720;
+
+  // ---------- Input ----------
+  let thrusting = false;
+  function setThrust(v) { thrusting = v; }
+
+  canvas.addEventListener('mousedown', e => { e.preventDefault(); setThrust(true); });
+  window.addEventListener('mouseup',   () => setThrust(false));
+  canvas.addEventListener('mouseleave',() => setThrust(false));
+
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); setThrust(true); }, { passive: false });
+  canvas.addEventListener('touchend',   e => { e.preventDefault(); setThrust(false); }, { passive: false });
+  canvas.addEventListener('touchcancel',() => setThrust(false));
+  // Spacebar / tap-anywhere fallback
+  window.addEventListener('keydown', e => { if (e.code === 'Space') { setThrust(true); e.preventDefault(); } });
+  window.addEventListener('keyup',   e => { if (e.code === 'Space') { setThrust(false); e.preventDefault(); } });
+
+  // ---------- RNG ----------
+  let seed = (Date.now() & 0xffffffff) >>> 0;
+  function rand() {
+    // mulberry32
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function rrange(a, b) { return a + rand() * (b - a); }
+
+  // ---------- High score ----------
+  const HS_KEY = 'gravitySnailHighScore_v1';
+  let highScore = 0;
+  try {
+    const v = parseInt(localStorage.getItem(HS_KEY) || '0', 10);
+    if (Number.isFinite(v) && v >= 0) highScore = v;
+  } catch (_) {}
+
+  // ---------- Game state ----------
+  const STATE_MENU = 0, STATE_PLAY = 1, STATE_DEAD = 2;
+  let state = STATE_MENU;
+
+  let score = 0;
+  let distance = 0;
+  let scrollY = 0;          // total cave scroll
+  let speedBase = 220;      // px/sec scroll
+  let speedMul = 1;         // ramp
+  let timeAlive = 0;
+  let timeSinceLeaf = 999;
+  let menuT = 0;
+
+  // Screen shake
+  let shake = 0;
+  function addShake(amt) { shake = Math.min(28, shake + amt); }
+
+  // Snail
+  const snail = {
+    x: W * 0.28,
+    y: H * 0.45,
+    vy: 0,
+    r: 16,
+    tilt: 0,            // visual tilt
+    thrustGlow: 0,      // 0..1
+    eyeBlink: 0,
+    alive: true
+  };
+
+  // World scrolling obstacles/collectibles use world Y (scrollY + onscreen Y)
+  let obstacles = []; // {type:'top'|'bottom', x, w, h, worldY, scored}
+  let leaves = [];    // {x, y, worldY, collected, t}
+  let particles = [];
+  let sparkles = [];  // ambient cave motes
+
+  // ---------- Obstacle generation ----------
+  let nextSpawnAt = 0;
+  function spawnPair(worldYBase) {
+    // Difficulty scales with distance
+    const diff = Math.min(1, distance / 6000);
+    const minGap = Math.max(150, 360 - diff * 160);
+    const maxGap = Math.max(220, 440 - diff * 140);
+
+    // Decide gap vertical position
+    const cy = rrange(160, H - 160);
+    const gap = rrange(minGap, maxGap);
+
+    // Optional: single-side spike for variety
+    const topH = Math.max(40, cy - gap / 2);
+    const botH = Math.max(40, H - (cy + gap / 2));
+
+    // Width based on gap so narrower gap -> thicker spikes sometimes
+    const spikeWidth = rrange(38, 78);
+
+    obstacles.push({
+      type: 'top',
+      x: rrange(20, W - spikeWidth - 20),
+      w: spikeWidth,
+      h: topH,
+      worldY: worldYBase,
+      scored: false
+    });
+    obstacles.push({
+      type: 'bottom',
+      x: rrange(20, W - spikeWidth - 20),
+      w: spikeWidth,
+      h: botH,
+      worldY: worldYBase,
+      scored: false
+    });
+
+    // Sometimes add a second top or bottom obstacle (narrower)
+    if (rand() < 0.35 + diff * 0.25) {
+      const w2 = rrange(28, 56);
+      const h2 = rrange(60, 160 + diff * 80);
+      const side = rand() < 0.5 ? 'top' : 'bottom';
+      obstacles.push({
+        type: side,
+        x: rrange(20, W - w2 - 20),
+        w: w2,
+        h: h2,
+        worldY: worldYBase,
+        scored: false
+      });
+    }
+  }
+
+  function maybeSpawnLeaf(worldYBase) {
+    if (rand() < 0.55) {
+      leaves.push({
+        x: rrange(40, W - 40),
+        y: rrange(120, H - 120),
+        worldY: worldYBase,
+        collected: false,
+        t: rand() * Math.PI * 2,
+        pulse: 0
+      });
+    }
+  }
+
+  function reset() {
+    score = 0;
+    distance = 0;
+    scrollY = 0;
+    speedBase = 220;
+    speedMul = 1;
+    timeAlive = 0;
+    timeSinceLeaf = 999;
+    obstacles.length = 0;
+    leaves.length = 0;
+    particles.length = 0;
+    sparkles.length = 0;
+    snail.x = W * 0.28;
+    snail.y = H * 0.45;
+    snail.vy = 0;
+    snail.tilt = 0;
+    snail.thrustGlow = 0;
+    snail.alive = true;
+    nextSpawnAt = 600;
+    shake = 0;
+    // pre-populate a few rows
+    for (let i = 0; i < 4; i++) {
+      const wy = -i * 220;
+      spawnPair(wy);
+      maybeSpawnLeaf(wy - 120);
+    }
+    // ambient sparkles
+    for (let i = 0; i < 60; i++) {
+      sparkles.push({
+        x: rand() * W,
+        y: rand() * H,
+        r: rrange(0.4, 1.4),
+        a: rand() * Math.PI * 2,
+        s: rrange(0.3, 1.2)
+      });
+    }
+  }
+  reset();
+
+  // ---------- Particles ----------
+  function spawnLeafBurst(x, y) {
+    for (let i = 0; i < 22; i++) {
+      const a = rand() * Math.PI * 2;
+      const sp = rrange(60, 200);
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 20,
+        life: rrange(0.4, 0.9),
+        age: 0,
+        color: `hsl(${90 + rand() * 40}, 80%, ${55 + rand() * 20}%)`,
+        size: rrange(1.5, 3.2),
+        grav: 120
+      });
+    }
+    // bright flash
+    particles.push({
+      x, y, vx: 0, vy: 0,
+      life: 0.25, age: 0,
+      color: '#ffffff', size: 38, flash: true, grav: 0
+    });
+  }
+
+  function spawnThrustParticles(dt) {
+    // Emit from jetpack nozzle
+    const nx = snail.x - 6;
+    const ny = snail.y + 4;
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: nx + rrange(-2, 2),
+        y: ny + rrange(-2, 2),
+        vx: rrange(-40, 40) - 60,
+        vy: rrange(20, 80),
+        life: rrange(0.25, 0.55),
+        age: 0,
+        color: `hsl(${20 + rand() * 30}, 100%, ${55 + rand() * 20}%)`,
+        size: rrange(1.6, 3),
+        grav: -40
+      });
+    }
+  }
+
+  function spawnDeathParticles() {
+    for (let i = 0; i < 60; i++) {
+      const a = rand() * Math.PI * 2;
+      const sp = rrange(80, 320);
+      particles.push({
+        x: snail.x, y: snail.y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 40,
+        life: rrange(0.6, 1.2),
+        age: 0,
+        color: ['#ff8a3d', '#ffd166', '#9bf6a1', '#ffffff'][Math.floor(rand() * 4)],
+        size: rrange(1.5, 3.4),
+        grav: 200
+      });
+    }
+  }
+
+  // ---------- Update ----------
+  function update(dt) {
+    menuT += dt;
+
+    if (state === STATE_MENU) {
+      // gentle idle drift
+      snail.y = H * 0.45 + Math.sin(menuT * 1.2) * 8;
+      snail.tilt = Math.sin(menuT * 1.2) * 0.05;
+      // ambient sparkles drift
+      for (const s of sparkles) {
+        s.y += s.s * 12 * dt;
+        s.a += dt;
+        if (s.y > H + 4) s.y = -4;
+      }
+      return;
+    }
+
+    if (state === STATE_DEAD) {
+      snail.vy += 700 * dt;
+      snail.y += snail.vy * dt;
+      snail.tilt += (1.2 - snail.tilt) * Math.min(1, dt * 6);
+      // particles continue
+      updateParticles(dt);
+      // ambient
+      for (const s of sparkles) {
+        s.y += s.s * 12 * dt;
+        if (s.y > H + 4) s.y = -4;
+      }
+      shake = Math.max(0, shake - dt * 30);
+      return;
+    }
+
+    // --- Playing ---
+    timeAlive += dt;
+    timeSinceLeaf += dt;
+    // Speed ramp
+    speedMul = 1 + Math.min(2.2, timeAlive / 35);
+    const scrollSpeed = speedBase * speedMul;
+
+    // Thrust physics
+    const GRAV = 1400;
+    const THRUST = -2100;
+    const MAX_VY = 720;
+    snail.vy += GRAV * dt;
+    if (thrusting) {
+      snail.vy += THRUST * dt;
+      snail.thrustGlow = Math.min(1, snail.thrustGlow + dt * 5);
+      spawnThrustParticles(dt);
+    } else {
+      snail.thrustGlow = Math.max(0, snail.thrustGlow - dt * 3);
+    }
+    if (snail.vy < -MAX_VY) snail.vy = -MAX_VY;
+    if (snail.vy > MAX_VY) snail.vy = MAX_VY;
+    snail.y += snail.vy * dt;
+
+    // Visual tilt based on vy
+    const targetTilt = Math.max(-0.4, Math.min(0.7, snail.vy / 1400));
+    snail.tilt += (targetTilt - snail.tilt) * Math.min(1, dt * 8);
+
+    // Eye blink
+    snail.eyeBlink += dt;
+    if (snail.eyeBlink > 3 + rand() * 2) snail.eyeBlink = 0;
+
+    // Scroll world
+    const prevScroll = scrollY;
+    scrollY += scrollSpeed * dt;
+    distance += scrollSpeed * dt;
+    score = Math.floor(distance / 10);
+
+    // Spawn obstacles
+    nextSpawnAt -= scrollSpeed * dt;
+    if (nextSpawnAt <= 0) {
+      // spawn at the bottom edge in world coords (below screen)
+      const worldYBase = scrollY + H + 20;
+      spawnPair(worldYBase);
+      maybeSpawnLeaf(worldYBase - rrange(80, 240));
+      nextSpawnAt = rrange(200, 320) - Math.min(80, distance / 200);
+    }
+
+    // Collision: walls (top/bottom of cave)
+    if (snail.y < snail.r + 8) {
+      snail.y = snail.r + 8;
+      snail.vy = Math.max(snail.vy, 60);
+      addShake(6);
+    }
+    if (snail.y > H - snail.r - 8) {
+      snail.y = H - snail.r - 8;
+      snail.vy = Math.min(snail.vy, -60);
+      addShake(6);
+    }
+
+    // Obstacle collisions + near-miss shake
+    for (const o of obstacles) {
+      const onY = o.worldY - scrollY;
+      if (onY < -200 || onY > H + 200) continue;
+
+      // AABB-ish vs circle — match drawObstacles geometry
+      const ox = o.x;
+      let oy;
+      if (o.type === 'top') {
+        oy = onY - o.h;
+      } else {
+        oy = onY;
+      }
+      const rect = { x: ox, y: oy, w: o.w, h: o.h };
+      if (circleRectHit(snail.x, snail.y, snail.r - 2, rect)) {
+        die();
+        return;
+      }
+
+      // Near-miss detection: if horizontally overlapping and vertically very close
+      if (
+        snail.x + snail.r > rect.x && snail.x - snail.r < rect.x + rect.w &&
+        Math.abs(snail.y - (oy + (o.type === 'top' ? rect.h : 0))) < 26
+      ) {
+        addShake(0.6);
+      }
+    }
+
+    // Leaf collection — onscreen y = leaf local y + (worldY - scrollY)
+    for (const l of leaves) {
+      if (l.collected) continue;
+      l.t += dt;
+      const ly = l.y + (l.worldY - scrollY);
+      if (ly < -40 || ly > H + 40) continue;
+      const dx = l.x - snail.x;
+      const dy = ly - snail.y;
+      const d = Math.hypot(dx, dy);
+      const grabR = snail.r + 14;
+      if (d < grabR) {
+        l.collected = true;
+        l.pulse = 1;
+        timeSinceLeaf = 0;
+        spawnLeafBurst(l.x, ly);
+        score += 50;
+        addShake(2);
+      }
+    }
+
+    updateParticles(dt);
+
+    // Sparkles
+    for (const s of sparkles) {
+      s.y += s.s * (12 + scrollSpeed * 0.02) * dt;
+      s.a += dt;
+      if (s.y > H + 4) s.y = -4;
+    }
+
+    // Cleanup
+    obstacles = obstacles.filter(o => (o.worldY - scrollY) > -400);
+    leaves = leaves.filter(l => !l.collected || l.pulse > 0);
+
+    // Decay shake
+    shake = Math.max(0, shake - dt * 22);
+  }
+
+  function updateParticles(dt) {
+    for (const p of particles) {
+      p.age += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += (p.grav || 0) * dt;
+      p.vx *= 0.985;
+    }
+    particles = particles.filter(p => p.age < p.life);
+    // pulse decay for collected leaves
+    for (const l of leaves) {
+      if (l.pulse > 0) l.pulse = Math.max(0, l.pulse - dt * 1.5);
+    }
+  }
+
+  function circleRectHit(cx, cy, cr, r) {
+    const nx = Math.max(r.x, Math.min(cx, r.x + r.w));
+    const ny = Math.max(r.y, Math.min(cy, r.y + r.h));
+    const dx = cx - nx;
+    const dy = cy - ny;
+    return (dx * dx + dy * dy) < cr * cr;
+  }
+
+  function die() {
+    if (!snail.alive) return;
+    snail.alive = false;
+    state = STATE_DEAD;
+    addShake(18);
+    spawnDeathParticles();
+    if (score > highScore) {
+      highScore = score;
+      try { localStorage.setItem(HS_KEY, String(highScore)); } catch (_) {}
+    }
+  }
+
+  // ---------- Drawing ----------
+  function drawBackground() {
+    // Far layer: deep gradient
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0a0814');
+    g.addColorStop(0.5, '#0c1320');
+    g.addColorStop(1, '#070612');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Vignette
+    const vg = ctx.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, 460);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Far cave silhouettes (parallax 0.2)
+    drawCaveSilhouettes(0.2, '#0e1424', 0.5, 14);
+    // Mid cave silhouettes (parallax 0.5)
+    drawCaveSilhouettes(0.5, '#11192e', 0.8, 7);
+    // Near cave rim (parallax 1.0)
+    drawCaveSilhouettes(1.0, '#1a2440', 1.0, 3);
+
+    // Ambient sparkles
+    for (const s of sparkles) {
+      const flick = 0.5 + 0.5 * Math.sin(s.a * 2 + s.x);
+      ctx.fillStyle = `rgba(180, 220, 200, ${0.18 + flick * 0.25})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawCaveSilhouettes(parallax, color, alpha, segments) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    const off = (scrollY * parallax) % 240;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    // top edge wavy
+    for (let x = 0; x <= W; x += 12) {
+      const n = Math.sin((x + off) * 0.013) * 22 + Math.sin((x + off) * 0.04) * 8;
+      ctx.lineTo(x, -10 + n);
+    }
+    ctx.lineTo(W, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (let x = 0; x <= W; x += 12) {
+      const n = Math.sin((x + off) * 0.015) * 24 + Math.sin((x + off) * 0.035) * 10;
+      ctx.lineTo(x, H + 10 + n);
+    }
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // a few hanging stalactites for the near layer
+    if (parallax >= 0.9) {
+      ctx.globalAlpha = alpha * 0.9;
+      const seedShift = Math.floor(off / 240) * 13;
+      for (let i = 0; i < segments; i++) {
+        const baseX = (i * (W / segments) + ((off * 0.5) % (W / segments)) + (i * 37 + seedShift) % (W / segments)) % W;
+        const len = 24 + ((i * 53 + Math.floor(off / 240)) % 30);
+        ctx.beginPath();
+        ctx.moveTo(baseX - 8, 0);
+        ctx.lineTo(baseX + 8, 0);
+        ctx.lineTo(baseX, len);
+        ctx.closePath();
+        ctx.fill();
+
+        const baseX2 = ((i * 71 + 19) + (off * 0.5)) % W;
+        const len2 = 18 + ((i * 41) % 22);
+        ctx.beginPath();
+        ctx.moveTo(baseX2 - 6, H);
+        ctx.lineTo(baseX2 + 6, H);
+        ctx.lineTo(baseX2, H - len2);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawObstacles() {
+    for (const o of obstacles) {
+      const onY = o.worldY - scrollY;
+      if (onY < -300 || onY > H + 300) continue;
+      // Spike occupies vertical band centered on worldY: top spike hangs from
+      // worldY upward (to top of screen), bottom spike extends from worldY
+      // downward (to bottom of screen).
+      const x = o.x;
+      const w = o.w;
+      let y, h;
+      if (o.type === 'top') {
+        // spike base (wide) sits at onY, tip points up to onY - o.h
+        y = onY - o.h;
+        h = o.h;
+      } else {
+        // spike base sits at onY, tip points down to onY + o.h
+        y = onY;
+        h = o.h;
+      }
+      drawSpike(x, y, w, h, o.type);
+    }
+  }
+
+  function drawSpike(x, y, w, h, side) {
+    // Multiple jagged points along the base
+    ctx.save();
+    // Base rock
+    ctx.fillStyle = '#1b2238';
+    ctx.strokeStyle = '#0a0e1c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (side === 'top') {
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x, y + h - 18);
+      // jagged teeth
+      const teeth = Math.max(3, Math.floor(w / 12));
+      const tw = w / teeth;
+      for (let i = 0; i < teeth; i++) {
+        const px = x + i * tw;
+        ctx.lineTo(px + tw * 0.15, y + h - 18 - (i % 2 === 0 ? 8 : 4));
+        ctx.lineTo(px + tw * 0.5,  y + h);
+        ctx.lineTo(px + tw * 0.85, y + h - 18 - ((i + 1) % 2 === 0 ? 6 : 10));
+      }
+      ctx.lineTo(x + w, y + h - 18);
+      ctx.lineTo(x + w, y + h);
+      ctx.closePath();
+    } else {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 18);
+      const teeth = Math.max(3, Math.floor(w / 12));
+      const tw = w / teeth;
+      for (let i = 0; i < teeth; i++) {
+        const px = x + i * tw;
+        ctx.lineTo(px + tw * 0.15, y + 18 + (i % 2 === 0 ? 6 : 10));
+        ctx.lineTo(px + tw * 0.5,  y);
+        ctx.lineTo(px + tw * 0.85, y + 18 + ((i + 1) % 2 === 0 ? 8 : 4));
+      }
+      ctx.lineTo(x + w, y + 18);
+      ctx.lineTo(x + w, y);
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.stroke();
+
+    // Highlight rim
+    ctx.strokeStyle = 'rgba(180, 200, 220, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (side === 'top') {
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x, y + h - 18);
+      ctx.lineTo(x + w, y + h - 18);
+      ctx.lineTo(x + w, y + h);
+    } else {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 18);
+      ctx.lineTo(x + w, y + 18);
+      ctx.lineTo(x + w, y);
+    }
+    ctx.stroke();
+
+    // glowing edge hint near the tip
+    ctx.strokeStyle = 'rgba(255, 140, 60, 0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (side === 'top') {
+      ctx.moveTo(x + 2, y + h - 18);
+      ctx.lineTo(x + w - 2, y + h - 18);
+    } else {
+      ctx.moveTo(x + 2, y + 18);
+      ctx.lineTo(x + w - 2, y + 18);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawLeaves() {
+    for (const l of leaves) {
+      if (l.collected && l.pulse <= 0) continue;
+      const ly = l.y + (l.worldY - scrollY);
+      if (ly < -40 || ly > H + 40) continue;
+
+      if (l.collected) {
+        // pulse flash ring
+        const r = 6 + (1 - l.pulse) * 36;
+        ctx.save();
+        ctx.strokeStyle = `rgba(180, 255, 160, ${l.pulse * 0.6})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(l.x, ly, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+        continue;
+      }
+
+      const bob = Math.sin(l.t * 3) * 3;
+      drawLeaf(l.x, ly + bob, l.t);
+    }
+  }
+
+  function drawLeaf(x, y, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    // glow halo
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 22);
+    glow.addColorStop(0, 'rgba(160, 255, 140, 0.55)');
+    glow.addColorStop(1, 'rgba(160, 255, 140, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // leaf body
+    ctx.rotate(Math.sin(t * 2) * 0.25);
+    ctx.fillStyle = '#7ee787';
+    ctx.strokeStyle = '#2f5d2f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.bezierCurveTo(10, -10, 12, 4, 0, 10);
+    ctx.bezierCurveTo(-12, 4, -10, -10, 0, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // vein
+    ctx.strokeStyle = '#2f5d2f';
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(0, 9);
+    ctx.stroke();
+
+    // sparkle
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(-3, -4, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSnail() {
+    ctx.save();
+    ctx.translate(snail.x, snail.y);
+    ctx.rotate(snail.tilt);
+
+    // Jetpack flame (drawn behind body)
+    if (snail.thrustGlow > 0.05 || thrusting) {
+      const len = 18 + snail.thrustGlow * 22 + rand() * 4;
+      const flameGrad = ctx.createLinearGradient(-6, 0, -6 - len, 0);
+      flameGrad.addColorStop(0, 'rgba(255, 230, 120, 0.95)');
+      flameGrad.addColorStop(0.4, 'rgba(255, 140, 50, 0.8)');
+      flameGrad.addColorStop(1, 'rgba(255, 60, 0, 0)');
+      ctx.fillStyle = flameGrad;
+      ctx.beginPath();
+      ctx.moveTo(-6, -7);
+      ctx.lineTo(-6 - len, 0 + (rand() - 0.5) * 3);
+      ctx.lineTo(-6, 7);
+      ctx.closePath();
+      ctx.fill();
+
+      // inner bright core
+      ctx.fillStyle = 'rgba(255,255,220,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(-6, -3);
+      ctx.lineTo(-6 - len * 0.55, 0 + (rand() - 0.5) * 1.5);
+      ctx.lineTo(-6, 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Jetpack pack on back
+    ctx.fillStyle = '#3a3f55';
+    ctx.strokeStyle = '#1a1e2c';
+    ctx.lineWidth = 1.5;
+    roundRect(-12, -10, 8, 20, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#1a1e2c';
+    ctx.fillRect(-10, -7, 4, 3);
+    ctx.fillRect(-10, 4, 4, 3);
+
+    // Shell
+    ctx.fillStyle = '#c98b5a';
+    ctx.strokeStyle = '#5a3a1f';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(2, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // shell swirl
+    ctx.strokeStyle = '#7a4a26';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(2, 0, 9, 0.5, Math.PI * 1.4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(2, 0, 5, 0.2, Math.PI * 1.7);
+    ctx.stroke();
+    // shell highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(-2, -4, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = '#b6d99a';
+    ctx.strokeStyle = '#3f5a2a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(14, 2, 10, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Eye stalks
+    ctx.strokeStyle = '#3f5a2a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(18, -2); ctx.lineTo(22, -10);
+    ctx.moveTo(20, -2); ctx.lineTo(25, -9);
+    ctx.stroke();
+
+    // Eyes
+    const blink = snail.eyeBlink < 0.12;
+    ctx.fillStyle = '#1a1a1a';
+    if (blink) {
+      ctx.fillRect(21, -11, 3, 1);
+      ctx.fillRect(24, -10, 3, 1);
+    } else {
+      ctx.beginPath();
+      ctx.arc(22, -10, 1.6, 0, Math.PI * 2);
+      ctx.arc(25, -9, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Smile
+    ctx.strokeStyle = '#3f5a2a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(17, 4, 3, 0, Math.PI);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      const t = p.age / p.life;
+      if (p.flash) {
+        ctx.fillStyle = `rgba(255,255,255,${(1 - t) * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1 - t * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = 1 - t;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1 - t * 0.3), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  function drawHUD() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(8, 8, 150, 56);
+    ctx.strokeStyle = 'rgba(160, 200, 180, 0.3)';
+    ctx.strokeRect(8, 8, 150, 56);
+
+    ctx.fillStyle = '#cfe9c8';
+    ctx.font = '12px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SCORE', 16, 24);
+    ctx.font = 'bold 20px ui-monospace, Menlo, monospace';
+    ctx.fillText(String(score).padStart(5, '0'), 16, 46);
+
+    ctx.textAlign = 'right';
+    ctx.font = '11px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = '#9bb8a6';
+    ctx.fillText('HI  ' + String(highScore).padStart(5, '0'), 150, 24);
+    ctx.fillStyle = '#9bb8a6';
+    ctx.font = '10px ui-monospace, Menlo, monospace';
+    ctx.fillText('SPEED x' + speedMul.toFixed(2), 150, 46);
+    ctx.restore();
+  }
+
+  function drawMenu() {
+    // Title
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(W / 2 - 180, H / 2 - 130, 360, 260);
+
+    ctx.textAlign = 'center';
+
+    // Title glow
+    ctx.shadowColor = '#9bf6a1';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#cfe9c8';
+    ctx.font = 'bold 36px ui-monospace, Menlo, monospace';
+    ctx.fillText('GRAVITY SNAIL', W / 2, H / 2 - 70);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#9bb8a6';
+    ctx.font = '13px ui-monospace, Menlo, monospace';
+    ctx.fillText('A jetpack mollusc in an endless cave', W / 2, H / 2 - 40);
+
+    // Pulsing prompt
+    const pulse = 0.6 + 0.4 * Math.sin(menuT * 4);
+    ctx.fillStyle = `rgba(155, 246, 161, ${pulse})`;
+    ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
+    ctx.fillText('CLICK / TAP TO START', W / 2, H / 2 + 10);
+
+    ctx.fillStyle = '#9bb8a6';
+    ctx.font = '12px ui-monospace, Menlo, monospace';
+    ctx.fillText('HOLD to thrust • Release to fall', W / 2, H / 2 + 40);
+    ctx.fillText('Leaves = +50   Dodge the spikes', W / 2, H / 2 + 60);
+
+    ctx.fillStyle = '#7a9487';
+    ctx.font = '11px ui-monospace, Menlo, monospace';
+    ctx.fillText('HIGH SCORE  ' + String(highScore).padStart(5, '0'), W / 2, H / 2 + 100);
+    ctx.restore();
+  }
+
+  function drawDeathScreen() {
+    ctx.save();
+    const fadeIn = Math.min(1, (timeAlive > 0 ? 1 : 1)); // immediately full
+    ctx.fillStyle = `rgba(0,0,0,${0.55 * fadeIn})`;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff8a3d';
+    ctx.font = 'bold 30px ui-monospace, Menlo, monospace';
+    ctx.fillText('SHELL-CRACKED', W / 2, H / 2 - 40);
+
+    ctx.fillStyle = '#cfe9c8';
+    ctx.font = 'bold 22px ui-monospace, Menlo, monospace';
+    ctx.fillText('SCORE  ' + String(score).padStart(5, '0'), W / 2, H / 2);
+
+    const isNew = score >= highScore && score > 0;
+    if (isNew) {
+      ctx.fillStyle = '#9bf6a1';
+      ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
+      ctx.fillText('★ NEW HIGH SCORE ★', W / 2, H / 2 + 26);
+    } else {
+      ctx.fillStyle = '#9bb8a6';
+      ctx.font = '14px ui-monospace, Menlo, monospace';
+      ctx.fillText('HIGH SCORE  ' + String(highScore).padStart(5, '0'), W / 2, H / 2 + 26);
+    }
+
+    const pulse = 0.5 + 0.5 * Math.sin(menuT * 4);
+    ctx.fillStyle = `rgba(207, 233, 200, ${0.5 + pulse * 0.5})`;
+    ctx.font = 'bold 16px ui-monospace, Menlo, monospace';
+    ctx.fillText('CLICK / TAP TO RETRY', W / 2, H / 2 + 70);
+    ctx.restore();
+  }
+
+  // ---------- Render ----------
+  function render() {
+    ctx.save();
+
+    // Screen shake
+    if (shake > 0.1) {
+      const sx = (rand() - 0.5) * shake;
+      const sy = (rand() - 0.5) * shake;
+      ctx.translate(sx, sy);
+    }
+
+    drawBackground();
+
+    if (state === STATE_PLAY || state === STATE_DEAD) {
+      drawObstacles();
+      drawLeaves();
+    }
+
+    drawSnail();
+    drawParticles();
+
+    ctx.restore();
+
+    drawHUD();
+
+    if (state === STATE_MENU) drawMenu();
+    if (state === STATE_DEAD) drawDeathScreen();
+  }
+
+  // ---------- Loop ----------
+  let last = performance.now();
+  function loop(now) {
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.05) dt = 0.05; // clamp on tab-switch
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // Click / tap to start or restart
+  function handleStartClick(e) {
+    if (e) e.preventDefault();
+    if (state === STATE_MENU || state === STATE_DEAD) {
+      reset();
+      state = STATE_PLAY;
+      // immediately begin thrusting if held
+    }
+  }
+  canvas.addEventListener('mousedown', handleStartClick);
+  canvas.addEventListener('touchstart', handleStartClick, { passive: false });
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
