@@ -543,7 +543,7 @@ const totalE=this.galaxy.reduce((a,s)=>a+s.resources.energy,0);
 if(totalE>0&&controlledE/totalE>0.6)inflation.energy=1+(controlledE/totalE-0.6)*2;
 const controlledF=this.galaxy.filter(s=>s.owner===f.id).reduce((a,s)=>a+s.resources.food,0);
 const totalF=this.galaxy.reduce((a,s)=>a+s.resources.food,0);
-if(totalF>0&&controlledF/totalF>0.6)inflation.food=1+(controlledF/totalF-0.6)*2}
+if(totalF>0&&controlledF/totalF>0.6)inflation.food=1+(controlledF/totalF-0.6)*2
 
 pf.resources.minerals=Math.floor(totalMinerals*inflation.minerals);
 pf.resources.energy=Math.floor(totalEnergy*inflation.energy);
@@ -973,7 +973,7 @@ for(const sys of this.galaxy){if(!sys.discovered)continue;
 const mx=80+sys.x*scale,my=60+sys.y*scale;
 if(mx<0||mx>160||my<0||my>120)continue;
 mctx.fillStyle=sys.owner!==null?this.factions[sys.owner].color:SYSTEM_COLORS[sys.type]||'#333';
-mctx.fillRect(mx,my,1,1)}}},
+mctx.fillRect(mx,my,1,1)}}
 
 // --- GAME LOOP ---
 gameLoop(timestamp){

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bible Quiz</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; font-family: 'Courier New', monospace; color: #e0e0e0; }
+canvas { display: block; margin: 0 auto; background: #0a0a0a; }
+#start, #gameover { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; background: rgba(10,10,10,0.95); }
+#start.active, #gameover.active { display: flex; }
+h1 { font-size: 2.5em; color: #00ff88; margin-bottom: 10px; text-shadow: 0 0 20px rgba(0,255,136,0.4); }
+h2 { font-size: 1.8em; color: #00ff88; margin-bottom: 20px; }
+.subtitle { color: #888; font-size: 1em; margin-bottom: 30px; text-align: center; padding: 0 20px; }
+.btn { background: #00ff88; color: #0a0a0a; border: none; padding: 15px 40px; font-size: 1.2em; font-family: 'Courier New', monospace; font-weight: bold; cursor: pointer; border-radius: 8px; margin: 10px; transition: all 0.2s; }
+.btn:hover { background: #00cc6a; transform: scale(1.05); }
+.btn:active { transform: scale(0.98); }
+.score-display { font-size: 1.3em; color: #ffcc00; margin-bottom: 20px; }
+.best-display { font-size: 1em; color: #888; margin-bottom: 30px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="start">
+  <h1>✝️ BIBLE QUIZ</h1>
+  <p class="subtitle">100 Questions • Test Your Knowledge<br>Old & New Testament</p>
+  <button class="btn" id="startBtn">START QUIZ</button>
+</div>
+
+<div id="gameover">
+  <h2>QUIZ COMPLETE!</h2>
+  <p class="score-display" id="finalScore"></p>
+  <p class="best-display" id="bestDisplay"></p>
+  <button class="btn" id="restartBtn">PLAY AGAIN</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const startScreen = document.getElementById('start');
+const gameoverScreen = document.getElementById('gameover');
+
+// Questions - 100 researched Bible questions
+const QUESTIONS = [
+  { q: "Who built the Ark?", a: ["Noah", "Moses", "Abraham", "David"], c: 0 },
+  { q: "What was the first miracle Jesus performed?", a: ["Healing a blind man", "Turning water into wine", "Walking on water", "Feeding 5000"], c: 1 },
+  { q: "How many books are in the Bible?", a: ["66", "72", "54", "80"], c: 0 },
+  { q: "Who was the first king of Israel?", a: ["David", "Solomon", "Saul", "Samuel"], c: 2 },
+  { q: "What river did Jesus get baptized in?", a: ["Nile", "Euphrates", "Jordan", "Tigris"], c: 2 },
+  { q: "Who betrayed Jesus?", a: ["Peter", "Judas Iscariot", "Thomas", "Pilate"], c: 1 },
+  { q: "What is the shortest verse in the Bible?", a: ["God is love", "Jesus wept", "Rejoice always", "Be still"], c: 1 },
+  { q: "Who was swallowed by a great fish?", a: ["Jonah", "Job", "Elijah", "Daniel"], c: 0 },
+  { q: "What did God create on the first day?", a: ["Animals", "Light", "Humans", "Stars"], c: 1 },
+  { q: "Who interpreted Pharaoh's dreams?", a: ["Moses", "Joseph", "Daniel", "Aaron"], c: 1 },
+  { q: "What was Paul's name before conversion?", a: ["Simon", "Saul", "Stephen", "Barnabas"], c: 1 },
+  { q: "How many plagues did God send on Egypt?", a: ["7", "10", "12", "5"], c: 1 },
+  { q: "Who was the strongest man in the Bible?", a: ["Goliath", "Samson", "David", "Saul"], c: 1 },
+  { q: "What fruit did Eve eat in the Garden of Eden?", a: ["Apple", "Fig", "The forbidden fruit", "Pomegranate"], c: 2 },
+  { q: "Who wrote most of the Psalms?", a: ["Solomon", "Moses", "David", "Asaph"], c: 2 },
+  { q: "What city's walls fell after the Israelites marched around them?", a: ["Jerusalem", " Jericho", "Babylon", "Nineveh"], c: 1 },
+  { q: "Who was Moses' brother?", a: ["Joshua", "Caleb", "Aaron", "Levi"], c: 2 },
+  { q: "What is the longest book in the Bible?", a: ["Genesis", "Psalms", "Isaiah", "Jeremiah"], c: 1 },
+  { q: "Who denied Jesus three times?", a: ["Judas", "Thomas", "Peter", "John"], c: 2 },
+  { q: "What was the sign of God's covenant with Noah?", a: ["A star", "A rainbow", "A dove", "Fire"], c: 1 },
+  { q: "Who was thrown into a den of lions?", a: ["Jonah", "David", "Daniel", "Elijah"], c: 2 },
+  { q: "What is the first book of the Bible?", a: ["Exodus", "Psalms", "Genesis", "Matthew"], c: 2 },
+  { q: "Who was Abraham's son through Hagar?", a: ["Isaac", "Ishmael", "Esau", "Lot"], c: 1 },
+  { q: "What did David use to defeat Goliath?", a: ["A sword", "A spear", "A sling and stone", "A bow"], c: 2 },
+  { q: "How many disciples did Jesus have?", a: ["10", "12", "7", "15"], c: 1 },
+  { q: "Who was the mother of Jesus?", a: ["Martha", "Mary Magdalene", "Mary", "Elizabeth"], c: 2 },
+  { q: "What sea did Moses part?", a: ["Dead Sea", "Red Sea", "Sea of Galilee", "Mediterranean"], c: 1 },
+  { q: "Who was the wisest king?", a: ["David", "Solomon", "Hezekiah", "Josiah"], c: 1 },
+  { q: "What is the last book of the Bible?", a: ["Jude", "Revelation", "Malachi", "Acts"], c: 1 },
+  { q: "Who was Jesus' earthly father?", a: ["Joseph", "Zacharias", "David", "Abraham"], c: 0 },
+  { q: "How many days did it rain during the flood?", a: ["30", "40", "50", "10"], c: 1 },
+  { q: "Who was the first martyr?", a: ["Peter", "Paul", "Stephen", "James"], c: 2 },
+  { q: "What did God create man from?", a: ["Clay", "Dust of the ground", "Water", "Light"], c: 1 },
+  { q: "Who was sold into slavery by his brothers?", a: ["Benjamin", "Judah", "Joseph", "Reuben"], c: 2 },
+  { q: "What is the Golden Rule?", a: ["Love your neighbor", "Do unto others as you would have them do unto you", "Honor thy father and mother", "Thou shalt not steal"], c: 1 },
+  { q: "Who was the first man created?", a: ["Noah", "Abraham", "Adam", "Seth"], c: 2 },
+  { q: "What type of wood was the Ark built from?", a: ["Oak", "Cedar", "Gopher wood", "Pine"], c: 2 },
+  { q: "Who was the father of Isaac?", a: ["Jacob", "Abraham", "Lot", "Terah"], c: 1 },
+  { q: "What was the name of Moses' wife?", a: ["Miriam", "Zipporah", "Rebekah", "Rachel"], c: 1 },
+  { q: "How many commandments did God give Moses?", a: ["5", "10", "12", "7"], c: 1 },
+  { q: "Who was the first to see the resurrected Jesus?", a: ["Peter", "John", "Mary Magdalene", "Thomas"], c: 2 },
+  { q: "What is the shortest chapter in the Bible?", a: ["Psalm 117", "Psalm 119", "Psalm 23", "Psalm 91"], c: 0 },
+  { q: "Who was the prophet that confronted King David about Bathsheba?", a: ["Elijah", "Isaiah", "Nathan", "Jeremiah"], c: 2 },
+  { q: "What did Jesus feed the 5000 with?", a: ["Fish and honey", "Bread and fish", "Bread and wine", "Manna"], c: 1 },
+  { q: "Who was the first high priest of Israel?", a: ["Aaron", "Moses", "Eli", "Samuel"], c: 0 },
+  { q: "What is the meaning of 'Emmanuel'?", a: ["God is great", "God with us", "The chosen one", "Savior"], c: 1 },
+  { q: "Who was the mother of Samuel?", a: ["Hannah", "Peninnah", "Miriam", "Deborah"], c: 0 },
+  { q: "What was the name of the garden where Adam and Eve lived?", a: ["Gethsemane", "Eden", "Zion", "Olivet"], c: 1 },
+  { q: "Who was the apostle known as 'the disciple whom Jesus loved'?", a: ["Peter", "James", "John", "Andrew"], c: 2 },
+  { q: "What did God create on the seventh day?", a: ["The sun", "Rest", "Angels", "The moon"], c: 1 },
+  { q: "Who was the prophet taken up to heaven in a chariot of fire?", a: ["Elisha", "Moses", "Elijah", "Isaiah"], c: 2 },
+  { q: "What is the longest verse in the Bible?", a: ["Esther 8:9", "Psalm 119:164", "Jeremiah 31:3", "Revelation 20:4"], c: 0 },
+  { q: "Who was the queen who saved her people from Haman?", a: ["Ruth", "Esther", "Vashti", "Deborah"], c: 1 },
+  { q: "What was the name of the mountain where Noah's Ark landed?", a: ["Sinai", "Ararat", "Zion", "Horeb"], c: 1 },
+  { q: "Who was the first person to see angels?", a: ["Abraham", "Jacob", "Daniel", "Zechariah"], c: 0 },
+  { q: "What is the 'armor of God' passage found in?", a: ["Romans", "Ephesians", "Colossians", "Philippians"], c: 1 },
+  { q: "Who was the prophet that anointed Saul and David as kings?", a: ["Elijah", "Nathan", "Samuel", "Gad"], c: 2 },
+  { q: "What was the name of the city where Jesus was born?", a: ["Nazareth", "Jerusalem", "Bethlehem", "Capernaum"], c: 2 },
+  { q: "Who was the Roman governor who sentenced Jesus to death?", a: ["Herod", "Caesar", "Pilate", "Felix"], c: 2 },
+  { q: "What is the theme of the book of Philippians?", a: ["Faith", "Joy", "Love", "Hope"], c: 1 },
+  { q: "Who was the father of John the Baptist?", a: ["Joseph", "Zacharias", "David", "Abraham"], c: 1 },
+  { q: "What did the Holy Spirit descend as at Pentecost?", a: ["Wind", "Fire", "Dove", "Light"], c: 1 },
+  { q: "Who was the first Christian martyr?", a: ["Paul", "Peter", "Stephen", "James"], c: 2 },
+  { q: "What is the book of Proverbs attributed to?", a: ["David", "Moses", "Solomon", "Ecclesiastes"], c: 2 },
+  { q: "Who was the prophet that confronted King Ahab about Naboth's vineyard?", a: ["Jeremiah", "Elijah", "Isaiah", "Amos"], c: 1 },
+  { q: "What was the name of the pool where Jesus healed a paralyzed man?", a: ["Siloe", "Bethesda", "Siloam", "Hezekiah"], c: 1 },
+  { q: "Who was the first person to witness Jesus' resurrection?", a: ["Peter", "John", "Mary Magdalene", "The other women"], c: 2 },
+  { q: "What is the meaning of 'Golgotha'?", a: ["Place of peace", "Place of the skull", "Place of sacrifice", "Place of prayer"], c: 1 },
+  { q: "Who was the prophet's apprentice who received Elijah's mantle?", a: ["Elisha", "Barnabas", "Timothy", "Titus"], c: 0 },
+  { q: "What was the name of the high priest who condemned Jesus?", a: ["Caiaphas", "Annas", "Eli", "Gamaliel"], c: 0 },
+  { q: "Who was the apostle who replaced Judas?", a: ["Paul", "Matthias", "Barnabas", "Silas"], c: 1 },
+  { q: "What is the first commandment?", a: ["Honor your parents", "You shall have no other gods before me", "Do not steal", "Love your neighbor"], c: 1 },
+  { q: "Who was the prophet that ate a scroll given by God?", a: ["Isaiah", "Ezekiel", "Jeremiah", "Daniel"], c: 1 },
+  { q: "What was the name of the mountain where Moses received the Ten Commandments?", a: ["Ararat", "Sinai", "Zion", "Horeb"], c: 1 },
+  { q: "Who was the woman who hid spies in Jericho?", a: ["Ruth", " Rahab", "Deborah", "Esther"], c: 1 },
+  { q: "What is the 'fruit of the Spirit' listed in Galatians?", a: ["Seven fruits", "Nine fruits", "Five fruits", "Twelve fruits"], c: 1 },
+  { q: "Who was the prophet that was fed by ravens?", a: ["Elijah", "Elisha", "Daniel", "Jonah"], c: 0 },
+  { q: "What was the name of the tower built by Noah's descendants?", a: ["Babel", "Ziggurat", "Tower of London", "Minaret"], c: 0 },
+  { q: "Who was the first disciple Jesus called?", a: ["John", "Andrew", "Peter", "James"], c: 2 },
+  { q: "What is the book of Lamentations about?", a: ["The fall of Jerusalem", "The exodus", "The flood", "The temple"], c: 0 },
+  { q: "Who was the prophet that married a prostitute as a symbol of God's love?", a: ["Hosea", "Amos", "Micah", "Joel"], c: 0 },
+  { q: "What was the name of the city Paul visited where he made tents?", a: ["Rome", "Corinth", "Athens", "Ephesus"], c: 1 },
+  { q: "Who was the mother of John the Apostle?", a: ["Salome", "Mary", "Martha", "Elizabeth"], c: 0 },
+  { q: "What is the meaning of 'Amen'?", a: ["Thank you", "So be it", "Praise God", "Hallelujah"], c: 1 },
+  { q: "Who was the prophet that saw a valley of dry bones?", a: ["Isaiah", "Ezekiel", "Daniel", "Jeremiah"], c: 1 },
+  { q: "What was the name of the mountain where Elijah fled from Jezebel?", a: ["Sinai", "Horeb", "Zion", "Nebo"], c: 1 },
+  { q: "Who was the first person to deny knowing Jesus?", a: ["Judas", "Peter", "A servant girl", "Thomas"], c: 2 },
+  { q: "What is the book of Ecclesiastes attributed to?", a: ["David", "Moses", "Solomon", "Ezra"], c: 2 },
+  { q: "Who was the prophet that was told to buy a field as a sign of hope?", a: ["Jeremiah", "Isaiah", "Ezekiel", "Amos"], c: 0 },
+  { q: "What was the name of the Roman road Paul traveled to Damascus?", a: ["Via Appia", "Via Egnatia", "The way to Damascus", "Silk Road"], c: 2 },
+  { q: "Who was the apostle who wrote the most epistles?", a: ["Peter", "John", "Paul", "James"], c: 2 },
+  { q: "What is the meaning of 'Shalom'?", a: ["Peace", "Hello", "Goodbye", "Thank you"], c: 0 },
+  { q: "Who was the prophet that confronted King David about his sin with Bathsheba?", a: ["Elijah", "Nathan", "Gad", "Samuel"], c: 1 },
+  { q: "What was the name of the mountain where Moses saw the Promised Land?", a: ["Sinai", "Nebo", "Ararat", "Zion"], c: 1 },
+  { q: "Who was the first person to see the resurrected Jesus?", a: ["Peter", "John", "Mary Magdalene", "Thomas"], c: 2 },
+  { q: "What is the book of Philemon about?", a: ["A letter to a church", "A request for Onesimus", "Warnings about false teachers", "The second coming"], c: 1 },
+  { q: "Who was the prophet that was taken to heaven in a whirlwind?", a: ["Moses", "Elijah", "Enoch", "Both Elijah and Enoch"], c: 3 },
+  { q: "What was the name of the city where Paul was shipwrecked?", a: ["Malta", "Crete", "Cyprus", "Rhodes"], c: 0 },
+  { q: "Who was the apostle who walked with Paul on his first journey?", a: ["Silas", "Barnabas", "Timothy", "Luke"], c: 1 },
+  { q: "What is the meaning of 'Hosanna'?", a: ["Praise God", "Save now", "Holy is the Lord", "Thank you"], c: 1 },
+  { q: "Who was the prophet that saw a flying scroll?", a: ["Isaiah", "Ezekiel", "Zechariah", "Daniel"], c: 2 },
+  { q: "What was the name of the gate where Peter healed a lame man?", a: ["Beautiful Gate", "Golden Gate", "Fish Gate", "Water Gate"], c: 0 },
+  { q: "Who was the first person to be raised from the dead by Jesus?", a: ["Lazarus", "Jairus' daughter", "The widow's son at Nain", "Tabitha"], c: 2 },
+  { q: "What is the book of Obadiah about?", a: ["Judgment on Edom", "The coming Messiah", "Warnings to Israel", "Praise for God's mercy"], c: 0 },
+  { q: "Who was the prophet that saw a measuring line in his vision?", a: ["Zechariah", "Ezekiel", "Haggai", "Malachi"], c: 0 },
+  { q: "What was the name of the city where Paul wrote most of his letters while imprisoned?", a: ["Rome", "Ephesus", "Caesarea", "Corinth"], c: 0 },
+  { q: "Who was the apostle who was called 'the son of encouragement'?", a: ["Silas", "Barnabas", "Timothy", "Luke"], c: 1 },
+  { q: "What is the meaning of 'Maranatha'?", a: ["Come, Lord", "Praise God", "Thank you", "Holy, holy"], c: 0 },
+  { q: "Who was the prophet that saw a river flowing from the temple?", a: ["Isaiah", "Ezekiel", "Daniel", "Zechariah"], c: 1 },
+  { q: "What was the name of the mountain where Jesus was transfigured?", a: ["Sinai", "Tabor", "Nebo", "Zion"], c: 1 },
+  { q: "Who was the first person to be baptized by John?", a: ["Peter", "Andrew", "Jesus", "John's disciples"], c: 2 },
+  { q: "What is the book of Joel about?", a: ["A locust plague and the Day of the Lord", "The exile", "Rebuilding the temple", "Warnings to kings"], c: 0 },
+  { q: "Who was the prophet that saw four chariots between two mountains?", a: ["Zechariah", "Ezekiel", "Daniel", "Haggai"], c: 0 },
+  { q: "What was the name of the city where Paul argued with Gallio?", a: ["Corinth", "Athens", "Ephesus", "Philippi"], c: 0 },
+  { q: "Who was the apostle who wrote the book of Hebrews (traditionally)?", a: ["Peter", "Paul", "Barnabas", "Apolllos"], c: 1 },
+  { q: "What is the meaning of 'Abba'?", a: ["Father", "King", "Lord", "Holy"], c: 0 },
+  { q: "Who was the prophet that saw a man with a measuring line?", a: ["Zechariah", "Ezekiel", "Haggai", "Malachi"], c: 0 },
+  { q: "What was the name of the city where Paul was stoned and left for dead?", a: ["Lystra", "Iconium", "Derbe", "Antioch"], c: 0 },
+  { q: "Who was the apostle who was a physician?", a: ["Luke", "Mark", "John", "Paul"], c: 0 },
+  { q: "What is the meaning of 'Alleluia'?", a: ["Praise the Lord", "Hallelujah", "Thank you", "Holy"], c: 0 },
+  { q: "Who was the prophet that saw a golden lampstand and two olive trees?", a: ["Zechariah", "Ezekiel", "Daniel", "Haggai"], c: 0 },
+  { q: "What was the name of the city where Paul met Apollos?", a: ["Ephesus", "Corinth", "Alexandria", "Antioch"], c: 0 },
+  { q: "Who was the apostle who wrote the book of James?", a: ["James son of Zebedee", "James the Lord's brother", "Both", "Neither"], c: 2 },
+  { q: "What is the meaning of 'Kairos'?", a: ["Time", "Opportunity/season", "Eternity", "Moment"], c: 1 },
+  { q: "Who was the prophet that saw a flying book?", a: ["Zechariah", "Ezekiel", "Isaiah", "Jeremiah"], c: 0 },
+  { q: "What was the name of the city where Paul wrote the letter to Philemon?", a: ["Rome", "Ephesus", "Caesarea", "Corinth"], c: 0 },
+  { q: "Who was the apostle who was called 'the rock'?", a: ["Peter", "Paul", "James", "John"], c: 0 },
+  { q: "What is the meaning of 'Selah'?", a: ["Pause and reflect", "Sing loudly", "Amen", "Hallelujah"], c: 0 },
+  { q: "Who was the prophet that saw a man clothed in linen with a writing kit?", a: ["Ezekiel", "Daniel", "Zechariah", "Isaiah"], c: 1 },
+  { q: "What was the name of the city where Paul was arrested by Roman soldiers?", a: ["Jerusalem", "Caesarea", "Ephesus", "Corinth"], c: 0 },
+  { q: "Who was the apostle who wrote the book of 1 & 2 Peter?", a: ["Peter", "Paul", "John", "James"], c: 0 },
+  { q: "What is the meaning of 'Maranatha'?", a: ["Come, Lord", "Praise God", "Thank you", "Holy"], c: 0 },
+  { q: "Who was the prophet that saw a river flowing from under the temple threshold?", a: ["Ezekiel", "Zechariah", "Daniel", "Haggai"], c: 0 },
+  { q: "What was the name of the city where Paul was shipwrecked on his way to Rome?", a: ["Malta", "Crete", "Cyprus", "Rhodes"], c: 0 },
+  { q: "Who was the apostle who traveled with Paul and wrote Acts?", a: ["Luke", "Silas", "Timothy", "Barnabas"], c: 0 },
+  { q: "What is the meaning of 'Amen'?", a: ["So be it", "Thank you", "Praise God", "Hallelujah"], c: 0 },
+];
+
+// Game state
+let GAME_W = 420, GAME_H = 700;
+let state = 'start'; // start, playing, gameover
+let currentQ = 0;
+let score = 0;
+let questions = [];
+let selectedAnswer = -1;
+let correctIndex = -1;
+let streak = 0;
+let bestStreak = 0;
+let timer = 0;
+const TIMER_MAX = 15; // seconds per question
+let particles = [];
+let shakeTimer = 0;
+let flashColor = '';
+
+// Resize
+function resize() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / GAME_W, vh / GAME_H);
+  canvas.style.width = (GAME_W * scale) + 'px';
+  canvas.style.height = (GAME_H * scale) + 'px';
+  canvas.width = GAME_W;
+  canvas.height = GAME_H;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Shuffle array
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Init game
+function initGame() {
+  questions = shuffle(QUESTIONS).slice(0, 10); // 10 questions per round
+  currentQ = 0;
+  score = 0;
+  streak = 0;
+  bestStreak = parseInt(localStorage.getItem('biblequiz-best') || '0', 10);
+  selectedAnswer = -1;
+  correctIndex = -1;
+  particles = [];
+  state = 'playing';
+  timer = TIMER_MAX;
+  startScreen.classList.remove('active');
+  gameoverScreen.classList.remove('active');
+}
+
+// Draw helpers
+function drawRoundedRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawText(text, x, y, size, color, align = 'center') {
+  ctx.font = `bold ${size}px 'Courier New', monospace`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align;
+  ctx.fillText(text, x, y);
+}
+
+// Particles
+function spawnParticles(x, y, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.02 + Math.random() * 0.03,
+      size: 3 + Math.random() * 4,
+      color
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Input handling
+let touchStartY = 0;
+function handleInput(x, y) {
+  if (state !== 'playing' || selectedAnswer >= 0) return;
+
+  const pad = 20;
+  const qAreaTop = 80;
+  const btnStartY = qAreaTop + 120;
+  const btnH = 58;
+  const gap = 10;
+
+  for (let i = 0; i < 4; i++) {
+    const by = btnStartY + i * (btnH + gap);
+    if (y >= by && y <= by + btnH) {
+      selectedAnswer = i;
+      correctIndex = QUESTIONS[questions[currentQ]].c;
+
+      if (i === correctIndex) {
+        score++;
+        streak++;
+        if (streak > bestStreak) bestStreak = streak;
+        spawnParticles(x, y, '#00ff88', 15);
+      } else {
+        streak = 0;
+        shakeTimer = 15;
+        spawnParticles(x, y, '#ff4444', 8);
+      }
+
+      // Move to next question after delay
+      setTimeout(() => {
+        currentQ++;
+        if (currentQ >= questions.length) {
+          state = 'gameover';
+          const finalScore = document.getElementById('finalScore');
+          const bestDisplay = document.getElementById('bestDisplay');
+          finalScore.textContent = `${score} / ${questions.length}`;
+
+          if (score > best) {
+            best = score;
+            localStorage.setItem('biblequiz-best', best);
+          }
+          bestDisplay.textContent = `Best: ${best} | Best Streak: ${bestStreak}`;
+          gameoverScreen.classList.add('active');
+        } else {
+          selectedAnswer = -1;
+          correctIndex = -1;
+          timer = TIMER_MAX;
+        }
+      }, 800);
+      return;
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = GAME_W / rect.width;
+  const scaleY = GAME_H / rect.height;
+  handleInput((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+});
+
+// Buttons
+document.getElementById('startBtn').addEventListener('click', initGame);
+document.getElementById('restartBtn').addEventListener('click', initGame);
+
+// Main loop
+let lastTime = 0;
+function loop(time) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((time - lastTime) / 1000, 0.1);
+  lastTime = time;
+
+  ctx.save();
+
+  // Screen shake
+  if (shakeTimer > 0) {
+    shakeTimer--;
+    ctx.translate(Math.random() * 6 - 3, Math.random() * 6 - 3);
+  }
+
+  // Flash effect
+  if (flashColor) {
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+    flashColor = '';
+  }
+
+  if (state === 'playing') {
+    // Background
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    const q = QUESTIONS[questions[currentQ]];
+    const pad = 20;
+
+    // Progress bar
+    ctx.fillStyle = '#1a1a1a';
+    drawRoundedRect(pad, 15, GAME_W - pad * 2, 8, 4);
+    ctx.fill();
+    const progress = (currentQ + 1) / questions.length;
+    ctx.fillStyle = '#00ff88';
+    drawRoundedRect(pad, 15, (GAME_W - pad * 2) * progress, 8, 4);
+    ctx.fill();
+
+    // Question counter & streak
+    drawText(`Q${currentQ + 1}/${questions.length}`, pad, 45, 14, '#666', 'left');
+    if (streak > 1) {
+      drawText(`🔥 ${streak} streak`, GAME_W - pad, 45, 14, '#ff8800', 'right');
+    }
+
+    // Timer
+    timer -= dt;
+    if (timer <= 0) {
+      timer = TIMER_MAX;
+      streak = 0;
+      currentQ++;
+      if (currentQ >= questions.length) {
+        state = 'gameover';
+        const finalScore = document.getElementById('finalScore');
+        const bestDisplay = document.getElementById('bestDisplay');
+        finalScore.textContent = `${score} / ${questions.length}`;
+        if (score > best) {
+          best = score;
+          localStorage.setItem('biblequiz-best', best);
+        }
+        bestDisplay.textContent = `Best: ${best} | Best Streak: ${bestStreak}`;
+        gameoverScreen.classList.add('active');
+      } else {
+        selectedAnswer = -1;
+        correctIndex = -1;
+      }
+    }
+
+    // Timer bar
+    const timerPct = Math.max(0, timer / TIMER_MAX);
+    ctx.fillStyle = '#1a1a1a';
+    drawRoundedRect(pad, 58, GAME_W - pad * 2, 6, 3);
+    ctx.fill();
+    const timerColor = timerPct > 0.5 ? '#00ff88' : timerPct > 0.25 ? '#ffcc00' : '#ff4444';
+    ctx.fillStyle = timerColor;
+    drawRoundedRect(pad, 58, (GAME_W - pad * 2) * timerPct, 6, 3);
+    ctx.fill();
+
+    // Question text
+    const qY = 100;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = "bold 20px 'Courier New', monospace";
+    ctx.textAlign = 'center';
+
+    // Word wrap question
+    const words = q.q.split(' ');
+    let lines = [];
+    let currentLine = '';
+    for (const word of words) {
+      const test = currentLine + (currentLine ? ' ' : '') + word;
+      if (ctx.measureText(test).width > GAME_W - pad * 2 - 20) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = test;
+      }
+    }
+    lines.push(currentLine);
+
+    const lineH = 28;
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], GAME_W / 2, qY + i * lineH);
+    }
+
+    // Answer buttons
+    const btnStartY = qY + lines.length * lineH + 30;
+    for (let i = 0; i < 4; i++) {
+      const bx = pad;
+      const by = btnStartY + i * 68;
+      const bw = GAME_W - pad * 2;
+      const bh = 58;
+
+      // Button background
+      if (selectedAnswer === i) {
+        ctx.fillStyle = i === correctIndex ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,68,0.2)';
+      } else {
+        ctx.fillStyle = '#1a1a1a';
+      }
+      drawRoundedRect(bx, by, bw, bh, 10);
+      ctx.fill();
+
+      // Button border
+      if (selectedAnswer === i) {
+        ctx.strokeStyle = i === correctIndex ? '#00ff88' : '#ff4444';
+        ctx.lineWidth = 2;
+      } else {
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+      }
+      drawRoundedRect(bx, by, bw, bh, 10);
+      ctx.stroke();
+
+      // Answer letter
+      const letters = ['A', 'B', 'C', 'D'];
+      drawText(letters[i], bx + 25, by + 36, 18, selectedAnswer === i ? '#fff' : '#00ff88', 'left');
+
+      // Answer text
+      drawText(q.a[i], bx + 50, by + 36, 14, selectedAnswer === i ? '#fff' : '#ccc', 'left');
+    }
+
+    // Score display
+    drawText(`Score: ${score}`, GAME_W / 2, GAME_H - 30, 16, '#888', 'center');
+
+    // Particles
+    updateParticles();
+    drawParticles();
+
+  } else if (state === 'start') {
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+
+    // Animated cross
+    const t = Date.now() / 1000;
+    ctx.save();
+    ctx.translate(GAME_W / 2, GAME_H / 2 - 80);
+    ctx.rotate(Math.sin(t * 0.5) * 0.1);
+
+    // Glow
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = '#00ff88';
+
+    // Cross shape
+    const cw = 12, ch = 60, aw = 40, ah = 10;
+    ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+    ctx.fillRect(-aw / 2, -ah / 2 - 10, aw, ah);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    updateParticles();
+    drawParticles();
+  }
+
+  ctx.restore();
+}
+
+let best = parseInt(localStorage.getItem('biblequiz-best') || '0', 10);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
