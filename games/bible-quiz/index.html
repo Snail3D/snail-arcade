@@ -538,6 +538,7 @@ function loop(time) {
 }
 
 let best = parseInt(localStorage.getItem('biblequiz-best') || '0', 10);
+startScreen.classList.add('active');
 requestAnimationFrame(loop);
 </script>
 </body>
