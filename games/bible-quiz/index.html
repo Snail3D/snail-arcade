@@ -317,7 +317,7 @@ function handleInput(x, y) {
     const by = btnStartY + i * (btnH + gap);
     if (y >= by && y <= by + btnH) {
       selectedAnswer = i;
-      correctIndex = QUESTIONS[questions[currentQ]].c;
+      correctIndex = questions[currentQ].c;
 
       if (i === correctIndex) {
         score++;
