@@ -451,6 +451,9 @@ function loop(time) {
     ctx.font = "bold 20px 'Courier New', monospace";
     ctx.textAlign = 'center';
 
+    // Reset textAlign to center for question text
+    ctx.textAlign = 'center';
+
     // Word wrap question
     const words = q.q.split(' ');
     let lines = [];
