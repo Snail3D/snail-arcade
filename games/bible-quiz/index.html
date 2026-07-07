@@ -36,8 +36,13 @@ h2 { font-size: 1.8em; color: #00ff88; margin-bottom: 20px; }
   <button class="btn" id="restartBtn">PLAY AGAIN</button>
 </div>
 
+
+
+
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+
+
+
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const startScreen = document.getElementById('start');
@@ -541,7 +546,9 @@ function loop(time) {
 let best = parseInt(localStorage.getItem('biblequiz-best') || '0', 10);
 startScreen.classList.add('active');
 requestAnimationFrame(loop);
-});
+
+
+
 </script>
 </body>
 </html>
