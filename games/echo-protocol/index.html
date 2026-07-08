@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Echo Protocol — Snail Arcade</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  width:100%;height:100%;overflow:hidden;
+  background:#06060a;font-family:'Courier New',monospace;
+  user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+#wrap{position:relative;width:100vw;height:100vh;height:100dvh;display:flex;align-items:center;justify-content:center}
+canvas{display:block;background:#06060a;box-shadow:0 0 60px rgba(0,255,200,0.15)}
+#start,#gameover{
+  position:absolute;inset:0;display:none;
+  flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(6,6,10,0.92);z-index:10;backdrop-filter:blur(4px);
+  padding:0 1em;
+}
+#start.active{display:flex}
+#gameover.active{display:flex}
+.title{
+  font-size:clamp(1.8rem,8vw,4rem);font-weight:900;
+  color:#00ffc8;text-shadow:0 0 40px #00ffc8,0 0 80px #00ffc8;
+  letter-spacing:.15em;margin-bottom:.15em;text-align:center;
+}
+.subtitle{
+  font-size:clamp(.6rem,2.2vw,1rem);color:#8866ff;
+  letter-spacing:.25em;margin-bottom:1.5em;text-align:center;
+}
+.start-btn{
+  background:linear-gradient(135deg,#00ffc8,#0088ff);border:none;
+  padding:.7em 2.2em;font-family:'Courier New',monospace;
+  font-size:clamp(.85rem,3vw,1.2rem);font-weight:700;
+  color:#06060a;cursor:pointer;border-radius:4px;
+  letter-spacing:.1em;transition:transform .1s,box-shadow .1s;
+}
+.start-btn:hover{transform:scale(1.05);box-shadow:0 0 30px #00ffc8}
+.start-btn:active{transform:scale(.97)}
+.hint{
+  font-size:clamp(.55rem,1.8vw,.8rem);color:#444477;
+  margin-top:1.5em;letter-spacing:.1em;text-align:center;
+}
+#hud{
+  position:absolute;top:12px;left:12px;z-index:5;
+  pointer-events:none;font-size:clamp(.8rem,2.5vw,1.1rem);
+}
+#hud div{color:#00ffc8;text-shadow:0 0 10px #00ffc8;margin-bottom:4px}
+#hud .hi{color:#8866ff;text-shadow:0 0 10px #8866ff}
+#gameover .go-title{
+  font-size:clamp(1.8rem,7vw,3.5rem);font-weight:900;
+  color:#ff3366;text-shadow:0 0 40px #ff3366;margin-bottom:.3em;
+}
+#gameover .go-score{font-size:clamp(.9rem,3vw,1.3rem);color:#00ffc8;margin-bottom:.2em}
+#gameover .go-hi{font-size:clamp(.7rem,2.2vw,1rem);color:#8866ff;margin-bottom:1.5em}
+#gameover .restart-btn{
+  background:linear-gradient(135deg,#ff3366,#8866ff);border:none;
+  padding:.6em 1.8em;font-family:'Courier New',monospace;
+  font-size:clamp(.8rem,2.5vw,1rem);font-weight:700;
+  color:#06060a;cursor:pointer;border-radius:4px;
+  letter-spacing:.1em;transition:transform .1s;
+}
+#gameover .restart-btn:hover{transform:scale(1.05)}
+#gameover .restart-btn:active{transform:scale(.97)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="start" class="active">
+    <div class="title">ECHO PROTOCOL</div>
+    <div class="subtitle">SIGNAL SURVIVAL — WEAVE THE VOID</div>
+    <button class="start-btn" id="startBtn">INITIALIZE</button>
+    <div class="hint">ARROWS / WASD / TAP-DRAG TO MOVE</div>
+  </div>
+  <div id="hud">
+    <div>SCORE: <span id="score">0</span></div>
+    <div class="hi">BEST: <span id="best">0</span></div>
+    <div style="color:#6666aa;font-size:.7em">TRAIL: <span id="trailLen">0</span></div>
+  </div>
+  <div id="gameover">
+    <div class="go-title">SIGNAL LOST</div>
+    <div class="go-score">SCORE: <span id="finalScore">0</span></div>
+    <div class="go-hi">BEST: <span id="finalBest">0</span></div>
+    <button class="restart-btn" id="restartBtn">RECONNECT</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 600, H = 600;
+canvas.width = W; canvas.height = H;
+
+function resize(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / W, vh / H);
+  canvas.style.width = (W * scale) + 'px';
+  canvas.style.height = (H * scale) + 'px';
+}
+resize(); window.addEventListener('resize', resize);
+
+// Game state
+let state = 'start'; // 'start' | 'playing' | 'dead'
+let score = 0;
+let best = parseInt(localStorage.getItem('echo-protocol-best') || '0', 10);
+document.getElementById('best').textContent = best;
+
+// Player
+let px = W/2, py = H/2;
+let vx = 0, vy = 0;
+const RAD = 8;
+const SPEED = 3.2;
+const FRICTION = 0.92;
+
+// Trail — circular buffer
+const MAX_TRAIL = 1200;
+const trail = new Array(MAX_TRAIL);
+let trailHead = 0, trailLen = 0;
+const TRAIL_GAP = 3; // pixels between trail nodes
+let trailDist = 0;
+
+// Enemies
+const enemies = [];
+const ENEMY_RAD = 10;
+const ENEMY_SPEED = 1.2;
+const SPAWN_INTERVAL = 800; // ms
+let lastSpawn = 0;
+const MAX_ENEMIES = 60;
+
+// Particles
+const particles = [];
+
+// Input
+const keys = {};
+let touchActive = false;
+let touchX = 0, touchY = 0;
+
+function setOverlay(name){
+  const start = document.getElementById('start');
+  const go = document.getElementById('gameover');
+  start.classList.toggle('active', name === 'start');
+  go.classList.toggle('active', name === 'gameover');
+}
+
+function reset(){
+  px = W/2; py = H/2;
+  vx = 0; vy = 0;
+  trailHead = 0; trailLen = 0; trailDist = 0;
+  enemies.length = 0;
+  particles.length = 0;
+  score = 0;
+  lastSpawn = 0;
+  state = 'playing';
+  setOverlay(null);
+  document.getElementById('score').textContent = '0';
+}
+
+function addTrail(x, y){
+  const idx = trailHead;
+  trail[idx] = {x, y};
+  trailHead = (trailHead + 1) % MAX_TRAIL;
+  trailLen = Math.min(trailLen + 1, MAX_TRAIL);
+}
+
+function getTrailNode(i){
+  if (i >= trailLen) return null;
+  const idx = (trailHead - trailLen + i + MAX_TRAIL) % MAX_TRAIL;
+  return trail[idx];
+}
+
+function spawnEnemy(){
+  const side = Math.random() * 4 | 0;
+  let x, y;
+  if (side === 0) { x = -20; y = Math.random() * H; }
+  else if (side === 1) { x = W + 20; y = Math.random() * H; }
+  else if (side === 2) { x = Math.random() * W; y = -20; }
+  else { x = Math.random() * W; y = H + 20; }
+  enemies.push({ x, y, vx: 0, vy: 0 });
+}
+
+function addParticles(x, y, count, color, speed){
+  for (let i = 0; i < count; i++){
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * speed + 0.5;
+    particles.push({
+      x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+      life: 30 + Math.random() * 20 | 0,
+      maxLife: 50,
+      color, size: 2 + Math.random() * 3 | 0
+    });
+  }
+}
+
+// Input
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if ((e.code === 'Space' || e.code === 'Enter') && state === 'start') reset();
+  if ((e.code === 'Space' || e.code === 'Enter') && state === 'dead') reset();
+  e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; e.preventDefault(); });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scale = canvas.width / rect.width;
+  touchX = (t.clientX - rect.left) * scale;
+  touchY = (t.clientY - rect.top) * scale;
+  touchActive = true;
+  if (state === 'start' || state === 'dead') reset();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const rect = canvas.getBoundingClientRect();
+  const scale = canvas.width / rect.width;
+  touchX = (t.clientX - rect.left) * scale;
+  touchY = (t.clientY - rect.top) * scale;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => { e.preventDefault(); touchActive = false; }, { passive: false });
+
+canvas.addEventListener('click', e => {
+  if (state === 'start' || state === 'dead') reset();
+});
+
+// Game logic
+let gameOverTimer = null;
+
+function gameOver(){
+  state = 'dead';
+  const finalScore = document.getElementById('finalScore');
+  const finalBest = document.getElementById('finalBest');
+  finalScore.textContent = score;
+  finalBest.textContent = best;
+  setOverlay('gameover');
+  gameOverTimer = null;
+}
+
+function update(){
+  if (state !== 'playing') return;
+
+  // Player movement
+  let dx = 0, dy = 0;
+  if (keys['ArrowLeft'] || keys['KeyA']) dx = -1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx = 1;
+  if (keys['ArrowUp'] || keys['KeyW']) dy = -1;
+  if (keys['ArrowDown'] || keys['KeyS']) dy = 1;
+
+  if (dx || dy){
+    const len = Math.sqrt(dx*dx + dy*dy);
+    dx /= len; dy /= len;
+    vx += dx * SPEED * 0.15;
+    vy += dy * SPEED * 0.15;
+  }
+  if (touchActive){
+    const tdx = touchX - px;
+    const tdy = touchY - py;
+    const tlen = Math.sqrt(tdx*tdx + tdy*tdy);
+    if (tlen > 5){
+      vx += (tdx/tlen) * SPEED * 0.15;
+      vy += (tdy/tlen) * SPEED * 0.15;
+    }
+  }
+
+  vx *= FRICTION;
+  vy *= FRICTION;
+  px += vx;
+  py += vy;
+
+  // Clamp to bounds
+  px = Math.max(RAD, Math.min(W - RAD, px));
+  py = Math.max(RAD, Math.min(H - RAD, py));
+
+  // Trail
+  trailDist++;
+  if (trailDist >= TRAIL_GAP){
+    trailDist = 0;
+    addTrail(px, py);
+  }
+
+  // Trail length cap based on score
+  const maxTrail = Math.min(200 + score * 2, MAX_TRAIL - 1);
+  if (trailLen > maxTrail) trailLen--;
+
+  // Update trail HUD
+  document.getElementById('trailLen').textContent = trailLen;
+
+  // Spawn enemies
+  const now = performance.now();
+  if (now - lastSpawn > SPAWN_INTERVAL && enemies.length < MAX_ENEMIES){
+    lastSpawn = now;
+    spawnEnemy();
+    // Increase spawn rate with score
+    if (score > 20) spawnEnemy();
+    if (score > 50) spawnEnemy();
+    if (score > 100) spawnEnemy();
+    if (score > 200) spawnEnemy();
+  }
+
+  // Update enemies
+  for (let i = enemies.length - 1; i >= 0; i--){
+    const e = enemies[i];
+    const dx2 = px - e.x;
+    const dy2 = py - e.y;
+    const d = Math.sqrt(dx2*dx2 + dy2*dy2);
+    if (d > 0.1){
+      e.vx += (dx2/d) * ENEMY_SPEED * 0.02;
+      e.vy += (dy2/d) * ENEMY_SPEED * 0.02;
+    }
+    e.vx *= 0.95;
+    e.vy *= 0.95;
+    e.x += e.vx;
+    e.y += e.vy;
+
+    // Check collision with player
+    const pdx = px - e.x, pdy = py - e.y;
+    const pd = Math.sqrt(pdx*pdx + pdy*pdy);
+    if (pd < RAD + ENEMY_RAD){
+      addParticles(e.x, e.y, 15, '#ff3366', 3);
+      addParticles(e.x, e.y, 10, '#ff6644', 2);
+      // Remove enemy, game over
+      enemies.splice(i, 1);
+      gameOver();
+      return;
+    }
+
+    // Check collision with trail
+    let trailHit = false;
+    for (let t = 0; t < trailLen; t++){
+      const n = getTrailNode(t);
+      if (!n) continue;
+      const tdx2 = n.x - e.x, tdy2 = n.y - e.y;
+      if (tdx2*tdx2 + tdy2*tdy2 < ENEMY_RAD*ENEMY_RAD){
+        // Trail destroys enemy
+        addParticles(e.x, e.y, 8, '#00ffc8', 2);
+        addParticles(e.x, e.y, 5, '#8866ff', 1.5);
+        // Consume this trail segment
+        const consumed = Math.min(40, trailLen - t);
+        trailLen = Math.max(0, trailLen - consumed);
+        enemies.splice(i, 1);
+        // Score
+        score++;
+        if (score > best){
+          best = score;
+          localStorage.setItem('echo-protocol-best', best);
+        }
+        document.getElementById('score').textContent = score;
+        document.getElementById('best').textContent = best;
+        trailHit = true;
+        break;
+      }
+    }
+    if (trailHit) continue;
+
+    // Remove if out of bounds
+    if (e.x < -40 || e.x > W+40 || e.y < -40 || e.y > H+40){
+      enemies.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// Render
+function drawBackground(){
+  // Grid void
+  ctx.fillStyle = '#06060a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(100,100,180,0.06)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 40){
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y <= H; y += 40){
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+function drawTrail(){
+  if (trailLen < 2) return;
+  // Draw from oldest to newest
+  const start = trailHead - trailLen;
+  for (let i = 0; i < trailLen; i++){
+    const n = getTrailNode(i);
+    if (!n) continue;
+    const pct = i / trailLen;
+    const alpha = pct * 0.6 + 0.1;
+    const width = 2 + pct * 4;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, width, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,255,200,${alpha * 0.5})`;
+    ctx.fill();
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, width + 4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(136,102,255,${alpha * 0.2})`;
+    ctx.fill();
+  }
+
+  // Draw trail lines between nodes
+  ctx.lineCap = 'round';
+  for (let i = 0; i < trailLen - 1; i++){
+    const n1 = getTrailNode(i);
+    const n2 = getTrailNode(i + 1);
+    if (!n1 || !n2) continue;
+    const pct = i / trailLen;
+    ctx.beginPath();
+    ctx.moveTo(n1.x, n1.y);
+    ctx.lineTo(n2.x, n2.y);
+    ctx.strokeStyle = `rgba(0,255,200,${pct * 0.4 + 0.1})`;
+    ctx.lineWidth = 2 + pct * 3;
+    ctx.stroke();
+  }
+}
+
+function drawEnemies(){
+  for (const e of enemies){
+    // Glow
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, ENEMY_RAD + 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,50,100,0.15)';
+    ctx.fill();
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, ENEMY_RAD, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff3366';
+    ctx.fill();
+    ctx.strokeStyle = '#ff6688';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Inner pulse
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, ENEMY_RAD * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fill();
+  }
+}
+
+function drawPlayer(){
+  // Outer glow
+  ctx.beginPath();
+  ctx.arc(px, py, RAD + 12, 0, Math.PI * 2);
+  const grad = ctx.createRadialGradient(px, py, RAD, px, py, RAD + 12);
+  grad.addColorStop(0, 'rgba(0,255,200,0.3)');
+  grad.addColorStop(1, 'rgba(0,255,200,0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Core
+  ctx.beginPath();
+  ctx.arc(px, py, RAD, 0, Math.PI * 2);
+  ctx.fillStyle = '#00ffc8';
+  ctx.fill();
+  ctx.strokeStyle = '#44ffdd';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner highlight
+  ctx.beginPath();
+  ctx.arc(px - 3, py - 3, RAD * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fill();
+}
+
+function drawParticles(){
+  for (const p of particles){
+    const alpha = p.life / p.maxLife;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render(){
+  drawBackground();
+  drawTrail();
+  drawEnemies();
+  drawParticles();
+  drawPlayer();
+
+  // Trail indicator around player
+  if (state === 'playing'){
+    ctx.beginPath();
+    ctx.arc(px, py, RAD + 20 + Math.sin(performance.now() * 0.004) * 3, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,255,200,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function loop(){
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// Start
+document.getElementById('startBtn').addEventListener('click', reset);
+document.getElementById('restartBtn').addEventListener('click', reset);
+
+loop();
+</script>
+</body>
+</html>
