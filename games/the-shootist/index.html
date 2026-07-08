@@ -7,7 +7,7 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; touch-action:manipulation; }
 body { background:#0a0a0a; overflow:hidden; display:flex; align-items:center; justify-content:center; height:100dvh; font-family:'Courier New',monospace; }
-canvas { display:block; cursor:crosshair; }
+canvas { display:block; cursor:crosshair; touch-action:none; }
 #start,#gameover{display:none;position:fixed;inset:0;z-index:10;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);padding:20px;text-align:center;}
 #start.active{display:flex;}#gameover.active{display:flex;}
 #start h1{color:#00ff88;font-size:clamp(2rem,6vw,3.5rem);margin-bottom:10px;text-shadow:0 0 20px #00ff88;}
@@ -25,8 +25,8 @@ canvas { display:block; cursor:crosshair; }
 
 <div id="start" class="active">
   <h1>🏜️ THE SHOOTIST</h1>
-  <p>Aim and shoot the targets in this Western saloon gallery.</p>
-  <p class="controls">🎯 Click or tap to shoot • Hit bottles, cans, rats, and outlaws</p>
+  <p>Aim and shoot targets in this Western saloon gallery.</p>
+  <p class="controls">📱 Drag to aim • Lift to shoot • Tap auto-aims nearest target</p>
   <button class="btn" id="startBtn">⚡ DRAW!</button>
 </div>
 
@@ -39,46 +39,43 @@ canvas { display:block; cursor:crosshair; }
 </div>
 
 <script>
-// === THE SHOOTIST — Western Shooting Gallery ===
+// === THE SHOOTIST — Western Shooting Gallery (Mobile-First) ===
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-let W, H, scale;
+let W, H;
 function resize() {
   W = window.innerWidth;
   H = window.innerHeight;
-  const r = 480/320;
+  const r = 480/480;
   let w = W, h = W/r;
   if (h > H) { h = H; w = H*r; }
-  scale = Math.min(w/480, h/320);
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
   canvas.width = 480 * (W/w);
-  canvas.height = 320 * (H/h);
+  canvas.height = 480 * (H/h);
 }
 resize();
 window.addEventListener('resize', resize);
 
 // === Game State ===
 const GAME_W = 480;
-const GAME_H = 320;
+const GAME_H = 480;
 const PLAYING = 1, DEAD = 2;
 let state = 0;
-let score = 0, lives = 3, round = 1, combo = 0;
+let score = 0, lives = 5, round = 1, combo = 0;
 let best = parseInt(localStorage.getItem('shootist-best') || '0', 10);
 let targets = [];
-let bullets = [];
 let particles = [];
 let mouseX = GAME_W/2, mouseY = GAME_H/2;
-let firePressed = false;
-let lastFireTime = 0;
 let roundTimer = 0;
-let roundDuration = 30000; // 30s per round
+let roundDuration = 30000;
 let gameoverTimeout = null;
 let spawnTimer = 0;
-let spawnInterval = 1500;
+let spawnInterval = 1200;
 let difficulty = 1;
+let isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
 // === Audio ===
 let audioCtx = null;
@@ -95,8 +92,7 @@ function playShoot() {
     osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.1);
     gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
+    osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.15);
   } catch(e) {}
 }
@@ -129,89 +125,127 @@ function playMiss() {
   } catch(e) {}
 }
 
-// === Target Types ===
+// === Target Types (2x size for mobile) ===
 const TARGET_TYPES = [
-  { name:'bottle', color:'#8B5E3C', points:100, w:20, h:40, hitColor:'#ffd700' },
-  { name:'can', color:'#c0c0c0', points:50, w:22, h:32, hitColor:'#ff6600' },
-  { name:'rat', color:'#6B3A2A', points:200, w:18, h:14, hitColor:'#ff3333' },
-  { name:'outlaw', color:'#2d2d2d', points:300, w:28, h:44, hitColor:'#ff4444' },
+  { name:'bottle', color:'#8B5E3C', points:100, w:40, h:60, hitColor:'#ffd700' },
+  { name:'can', color:'#c0c0c0', points:50, w:44, h:48, hitColor:'#ff6600' },
+  { name:'rat', color:'#6B3A2A', points:200, w:36, h:28, hitColor:'#ff3333' },
+  { name:'outlaw', color:'#2d2d2d', points:300, w:56, h:70, hitColor:'#ff4444' },
 ];
+
+// === Aim Assist Radius ===
+const AIM_ASSIST_RADIUS = 60;
 
 // === Create Target ===
 function spawnTarget() {
   const typeIdx = Math.floor(Math.random() * TARGET_TYPES.length);
   const type = TARGET_TYPES[typeIdx];
   const x = 60 + Math.random() * (GAME_W - 120);
-  const y = 40 + Math.random() * 160; // upper area
-  const speed = 0.3 + Math.random() * 0.7;
+  const y = 40 + Math.random() * 280;
+  const speed = 0.2 + Math.random() * 0.6;
   targets.push({
     type, x, y,
     vx: (Math.random() - 0.5) * speed * difficulty,
     vy: (Math.random() - 0.5) * speed * difficulty,
-    life: 2000 + Math.random() * 2000, // ms before disappearing
+    life: 2500 + Math.random() * 2500,
     born: Date.now(),
     hit: false,
     w: type.w, h: type.h
   });
 }
 
+// === Find Nearest Target ===
+function nearestTarget(x, y) {
+  let best = null, bestDist = Infinity;
+  for (const t of targets) {
+    if (t.hit) continue;
+    const dx = x - t.x, dy = y - t.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < bestDist) { bestDist = dist; best = t; }
+  }
+  return best;
+}
+
 // === Shoot ===
 function shoot(x, y) {
   if (state !== PLAYING) return;
-  firePressed = true;
-  lastFireTime = Date.now();
   playShoot();
 
-  // Add muzzle flash particle
-  particles.push({ x, y, vx:0, vy:0, life:8, maxLife:8, color:'#ffff00', size:8 });
+  // Muzzle flash
+  particles.push({ x, y, vx:0, vy:0, life:8, maxLife:8, color:'#ffff00', size:10 });
 
-  // Check hits
+  // Aim assist: if tap is within AIM_ASSIST_RADIUS of a target, auto-hit it
+  const nearest = nearestTarget(x, y);
   let hitAny = false;
-  for (let i = targets.length - 1; i >= 0; i--) {
-    const t = targets[i];
-    if (t.hit) continue;
-    const dx = x - t.x, dy = y - t.y;
-    if (dx > -t.w/2 && dx < t.w/2 && dy > -t.h/2 && dy < t.h/2) {
-      t.hit = true;
-      hitAny = true;
-      combo++;
-      const bonus = Math.min(combo, 10);
-      const pts = t.type.points * (1 + bonus * 0.1);
-      score += Math.round(pts);
-      playHit();
 
-      // Hit particles
-      for (let p = 0; p < 6; p++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 2 + Math.random() * 4;
-        particles.push({
-          x: t.x, y: t.y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 20 + Math.random() * 10,
-          maxLife: 30,
-          color: t.type.hitColor,
-          size: 3 + Math.random() * 3
-        });
+  if (nearest && Math.sqrt((x - nearest.x)**2 + (y - nearest.y)**2) <= AIM_ASSIST_RADIUS) {
+    // Auto-aim hit
+    nearest.hit = true;
+    hitAny = true;
+    combo++;
+    const bonus = Math.min(combo, 10);
+    const pts = nearest.type.points * (1 + bonus * 0.1);
+    score += Math.round(pts);
+    playHit();
+
+    // Hit particles
+    for (let p = 0; p < 8; p++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 5;
+      particles.push({
+        x: nearest.x, y: nearest.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 20 + Math.random() * 15,
+        maxLife: 35,
+        color: nearest.type.hitColor,
+        size: 4 + Math.random() * 4
+      });
+    }
+    // Crosshair snap to target
+    mouseX = nearest.x;
+    mouseY = nearest.y;
+  } else {
+    // Precise hit check (desktop / tap far from targets)
+    for (let i = targets.length - 1; i >= 0; i--) {
+      const t = targets[i];
+      if (t.hit) continue;
+      const dx = x - t.x, dy = y - t.y;
+      if (dx > -t.w/2 && dx < t.w/2 && dy > -t.h/2 && dy < t.h/2) {
+        t.hit = true;
+        hitAny = true;
+        combo++;
+        const bonus = Math.min(combo, 10);
+        const pts = t.type.points * (1 + bonus * 0.1);
+        score += Math.round(pts);
+        playHit();
+        for (let p = 0; p < 8; p++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 2 + Math.random() * 5;
+          particles.push({
+            x: t.x, y: t.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 20 + Math.random() * 15,
+            maxLife: 35,
+            color: t.type.hitColor,
+            size: 4 + Math.random() * 4
+          });
+        }
+        break;
       }
-      break;
     }
   }
+
   if (!hitAny) {
     combo = 0;
     playMiss();
-    // Miss particles (dust)
-    for (let p = 0; p < 3; p++) {
+    for (let p = 0; p < 4; p++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 1 + Math.random() * 2;
+      const speed = 1 + Math.random() * 3;
       particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 12,
-        maxLife: 12,
-        color: '#8B4513',
-        size: 2
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 15, maxLife: 15, color: '#8B4513', size: 3
       });
     }
   }
@@ -220,36 +254,55 @@ function shoot(x, y) {
 // === Input ===
 function pos(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) / rect.width * GAME_W;
-  const y = (e.clientY - rect.top) / rect.height * GAME_H;
-  return { x, y };
+  const cx = (e.clientX || e.touches?.[0]?.clientX || 0) - rect.left;
+  const cy = (e.clientY || e.touches?.[0]?.clientY || 0) - rect.top;
+  return {
+    x: Math.max(0, Math.min(GAME_W, cx / rect.width * GAME_W)),
+    y: Math.max(0, Math.min(GAME_H, cy / rect.height * GAME_H))
+  };
 }
+
+// Mouse
 canvas.addEventListener('mousemove', e => {
   const p = pos(e);
-  mouseX = Math.max(0, Math.min(GAME_W, p.x));
-  mouseY = Math.max(0, Math.min(GAME_H, p.y));
+  mouseX = p.x; mouseY = p.y;
 });
 canvas.addEventListener('click', e => {
   initAudio();
   const p = pos(e);
   shoot(p.x, p.y);
 });
+
+// Touch — drag to aim, lift to shoot
+let touching = false;
+let touchFired = false;
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   initAudio();
   const t = e.touches[0];
   const p = pos(t);
-  mouseX = Math.max(0, Math.min(GAME_W, p.x));
-  mouseY = Math.max(0, Math.min(GAME_H, p.y));
-  shoot(p.x, p.y);
+  mouseX = p.x; mouseY = p.y;
+  touching = true;
+  touchFired = false;
 }, { passive: false });
+
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   const t = e.touches[0];
   const p = pos(t);
-  mouseX = Math.max(0, Math.min(GAME_W, p.x));
-  mouseY = Math.max(0, Math.min(GAME_H, p.y));
+  mouseX = p.x; mouseY = p.y;
 }, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  touching = false;
+  // Shoot on lift — aim assist will auto-target nearest
+  shoot(mouseX, mouseY);
+  touchFired = true;
+}, { passive: false });
+
+// Also handle single quick tap (touchstart → touchend without much move)
+// Already handled above — touchend fires shoot()
 
 // === Overlay ===
 const startScreen = document.getElementById('start');
@@ -268,11 +321,12 @@ function startGame() {
   initAudio();
   if (gameoverTimeout) { clearTimeout(gameoverTimeout); gameoverTimeout = null; }
   state = PLAYING;
-  score = 0; lives = 3; round = 1; combo = 0; difficulty = 1;
-  targets = []; bullets = []; particles = [];
+  score = 0; lives = 5; round = 1; combo = 0; difficulty = 1;
+  targets = []; particles = [];
   roundTimer = Date.now();
   spawnTimer = Date.now();
-  spawnInterval = 1500;
+  spawnInterval = 1200;
+  mouseX = GAME_W/2; mouseY = GAME_H/2;
   setOverlay(null);
 }
 
@@ -291,26 +345,26 @@ restartBtn.addEventListener('click', startGame);
 function update() {
   if (state !== PLAYING) return;
 
-  // Spawn targets
   const now = Date.now();
+
+  // Spawn targets
   if (now - spawnTimer > spawnInterval) {
     spawnTimer = now;
     spawnTarget();
-    spawnInterval = Math.max(500, 1500 - round * 80);
+    // Spawn 2 targets sometimes at higher rounds
+    if (round > 2 && Math.random() < 0.4) spawnTarget();
+    spawnInterval = Math.max(400, 1200 - round * 70);
   }
 
-  // Check round timer
+  // Round timer
   if (now - roundTimer > roundDuration) {
     roundTimer = now;
     round++;
-    difficulty = 1 + round * 0.3;
-    // Lose a life for missed targets
+    difficulty = 1 + round * 0.25;
     let missed = 0;
     for (const t of targets) if (!t.hit) missed++;
-    if (missed > 5) lives--;
-    // Clear remaining targets
+    if (missed > 4) lives--;
     targets = [];
-    // Check game over
     if (lives <= 0) { endGame(); return; }
   }
 
@@ -320,15 +374,11 @@ function update() {
     if (!t.hit) {
       t.x += t.vx;
       t.y += t.vy;
-      if (t.x < 20) t.x = 20;
-      if (t.x > GAME_W - 20) t.x = GAME_W - 20;
-      if (t.y < 20) t.y = 20;
-      if (t.y > 200) t.y = 200;
+      t.x = Math.max(20, Math.min(GAME_W - 20, t.x));
+      t.y = Math.max(20, Math.min(360, t.y));
     }
-    // Remove expired
-    if (t.hit && Date.now() - t.born > t.life + 300) {
-      targets.splice(i, 1);
-    } else if (!t.hit && Date.now() - t.born > t.life) {
+    if ((t.hit && now - t.born > t.life + 400) ||
+        (!t.hit && now - t.born > t.life)) {
       targets.splice(i, 1);
     }
   }
@@ -337,7 +387,7 @@ function update() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx; p.y += p.vy;
-    p.vx *= 0.95; p.vy *= 0.95;
+    p.vx *= 0.94; p.vy *= 0.94;
     p.life--;
     if (p.life <= 0) particles.splice(i, 1);
   }
@@ -348,10 +398,9 @@ function draw() {
   ctx.clearRect(0, 0, GAME_W, GAME_H);
 
   // === Background — Saloon interior ===
-  // Wall
   ctx.fillStyle = '#2a1a0e';
   ctx.fillRect(0, 0, GAME_W, GAME_H);
-  // Wooden planks
+  // Wooden wall planks
   ctx.strokeStyle = '#3d2817';
   ctx.lineWidth = 1;
   for (let y = 0; y < GAME_H; y += 16) {
@@ -360,144 +409,117 @@ function draw() {
     ctx.lineTo(GAME_W, y);
     ctx.stroke();
   }
+  // Floor boards
+  ctx.fillStyle = '#3d2817';
+  ctx.fillRect(0, 380, GAME_W, 100);
+  ctx.strokeStyle = '#4d3827';
+  for (let x = 0; x < GAME_W; x += 20) {
+    ctx.beginPath();
+    ctx.moveTo(x, 380);
+    ctx.lineTo(x, GAME_H);
+    ctx.stroke();
+  }
   // Counter/bar
   ctx.fillStyle = '#5C3A1E';
-  ctx.fillRect(0, GAME_H - 60, GAME_W, 60);
-  ctx.fillStyle = '#7A4F28';
-  ctx.fillRect(0, GAME_H - 60, GAME_W, 6);
-  ctx.fillStyle = '#4A2E14';
-  ctx.fillRect(0, GAME_H - 60, GAME_W, 60);
-  // Counter top edge
+  ctx.fillRect(0, GAME_H - 70, GAME_W, 70);
   ctx.fillStyle = '#8B5E3C';
-  ctx.fillRect(0, GAME_H - 60, GAME_W, 4);
-  // Shelves on wall
+  ctx.fillRect(0, GAME_H - 70, GAME_W, 6);
+  // Shelves
   ctx.fillStyle = '#4A2E14';
-  ctx.fillRect(30, 20, 420, 8);
-  ctx.fillRect(30, 60, 420, 8);
-  ctx.fillRect(30, 100, 420, 8);
-  // Shelf items (bottles)
-  for (let i = 0; i < 12; i++) {
-    const sx = 40 + i * 38;
+  ctx.fillRect(20, 10, GAME_W - 40, 10);
+  ctx.fillRect(20, 50, GAME_W - 40, 10);
+  ctx.fillRect(20, 90, GAME_W - 40, 10);
+  // Shelf bottles
+  for (let i = 0; i < 14; i++) {
+    const sx = 30 + i * 32;
     ctx.fillStyle = ['#8B5E3C','#6B8E23','#5B2C2C','#2B5B2C'][i % 4];
-    ctx.fillRect(sx, 15, 10, 25);
+    ctx.fillRect(sx, 12, 10, 25);
     ctx.fillStyle = '#c8a060';
-    ctx.fillRect(sx + 2, 13, 6, 4);
+    ctx.fillRect(sx + 2, 10, 6, 4);
   }
   // Wanted poster
   ctx.fillStyle = '#d4b070';
-  ctx.fillRect(350, 120, 80, 100);
+  ctx.fillRect(360, 130, 90, 110);
   ctx.strokeStyle = '#2a1a0e';
-  ctx.strokeRect(350, 120, 80, 100);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(360, 130, 90, 110);
   ctx.fillStyle = '#1a0e06';
-  ctx.font = '7px monospace';
-  ctx.fillText('WANTED', 358, 138);
-  ctx.fillText('$5000', 362, 150);
-  // Outlaw face (simple)
+  ctx.font = 'bold 9px monospace';
+  ctx.fillText('WANTED', 372, 148);
+  ctx.fillText('$5000', 374, 162);
   ctx.fillStyle = '#3d2817';
-  ctx.fillRect(370, 155, 40, 40);
+  ctx.fillRect(375, 168, 60, 50);
   ctx.fillStyle = '#2a1a0e';
-  ctx.fillRect(380, 160, 20, 8);
-  ctx.fillRect(378, 175, 4, 4);
-  ctx.fillRect(398, 175, 4, 4);
+  ctx.fillRect(385, 173, 40, 12);
+  ctx.fillRect(380, 192, 6, 6);
+  ctx.fillRect(424, 192, 6, 6);
   // Clock
   ctx.fillStyle = '#4A2E14';
-  ctx.beginPath();
-  ctx.arc(80, 140, 20, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(70, 120, 24, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#d4b070';
-  ctx.beginPath();
-  ctx.arc(80, 140, 16, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(70, 120, 18, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = '#2a1a0e';
-  ctx.beginPath();
-  ctx.arc(80, 140, 16, 0, Math.PI * 2);
-  ctx.stroke();
-  // Clock hands
+  ctx.beginPath(); ctx.arc(70, 120, 18, 0, Math.PI*2); ctx.stroke();
   ctx.strokeStyle = '#1a0e06';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(80, 140);
-  ctx.lineTo(80, 128);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(80, 140);
-  ctx.lineTo(90, 134);
-  ctx.stroke();
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(70,120); ctx.lineTo(70,106); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(70,120); ctx.lineTo(82,112); ctx.stroke();
   ctx.fillStyle = '#1a0e06';
-  ctx.beginPath();
-  ctx.arc(80, 140, 3, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(70, 120, 4, 0, Math.PI*2); ctx.fill();
 
   // === Targets ===
   for (const t of targets) {
-    if (t.hit) {
-      // Shattered/fading
-      ctx.globalAlpha = 0.4;
-    }
+    if (t.hit) ctx.globalAlpha = 0.3;
     ctx.save();
     ctx.translate(t.x, t.y);
 
     if (t.type.name === 'bottle') {
-      // Bottle shape
       ctx.fillStyle = t.type.color;
-      ctx.fillRect(-5, -t.h/2, 10, t.h);
+      ctx.fillRect(-8, -t.h/2, 16, t.h);
       ctx.fillStyle = '#c8a060';
-      ctx.fillRect(-3, -t.h/2 - 4, 6, 6);
-      // Label
+      ctx.fillRect(-5, -t.h/2 - 6, 10, 8);
       ctx.fillStyle = '#ffd700';
-      ctx.fillRect(-4, -4, 8, 8);
+      ctx.fillRect(-6, -6, 12, 12);
     } else if (t.type.name === 'can') {
-      // Tin can
       ctx.fillStyle = t.type.color;
       ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
       ctx.fillStyle = '#aaa';
-      ctx.fillRect(-t.w/2, -t.h/2, t.w, 3);
-      ctx.fillRect(-t.w/2, t.h/2 - 3, t.w, 3);
-      // Label
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, 4);
+      ctx.fillRect(-t.w/2, t.h/2 - 4, t.w, 4);
       ctx.fillStyle = '#ff6600';
-      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 6, t.w - 4, 8);
+      ctx.fillRect(-t.w/2 + 3, -t.h/2 + 8, t.w - 6, 10);
     } else if (t.type.name === 'rat') {
-      // Rat
       ctx.fillStyle = t.type.color;
       ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
-      // Tail
       ctx.strokeStyle = '#5a2a1a';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(-t.w/2, 0);
-      ctx.lineTo(-t.w/2 - 10, -5);
-      ctx.lineTo(-t.w/2 - 14, 0);
+      ctx.lineTo(-t.w/2 - 14, -6);
+      ctx.lineTo(-t.w/2 - 18, 2);
       ctx.stroke();
-      // Eyes
       ctx.fillStyle = '#fff';
-      ctx.fillRect(-4, -3, 3, 3);
-      ctx.fillRect(2, -3, 3, 3);
+      ctx.fillRect(-6, -5, 5, 5);
+      ctx.fillRect(3, -5, 5, 5);
       ctx.fillStyle = '#000';
-      ctx.fillRect(-3, -2, 2, 2);
-      ctx.fillRect(3, -2, 2, 2);
+      ctx.fillRect(-4, -3, 3, 3);
+      ctx.fillRect(5, -3, 3, 3);
     } else if (t.type.name === 'outlaw') {
-      // Outlaw silhouette
-      // Hat
       ctx.fillStyle = '#1a0e06';
-      ctx.fillRect(-t.w/2, -t.h/2, t.w, 8);
-      ctx.fillRect(-t.w/2 + 4, -t.h/2 - 6, t.w - 8, 6);
-      // Head
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, 12);
+      ctx.fillRect(-t.w/2 + 6, -t.h/2 - 8, t.w - 12, 10);
       ctx.fillStyle = t.type.color;
-      ctx.fillRect(-t.w/2 + 3, -t.h/2 + 4, t.w - 6, 14);
-      // Body
+      ctx.fillRect(-t.w/2 + 4, -t.h/2 + 8, t.w - 8, 18);
       ctx.fillStyle = '#3d2817';
-      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 18, t.w - 4, 20);
-      // Legs
+      ctx.fillRect(-t.w/2 + 3, -t.h/2 + 26, t.w - 6, 28);
       ctx.fillStyle = '#2a1a0e';
-      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 38, 8, 8);
-      ctx.fillRect(t.w/2 - 10, -t.h/2 + 38, 8, 8);
-      // Eyes
+      ctx.fillRect(-t.w/2 + 3, -t.h/2 + 54, 12, 16);
+      ctx.fillRect(t.w/2 - 15, -t.h/2 + 54, 12, 16);
       ctx.fillStyle = '#ff3333';
-      ctx.fillRect(-3, -2, 4, 4);
-      ctx.fillRect(3, -2, 4, 4);
-      // Gun
+      ctx.fillRect(-5, -3, 6, 6);
+      ctx.fillRect(5, -3, 6, 6);
       ctx.fillStyle = '#444';
-      ctx.fillRect(t.w/2 - 6, -t.h/2 + 20, 16, 4);
+      ctx.fillRect(t.w/2 - 8, -t.h/2 + 28, 20, 6);
     }
 
     ctx.restore();
@@ -508,28 +530,24 @@ function draw() {
   const cx = Math.max(0, Math.min(GAME_W, mouseX));
   const cy = Math.max(0, Math.min(GAME_H, mouseY));
   ctx.strokeStyle = '#00ff88';
-  ctx.lineWidth = 2;
-  // Outer circle
+  ctx.lineWidth = isMobile ? 3 : 2;
   ctx.beginPath();
-  ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+  ctx.arc(cx, cy, isMobile ? 22 : 16, 0, Math.PI * 2);
   ctx.stroke();
-  // Cross lines
   ctx.beginPath();
-  ctx.moveTo(cx - 20, cy);
-  ctx.lineTo(cx + 20, cy);
-  ctx.moveTo(cx, cy - 20);
-  ctx.lineTo(cx, cy + 20);
+  ctx.moveTo(cx - (isMobile ? 28 : 22), cy);
+  ctx.lineTo(cx + (isMobile ? 28 : 22), cy);
+  ctx.moveTo(cx, cy - (isMobile ? 28 : 22));
+  ctx.lineTo(cx, cy + (isMobile ? 28 : 22));
   ctx.stroke();
-  // Center dot
   ctx.fillStyle = '#00ff88';
   ctx.beginPath();
-  ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+  ctx.arc(cx, cy, isMobile ? 3 : 2, 0, Math.PI * 2);
   ctx.fill();
 
   // === Particles ===
   for (const p of particles) {
-    const alpha = p.life / p.maxLife;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = p.life / p.maxLife;
     ctx.fillStyle = p.color;
     ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
   }
@@ -537,25 +555,33 @@ function draw() {
 
   // === HUD ===
   ctx.fillStyle = '#00ff88';
-  ctx.font = 'bold 16px monospace';
-  ctx.fillText('SCORE: ' + score, 10, 20);
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('SCORE: ' + score, 10, 24);
   ctx.fillStyle = '#ff4444';
-  ctx.fillText('LIVES: ', 10, 40);
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText('LIVES: ', 10, 46);
   for (let i = 0; i < lives; i++) {
     ctx.fillStyle = '#ff4444';
-    ctx.fillRect(55 + i * 16, 30, 10, 10);
+    ctx.fillRect(58 + i * 20, 36, 14, 14);
   }
   ctx.fillStyle = '#ffaa00';
-  ctx.fillText('ROUND: ' + round, 10, 58);
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText('ROUND: ' + round, 10, 68);
   ctx.fillStyle = '#888';
   ctx.font = '12px monospace';
-  ctx.fillText('COMBO x' + combo, 10, 72);
+  ctx.fillText('COMBO x' + combo, 10, 84);
 
-  // Best score
   if (best > 0) {
     ctx.fillStyle = '#ffd700';
+    ctx.font = '12px monospace';
+    ctx.fillText('BEST: ' + best, GAME_W - 110, 20);
+  }
+
+  // Mobile hint
+  if (isMobile) {
+    ctx.fillStyle = '#555';
     ctx.font = '10px monospace';
-    ctx.fillText('BEST: ' + best, GAME_W - 100, 16);
+    ctx.fillText('DRAG TO AIM • LIFT TO SHOOT', GAME_W/2 - 100, GAME_H - 80);
   }
 }
 
