@@ -168,7 +168,7 @@ function project(x, y, z) {
 }
 
 // ── Game State ──
-let player, prompts = [], particles = [], score = 0, lives = 3, level = 1, gameRunning = false;
+let player = null, prompts = [], particles = [], score = 0, lives = 3, level = 1, gameRunning = false;
 let spawnTimer, spawnInterval, difficultyTimer, speedMultiplier;
 let frameCount;
 let keys = {};
@@ -485,6 +485,7 @@ function drawPrompt(p) {
 }
 
 function drawPlayer() {
+  if (!player) return;
   const z = player.z;
   const proj = project(player.laneX, player.y, z);
   const s = proj.scale * 0.5;

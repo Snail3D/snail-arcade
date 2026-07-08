@@ -97,6 +97,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Co
 // ─── Canvas Setup ───────────────────────────────────────────
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+let shakeX = 0;
+let shakeY = 0;
+let gameTime = 0;
 let W = 0, H = 0, DPR = 1;
 
 function resize(){
@@ -930,8 +933,7 @@ function reset(){
   player.angle = 0; player.legPhase = 0;
   enemies = []; bullets = []; particles = []; pickups = []; decals = [];
   score = 0; kills = 0; wave = 1;
-  let shakeAmount = 0, shakeX = 0, shakeY = 0;
-  let gameTime = 0;
+  let shakeAmount = 0;
   let comboCount = 0;
   let comboTimer = 0;
   startWave();

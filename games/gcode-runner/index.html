@@ -62,6 +62,8 @@ canvas{display:block;position:fixed;top:0;left:0;z-index:0}
 <script>
 // Game state
 let canvas, ctx;
+canvas = document.getElementById('gameCanvas');
+ctx = canvas.getContext('2d');
 let gameRunning = false;
 let gameOver = false;
 let score = 0;

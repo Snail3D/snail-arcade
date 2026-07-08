@@ -262,7 +262,7 @@ enemies.push(spawnEnemy(type));
 }}}
 if(enemies.every(e=>e.sinking)&&enemies.length>0){if(wavePhase!=='done'){wavePhase='done';waveTimer=0}}
 if(wavePhase==='done'){waveTimer+=dt;if(waveTimer>300)startWave()}
-if(waveAnn>0){waveAnn--}}
+if(waveAnn>0){waveAnn--}
 
 function render(){
 X.clearRect(0,0,W(),H());

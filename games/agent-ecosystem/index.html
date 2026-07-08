@@ -105,6 +105,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
 </div>
 
 <script>
+function hexToRgba(hex, alpha) {
+  const m = hex.replace('#','');
+  const r = parseInt(m.slice(0,2),16), g = parseInt(m.slice(2,4),16), b = parseInt(m.slice(4,6),16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
 // ─── CONFIG ────────────────────────────────────────────
 const SPECIES = {
   worker:    { color:'#4ae080', shape:'rect',    speed:1.2, energy:100, range:80,  delegateRate:.001, evolveAt:50,  desc:'Balanced gatherer. Efficient at collecting resources.' },
@@ -203,7 +209,7 @@ class Resource {
     this.amount = 20 + Math.random()*15;
     this.maxAmount = this.amount;
     this.pulse = Math.random()*Math.PI*2;
-    this.alive = true;
+    // this.alive removed — getter on prototype handles it
   }
   update(dt){
     this.pulse += dt*2;
@@ -403,9 +409,9 @@ class Agent {
 
     // Glow
     const g = c.createRadialGradient(this.x,this.y,0,this.x,this.y,18+this.level*4);
-    const gc = stressGlow ? 'rgba(255,64,96,' : (sp.color+'');
-    g.addColorStop(0, gc+(0.4*glow)+')');
-    g.addColorStop(1, gc+'00)');
+    const gc = stressGlow ? 'rgba(255,64,96,' : hexToRgba(sp.color, (0.4*glow));
+    g.addColorStop(0, gc);
+    g.addColorStop(1, hexToRgba(sp.color, 0));
     c.fillStyle = g;
     c.beginPath(); c.arc(this.x,this.y,18+this.level*4,0,Math.PI*2); c.fill();
 
@@ -431,7 +437,8 @@ class Agent {
       case 'hexagon':
         for(let i=0;i<6;i++){
           const a=Math.PI/3*i;
-          (i?c.lineTo:c.moveTo)(Math.cos(a)*s, Math.sin(a)*s);
+          const x=Math.cos(a)*s, y=Math.sin(a)*s;
+          if (i) c.lineTo(x, y); else c.moveTo(x, y);
         }
         c.closePath(); break;
     }

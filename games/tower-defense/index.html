@@ -167,6 +167,7 @@
     }
 
     function draw() {
+  if (!towers || towers.length === 0) return;
       ctx.fillStyle = '#0a0a0f';
       ctx.fillRect(0, 0, W, H);
 
@@ -184,8 +185,8 @@
             ctx.fillRect(px, py, CELL, CELL);
           }
           // Buildable indicator
-          const isBuildable = BUILDABLE.some(b => b.x === x && b.y === y) || towers.some(t => t.x === x && t.y === y);
-          if (isBuildable && !towers.some(t => t.x === x && t.y === y)) {
+          const isBuildable = BUILDABLE.some(b => b.x === x && b.y === y) || (towers && towers.some(t => t.x === x && t.y === y));
+          if (isBuildable && !(towers && towers.some(t => t.x === x && t.y === y))) {
             ctx.fillStyle = 'rgba(0,255,136,0.05)';
             ctx.fillRect(px, py, CELL, CELL);
           }

@@ -173,6 +173,7 @@
 
   // --- State ---
   let grid, player, level, score, tokens, tokenLimit, goalTarget;
+grid = [];
   let best = parseInt(localStorage.getItem('token-trek-best') || '0', 10);
   let particles = [];
   let gameState = 'menu'; // menu, playing, win, lose
@@ -508,6 +509,7 @@
 
   // --- Render ---
   function drawGrid() {
+  if (!grid || grid.length === 0) return;
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 

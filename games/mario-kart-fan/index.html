@@ -483,6 +483,7 @@ function isOnTrack(x, y) {
 // ==================== DRAWING ====================
 function drawTrack() {
   var tp = trackPoints;
+  if (!tp || tp.length === 0) return;
   // Outer border (red/white stripes)
   ctx.lineWidth = TRACK_WIDTH + 12;
   ctx.strokeStyle = '#cc0000';

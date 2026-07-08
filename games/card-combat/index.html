@@ -38,7 +38,9 @@
   <script>
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
+let enemies = [];
     let W, H, playerHP, maxHP, playerBlock, enemy, deck, hand, discard, turn, phase, gameRunning, enemiesSlain, energy;
+enemy = null;
     const CARD_POOL = [
       {name:'Strike', type:'attack', cost:1, value:8, desc:'Deal 8 damage'},
       {name:'Defend', type:'block', cost:1, value:5, desc:'Gain 5 block'},
@@ -176,6 +178,7 @@
     }
 
     function draw() {
+  if (!enemy) return;
       ctx.fillStyle = '#0a0a0f';
       ctx.fillRect(0, 0, W, H);
 

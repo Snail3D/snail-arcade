@@ -39,6 +39,7 @@
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
     let W, H, ball, flippers, bumpers, targets, score, ballsLeft, gameRunning, frame, multiplier, plungerPower;
+bumpers = [];
 
     function resize() {
       W = Math.min(window.innerWidth, 480);
@@ -175,6 +176,7 @@
     }
 
     function draw() {
+  if (!bumpers || bumpers.length === 0) return;
       ctx.fillStyle = '#0a0a0f';
       ctx.fillRect(0, 0, W, H);
 

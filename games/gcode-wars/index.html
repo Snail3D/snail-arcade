@@ -417,6 +417,7 @@ function update() {
 
 // Draw
 function draw() {
+  if (!particles || particles.length === 0) return;
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0, 0, W, H);
 
