@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>CARD COMBAT</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
+    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
+    canvas { display: block; touch-action: none; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; font-family: 'Courier New', monospace;
+    }
+    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
+    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
+    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
+    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="start" class="overlay">
+    <h1>CARD COMBAT</h1>
+    <p>Draw cards. Play abilities. Survive.</p>
+    <div class="hs" id="hs-start">🏆 Win Streak: 0</div>
+    <button class="btn" onclick="startGame()">▶ ADVENTURE</button>
+  </div>
+  <div id="gameover" class="overlay hidden">
+    <h1>⚰️ DEFEATED</h1>
+    <p id="go-score">Enemies slain: 0</p>
+    <div class="hs" id="hs-go">🏆 Best: 0</div>
+    <button class="btn" onclick="startGame()">▶ TRY AGAIN</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H, playerHP, maxHP, playerBlock, enemy, deck, hand, discard, turn, phase, gameRunning, enemiesSlain, energy;
+    const CARD_POOL = [
+      {name:'Strike', type:'attack', cost:1, value:8, desc:'Deal 8 damage'},
+      {name:'Defend', type:'block', cost:1, value:5, desc:'Gain 5 block'},
+      {name:'Heal', type:'heal', cost:1, value:10, desc:'Heal 10 HP'},
+      {name:'PowerUp', type:'power', cost:2, value:15, desc:'Deal 15 damage'},
+      {name:'Barrier', type:'block', cost:2, value:12, desc:'Gain 12 block'},
+      {name:'Berserk', type:'attack', cost:2, value:20, desc:'Deal 20 damage'},
+      {name:'Meditate', type:'heal', cost:0, value:5, desc:'Heal 5 HP, cost 0'},
+      {name:'Fortify', type:'block', cost:0, value:3, desc:'Gain 3 block, cost 0'},
+      {name:'DoubleStrike', type:'attack', cost:3, value:35, desc:'Deal 35 damage'},
+      {name:'Revitalize', type:'heal', cost:3, value:25, desc:'Heal 25 HP'},
+      {name:'IronWall', type:'block', cost:3, value:20, desc:'Gain 20 block'},
+      {name:'ShadowBlade', type:'attack', cost:1, value:12, desc:'Deal 12 damage'},
+    ];
+    const ENEMY_TYPES = [
+      {name:'Goblin', hp:20, attack:5},
+      {name:'Skeleton', hp:35, attack:8},
+      {name:'Orc', hp:50, attack:12},
+      {name:'Dark Knight', hp:70, attack:18},
+      {name:'Dragon', hp:100, attack:25},
+    ];
+
+    function resize() {
+      W = Math.min(window.innerWidth, 480);
+      H = Math.min(window.innerHeight, 720);
+      canvas.width = W;
+      canvas.height = H;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function reset() {
+      playerHP = 80;
+      maxHP = 80;
+      playerBlock = 0;
+      energy = 3;
+      turn = 0;
+      phase = 'player';
+      enemiesSlain = 0;
+      deck = shuffle([
+        CARD_POOL[0], CARD_POOL[0], CARD_POOL[0],
+        CARD_POOL[1], CARD_POOL[1],
+        CARD_POOL[2],
+        CARD_POOL[3],
+        CARD_POOL[6],
+        CARD_POOL[7],
+      ]);
+      hand = [];
+      discard = [];
+      enemy = generateEnemy(0);
+      gameRunning = true;
+      document.getElementById('start').classList.add('hidden');
+      document.getElementById('gameover').classList.add('hidden');
+      drawCards(3);
+    }
+
+    function startGame() { reset(); }
+
+    function generateEnemy(level) {
+      const idx = Math.min(level, ENEMY_TYPES.length - 1);
+      const t = ENEMY_TYPES[idx];
+      return {name: t.name, hp: t.hp + level * 10, maxHP: t.hp + level * 10, attack: t.attack + level * 3};
+    }
+
+    function drawCards(n) {
+      for (let i = 0; i < n; i++) {
+        if (deck.length === 0) {
+          deck = shuffle(discard);
+          discard = [];
+        }
+        if (deck.length > 0) {
+          hand.push(deck.pop());
+        }
+      }
+    }
+
+    function playCard(idx) {
+      if (phase !== 'player') return;
+      if (idx >= hand.length) return;
+      const card = hand[idx];
+      if (energy < card.cost) return;
+
+      energy -= card.cost;
+      switch (card.type) {
+        case 'attack': enemy.hp -= card.value; break;
+        case 'block': playerBlock += card.value; break;
+        case 'heal': playerHP = Math.min(maxHP, playerHP + card.value); break;
+        case 'power': enemy.hp -= card.value; break;
+      }
+      discard.push(card);
+      hand.splice(idx, 1);
+
+      if (enemy.hp <= 0) {
+        victory();
+      }
+    }
+
+    function victory() {
+      enemiesSlain++;
+      // Add a new card to deck
+      const newCard = CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
+      deck.push(newCard);
+      // Next enemy
+      enemy = generateEnemy(enemiesSlain);
+      turn = 0;
+      energy = 3;
+      hand = [];
+      discard = [];
+      deck = shuffle(deck);
+      drawCards(3);
+      phase = 'player';
+    }
+
+    function enemyTurn() {
+      phase = 'enemy';
+      const dmg = Math.max(0, enemy.attack - playerBlock);
+      playerHP -= dmg;
+      playerBlock = Math.max(0, playerBlock - enemy.attack);
+
+      if (playerHP <= 0) { gameOver(); return; }
+
+      turn++;
+      energy = Math.min(3, energy + 1);
+      hand = [];
+      drawCards(3);
+      phase = 'player';
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+
+      // Enemy
+      const ey = 40;
+      ctx.fillStyle = '#ff4466';
+      ctx.font = '18px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(enemy.name, W/2, ey);
+      ctx.fillStyle = '#333';
+      ctx.fillRect(W/2 - 60, ey + 10, 120, 8);
+      ctx.fillStyle = '#ff4466';
+      ctx.fillRect(W/2 - 60, ey + 10, 120 * (enemy.hp / enemy.maxHP), 8);
+      ctx.fillStyle = '#888';
+      ctx.font = '12px Courier New';
+      ctx.fillText('❤️ ' + enemy.hp + '/' + enemy.maxHP, W/2, ey + 30);
+
+      // Player info
+      const py = H - 100;
+      ctx.fillStyle = '#00ff88';
+      ctx.font = '14px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('❤️ ' + playerHP + '/' + maxHP + '  🛡️ ' + playerBlock + '  ⚡ ' + energy, 10, py);
+
+      // Hand cards
+      const cw = W / 4, ch = 70, cy = py - 90;
+      for (let i = 0; i < hand.length && i < 4; i++) {
+        const cx = 10 + i * (cw + 5);
+        const card = hand[i];
+        // Card back
+        ctx.fillStyle = energy >= card.cost ? '#1a1a1a' : '#0d0d0d';
+        ctx.fillRect(cx, cy, cw, ch);
+        ctx.strokeStyle = energy >= card.cost ? '#00ff88' : '#333';
+        ctx.strokeRect(cx, cy, cw, ch);
+
+        ctx.fillStyle = energy >= card.cost ? '#fff' : '#444';
+        ctx.font = '11px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(card.name, cx + cw/2, cy + 16);
+        ctx.fillStyle = '#888';
+        ctx.font = '9px Courier New';
+        ctx.fillText(card.desc, cx + cw/2, cy + 35);
+        ctx.fillStyle = '#ff8844';
+        ctx.font = '10px Courier New';
+        ctx.fillText('⚡' + card.cost, cx + cw/2, cy + 55);
+      }
+
+      // End turn button
+      ctx.fillStyle = '#333';
+      ctx.fillRect(W/2 - 50, py + 10, 100, 30);
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('END TURN', W/2, py + 30);
+
+      // Deck count
+      ctx.fillStyle = '#666';
+      ctx.font = '10px Courier New';
+      ctx.textAlign = 'right';
+      ctx.fillText('Deck: ' + deck.length + ' | Discard: ' + discard.length, W - 10, H - 10);
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      const hs = localStorage.getItem('cc_highscore') || 0;
+      if (enemiesSlain > parseInt(hs)) {
+        localStorage.setItem('cc_highscore', enemiesSlain);
+        document.getElementById('hs-go').textContent = '🏆 New Record: ' + enemiesSlain;
+      } else {
+        document.getElementById('hs-go').textContent = '🏆 Best: ' + hs;
+      }
+      document.getElementById('go-score').textContent = 'Enemies slain: ' + enemiesSlain;
+      document.getElementById('gameover').classList.remove('hidden');
+    }
+
+    // Touch
+    canvas.addEventListener('click', (e) => {
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // End turn button
+      const py = H - 100;
+      if (y > py + 10 && y < py + 40 && x > W/2 - 50 && x < W/2 + 50 && phase === 'player') {
+        enemyTurn();
+        return;
+      }
+
+      // Hand cards
+      const cy = py - 90, cw = W / 4, ch = 70;
+      for (let i = 0; i < hand.length && i < 4; i++) {
+        const cx = 10 + i * (cw + 5);
+        if (x > cx && x < cx + cw && y > cy && y < cy + ch) {
+          playCard(i);
+          return;
+        }
+      }
+    });
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      const py = H - 100;
+      if (y > py + 10 && y < py + 40 && x > W/2 - 50 && x < W/2 + 50 && phase === 'player') {
+        enemyTurn();
+        return;
+      }
+      const cy = py - 90, cw = W / 4, ch = 70;
+      for (let i = 0; i < hand.length && i < 4; i++) {
+        const cx = 10 + i * (cw + 5);
+        if (x > cx && x < cx + cw && y > cy && y < cy + ch) {
+          playCard(i);
+          return;
+        }
+      }
+    });
+
+    function loop() {
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    const saved = localStorage.getItem('cc_highscore') || 0;
+    document.getElementById('hs-start').textContent = '🏆 Win Streak: ' + saved;
+    loop();
+  </script>
+</body>
+</html>

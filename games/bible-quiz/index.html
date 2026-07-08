@@ -395,6 +395,13 @@ function loop(time) {
     ctx.fillRect(0, 0, GAME_W, GAME_H);
 
     const q = questions[currentQ];
+    
+    // Safety check - if question is undefined, skip rendering
+    if (!q) {
+      console.error('Question not found at index', currentQ);
+      return;
+    }
+    
     const pad = 20;
 
     // Progress bar

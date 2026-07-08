@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>FARMING SIM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
+    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
+    canvas { display: block; touch-action: none; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; font-family: 'Courier New', monospace;
+    }
+    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
+    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
+    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
+    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="start" class="overlay">
+    <h1>FARMING SIM</h1>
+    <p>Plant, water, harvest, sell</p>
+    <div class="hs" id="hs-start">🏆 Total Gold: 0</div>
+    <button class="btn" onclick="startGame()">▶ START FARM</button>
+  </div>
+  <div id="gameover" class="overlay hidden">
+    <h1>FARM CLOSED</h1>
+    <p id="go-score">Gold: 0 | Days: 0</p>
+    <div class="hs" id="hs-go">🏆 Best: 0</div>
+    <button class="btn" onclick="startGame()">▶ NEW FARM</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H, ROWS=6, COLS=6, CELL, plots, gold, day, waterCan, hoeLvl, gameRunning, selectedTool, mode;
+    const CROPS = [
+      {name:'Corn', seedCost:5, growTime:3, sellPrice:15, color:'#ffcc44'},
+      {name:'Tomato', seedCost:8, growTime:4, sellPrice:25, color:'#ff4444'},
+      {name:'Carrot', seedCost:4, growTime:2, sellPrice:12, color:'#ff8844'},
+      {name:'Wheat', seedCost:3, growTime:3, sellPrice:10, color:'#ccaa44'},
+    ];
+
+    function resize() {
+      W = Math.min(window.innerWidth, 480);
+      H = Math.min(window.innerHeight, 720);
+      canvas.width = W;
+      canvas.height = H;
+      CELL = Math.floor(Math.min(W / (COLS+2), H * 0.6 / ROWS));
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function reset() {
+      gold = 50;
+      day = 1;
+      waterCan = 1;
+      hoeLvl = 1;
+      mode = 'plant';
+      selectedTool = 0;
+      plots = [];
+      for (let y = 0; y < ROWS; y++) {
+        plots[y] = [];
+        for (let x = 0; x < COLS; x++) {
+          plots[y][x] = {crop: null, watered: false, growth: 0, ready: false};
+        }
+      }
+      gameRunning = true;
+      document.getElementById('start').classList.add('hidden');
+      document.getElementById('gameover').classList.add('hidden');
+    }
+
+    function startGame() { reset(); }
+
+    function newDay() {
+      day++;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const p = plots[y][x];
+          if (p.crop && p.watered && !p.ready) {
+            p.growth++;
+            if (p.growth >= p.crop.growTime) p.ready = true;
+          }
+          if (p.crop && !p.watered && p.growth > 0) {
+            // Wither if not watered
+            p.crop = null;
+            p.watered = false;
+            p.growth = 0;
+            p.ready = false;
+          }
+          p.watered = false;
+        }
+      }
+      // Rent: 5 gold per day
+      gold -= 5;
+      if (gold < 0) { gameOver(); return; }
+    }
+
+    function interact(x, y) {
+      if (!gameRunning) return;
+      if (y >= ROWS || x >= COLS) return;
+      const p = plots[y][x];
+      if (mode === 'plant') {
+        const crop = CROPS[selectedTool];
+        if (gold < crop.seedCost) return;
+        if (p.crop) return;
+        gold -= crop.seedCost;
+        p.crop = crop;
+        p.growth = 0;
+        p.ready = false;
+        p.watered = false;
+      } else if (mode === 'water') {
+        if (waterCan <= 0) return;
+        if (!p.crop) return;
+        p.watered = true;
+        waterCan--;
+      } else if (mode === 'harvest') {
+        if (!p.ready) return;
+        gold += p.crop.sellPrice;
+        p.crop = null;
+        p.growth = 0;
+        p.ready = false;
+        p.watered = false;
+      } else if (mode === 'upgrade') {
+        if (gold < 30) return;
+        gold -= 30;
+        waterCan++;
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+
+      // Grid
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.1);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const px = ox + x * CELL, py = oy + y * CELL;
+          const p = plots[y][x];
+          // Soil
+          ctx.fillStyle = '#1a1a1a';
+          ctx.fillRect(px, py, CELL, CELL);
+          ctx.strokeStyle = '#252525';
+          ctx.strokeRect(px, py, CELL, CELL);
+
+          if (p.crop) {
+            // Crop color
+            ctx.fillStyle = p.crop.color;
+            const size = p.ready ? CELL * 0.7 : CELL * 0.3 + (p.growth / p.crop.growTime) * CELL * 0.4;
+            ctx.beginPath();
+            ctx.arc(px + CELL/2, py + CELL/2, size/2, 0, Math.PI * 2);
+            ctx.fill();
+            // Water indicator
+            if (p.watered) {
+              ctx.fillStyle = '#4488ff';
+              ctx.font = '10px Courier New';
+              ctx.textAlign = 'center';
+              ctx.fillText('💧', px + CELL/2, py + 2);
+            }
+            // Growth indicator
+            ctx.fillStyle = '#666';
+            ctx.font = '8px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.growth + '/' + p.crop.growTime, px + CELL/2, py + CELL - 4);
+          } else {
+            // Empty plot
+            ctx.fillStyle = '#222';
+            ctx.font = '12px Courier New';
+            ctx.textAlign = 'center';
+            ctx.fillText('.', px + CELL/2, py + CELL/2 + 4);
+          }
+        }
+      }
+
+      // HUD
+      ctx.fillStyle = '#00ff88';
+      ctx.font = '14px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('💰 ' + gold + '  🌾 Day ' + day + '  💧 ' + waterCan, 10, 20);
+
+      // Mode buttons
+      const modes = ['🌱 Plant', '💧 Water', '🌾 Harvest', '🔧 Upgrade'];
+      const bw = W / 4;
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = mode === ['plant','water','harvest','upgrade'][i] ? '#00ff88' : '#333';
+        ctx.fillRect(i * bw, H - 40, bw, 40);
+        ctx.fillStyle = '#fff';
+        ctx.font = '11px Courier New';
+        ctx.textAlign = 'center';
+        ctx.fillText(modes[i], i * bw + bw/2, H - 20 + 4);
+      }
+
+      // Crop selection when in plant mode
+      if (mode === 'plant') {
+        for (let i = 0; i < CROPS.length; i++) {
+          const c = CROPS[i];
+          const bx = 10, by = 40 + i * 20;
+          ctx.fillStyle = selectedTool === i ? '#00ff88' : '#333';
+          ctx.fillRect(bx, by, 120, 18);
+          ctx.fillStyle = '#fff';
+          ctx.font = '10px Courier New';
+          ctx.textAlign = 'left';
+          ctx.fillText(c.name + ' $' + c.seedCost, bx + 4, by + 13);
+        }
+      }
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      const hs = localStorage.getItem('farm_highscore') || 0;
+      if (gold > parseInt(hs)) {
+        localStorage.setItem('farm_highscore', gold);
+        document.getElementById('hs-go').textContent = '🏆 New Best: ' + gold;
+      } else {
+        document.getElementById('hs-go').textContent = '🏆 Best: ' + hs;
+      }
+      document.getElementById('go-score').textContent = 'Gold: ' + gold + ' | Days: ' + day;
+      document.getElementById('gameover').classList.remove('hidden');
+    }
+
+    // Touch
+    canvas.addEventListener('click', (e) => {
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Mode buttons
+      if (y > H - 50) {
+        const bw = W / 4;
+        const idx = Math.floor(x / bw);
+        const modes = ['plant','water','harvest','upgrade'];
+        if (idx >= 0 && idx < 4) mode = modes[idx];
+        if (mode === 'upgrade') { newDay(); }
+        return;
+      }
+
+      // Crop selection in plant mode
+      if (mode === 'plant' && y > 40 && y < 40 + CROPS.length * 20) {
+        const idx = Math.floor((y - 40) / 20);
+        if (idx >= 0 && idx < CROPS.length) selectedTool = idx;
+        return;
+      }
+
+      // Grid interaction
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.1);
+      const gx = Math.floor((x - ox) / CELL);
+      const gy = Math.floor((y - oy) / CELL);
+      if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) interact(gx, gy);
+    });
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+
+      if (y > H - 50) {
+        const bw = W / 4;
+        const idx = Math.floor(x / bw);
+        const modes = ['plant','water','harvest','upgrade'];
+        if (idx >= 0 && idx < 4) { mode = modes[idx]; if (mode === 'upgrade') newDay(); }
+        return;
+      }
+      if (mode === 'plant' && y > 40 && y < 40 + CROPS.length * 20) {
+        const idx = Math.floor((y - 40) / 20);
+        if (idx >= 0 && idx < CROPS.length) selectedTool = idx;
+        return;
+      }
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.1);
+      const gx = Math.floor((x - ox) / CELL);
+      const gy = Math.floor((y - oy) / CELL);
+      if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) interact(gx, gy);
+    });
+
+    function loop() {
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    const saved = localStorage.getItem('farm_highscore') || 0;
+    document.getElementById('hs-start').textContent = '🏆 Total Gold: ' + saved;
+    loop();
+  </script>
+</body>
+</html>

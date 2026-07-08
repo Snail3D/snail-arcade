@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>NEON GEMS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
+    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
+    canvas { display: block; touch-action: none; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; font-family: 'Courier New', monospace;
+    }
+    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
+    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
+    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
+    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="start" class="overlay">
+    <h1>NEON GEMS</h1>
+    <p>Swap adjacent gems to match 3+</p>
+    <div class="hs" id="hs-start">🏆 High Score: 0</div>
+    <button class="btn" onclick="startGame()">▶ PLAY</button>
+  </div>
+  <div id="gameover" class="overlay hidden">
+    <h1>TIME'S UP</h1>
+    <p id="go-score">Score: 0 | Level: 0</p>
+    <div class="hs" id="hs-go">🏆 Best: 0</div>
+    <button class="btn" onclick="startGame()">▶ PLAY AGAIN</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H, COLS=8, ROWS=8, CELL, board, score, level, targetScore, timer, gameRunning, selected, animating;
+    const GEM_COLORS = ['#ff4466','#44ff88','#4488ff','#ff8844','#8844ff','#44ffcc'];
+    const GEM_CHARS = ['◆','●','▲','■','★','♥'];
+
+    function resize() {
+      W = Math.min(window.innerWidth, 480);
+      H = Math.min(window.innerHeight, 720);
+      canvas.width = W;
+      canvas.height = H;
+      CELL = Math.floor(Math.min(W / COLS, H * 0.75 / ROWS));
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function reset() {
+      score = 0;
+      level = 1;
+      targetScore = 100;
+      timer = 60;
+      selected = null;
+      animating = false;
+      board = [];
+      for (let y = 0; y < ROWS; y++) {
+        board[y] = [];
+        for (let x = 0; x < COLS; x++) {
+          board[y][x] = Math.floor(Math.random() * 6);
+        }
+      }
+      // Remove initial matches
+      while (findMatches().length > 0) {
+        const matches = findMatches();
+        for (const m of matches) board[m.y][m.x] = Math.floor(Math.random() * 6);
+      }
+      gameRunning = true;
+      document.getElementById('start').classList.add('hidden');
+      document.getElementById('gameover').classList.add('hidden');
+    }
+
+    function startGame() { reset(); }
+
+    function findMatches() {
+      const matches = [];
+      // Horizontal
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS - 2; x++) {
+          const v = board[y][x];
+          if (v === -1) continue;
+          if (board[y][x+1] === v && board[y][x+2] === v) {
+            matches.push({x, y});
+            matches.push({x: x+1, y});
+            matches.push({x: x+2, y});
+          }
+        }
+      }
+      // Vertical
+      for (let y = 0; y < ROWS - 2; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const v = board[y][x];
+          if (v === -1) continue;
+          if (board[y+1][x] === v && board[y+2][x] === v) {
+            matches.push({x, y});
+            matches.push({x, y: y+1});
+            matches.push({x, y: y+2});
+          }
+        }
+      }
+      return matches;
+    }
+
+    function processMatches() {
+      const matches = findMatches();
+      if (matches.length === 0) return false;
+
+      // Score
+      score += matches.length * 10 * level;
+      for (const m of matches) board[m.y][m.x] = -1;
+
+      // Fall down
+      for (let x = 0; x < COLS; x++) {
+        for (let y = ROWS - 1; y >= 0; y--) {
+          if (board[y][x] === -1) {
+            for (let y2 = y - 1; y2 >= 0; y2--) {
+              if (board[y2][x] !== -1) {
+                board[y][x] = board[y2][x];
+                board[y2][x] = -1;
+                break;
+              }
+            }
+          }
+        }
+        // Fill empty spots
+        for (let y = 0; y < ROWS; y++) {
+          if (board[y][x] === -1) board[y][x] = Math.floor(Math.random() * 6);
+        }
+      }
+
+      // Check for cascades
+      if (findMatches().length > 0) {
+        processMatches();
+      }
+
+      // Level progression
+      if (score >= targetScore) {
+        level++;
+        targetScore += level * 50;
+        timer += 10;
+      }
+
+      return true;
+    }
+
+    function swap(x1, y1, x2, y2) {
+      if (animating) return;
+      // Check adjacency
+      const dx = Math.abs(x1 - x2), dy = Math.abs(y1 - y2);
+      if (dx + dy !== 1) return false;
+
+      [board[y1][x1], board[y2][x2]] = [board[y2][x2], board[y1][x1]];
+      const matches = findMatches();
+      if (matches.length === 0) {
+        // Swap back
+        [board[y1][x1], board[y2][x2]] = [board[y2][x2], board[y1][x1]];
+        return false;
+      }
+      processMatches();
+      return true;
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.05);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const px = ox + x * CELL, py = oy + y * CELL;
+          const g = board[y][x];
+          if (g === -1) continue;
+
+          // Cell background
+          ctx.fillStyle = '#141414';
+          ctx.fillRect(px, py, CELL, CELL);
+          ctx.strokeStyle = '#222';
+          ctx.strokeRect(px, py, CELL, CELL);
+
+          // Gem
+          ctx.fillStyle = GEM_COLORS[g];
+          ctx.font = Math.floor(CELL * 0.55) + 'px Courier New';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(GEM_CHARS[g], px + CELL/2, py + CELL/2 + 2);
+
+          // Selection highlight
+          if (selected && selected.x === x && selected.y === y) {
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(px - 2, py - 2, CELL + 4, CELL + 4);
+          }
+        }
+      }
+
+      // HUD
+      ctx.fillStyle = '#00ff88';
+      ctx.font = '14px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('⭐ ' + score + '  📊 Lv ' + level + '  🎯 ' + targetScore, 10, 20);
+
+      // Timer
+      const timerWidth = W - 20;
+      ctx.fillStyle = '#333';
+      ctx.fillRect(10, H - 20, timerWidth, 8);
+      ctx.fillStyle = timer < 15 ? '#ff4466' : '#00ff88';
+      ctx.fillRect(10, H - 20, timerWidth * (timer / 60), 8);
+      ctx.fillStyle = '#888';
+      ctx.font = '10px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.ceil(timer) + 's', W/2, H - 8);
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      const hs = localStorage.getItem('gems_highscore') || 0;
+      if (score > parseInt(hs)) {
+        localStorage.setItem('gems_highscore', score);
+        document.getElementById('hs-go').textContent = '🏆 New High Score: ' + score;
+      } else {
+        document.getElementById('hs-go').textContent = '🏆 Best: ' + hs;
+      }
+      document.getElementById('go-score').textContent = 'Score: ' + score + ' | Level: ' + level;
+      document.getElementById('gameover').classList.remove('hidden');
+    }
+
+    // Touch
+    let firstX = -1, firstY = -1;
+    canvas.addEventListener('click', (e) => {
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.05);
+      const gx = Math.floor((x - ox) / CELL);
+      const gy = Math.floor((y - oy) / CELL);
+      if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) return;
+
+      if (!selected) { selected = {x: gx, y: gy}; return; }
+      swap(selected.x, selected.y, gx, gy);
+      selected = null;
+    });
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches[0];
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.05);
+      firstX = Math.floor((x - ox) / CELL);
+      firstY = Math.floor((y - oy) / CELL);
+    });
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      const x = t.clientX - rect.left;
+      const y = t.clientY - rect.top;
+      const ox = Math.floor((W - COLS * CELL) / 2);
+      const oy = Math.floor(H * 0.05);
+      const gx = Math.floor((x - ox) / CELL);
+      const gy = Math.floor((y - oy) / CELL);
+      if (gx === firstX && gy === firstY) {
+        selected = {x: gx, y: gy};
+        return;
+      }
+      swap(firstX, firstY, gx, gy);
+      selected = null;
+    });
+
+    function loop() {
+      if (gameRunning) {
+        timer -= 1/60;
+        if (timer <= 0) gameOver();
+      }
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    const saved = localStorage.getItem('gems_highscore') || 0;
+    document.getElementById('hs-start').textContent = '🏆 High Score: ' + saved;
+    loop();
+  </script>
+</body>
+</html>

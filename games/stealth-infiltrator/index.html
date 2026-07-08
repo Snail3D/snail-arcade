@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>STEALTH INFILTRATOR</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
+    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
+    canvas { display: block; touch-action: none; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; font-family: 'Courier New', monospace;
+    }
+    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
+    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
+    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
+    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="start" class="overlay">
+    <h1>STEALTH INFILTRATOR</h1>
+    <p>Sneak past guards. Reach the exit.</p>
+    <div class="hs" id="hs-start">🏆 Best Level: 0</div>
+    <button class="btn" onclick="startGame()">▶ INFILTRATE</button>
+  </div>
+  <div id="gameover" class="overlay hidden">
+    <h1>🔴 CAUGHT</h1>
+    <p id="go-score">Level: 0</p>
+    <div class="hs" id="hs-go">🏆 Best: 0</div>
+    <button class="btn" onclick="startGame()">▶ RETRY</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H, COLS=16, ROWS=12, TILE, map, px, py, exitX, exitY, guards, level, gameRunning, hideMode, items;
+    const T_WALL=0, T_FLOOR=1, T_SHADOW=2, T_EXIT=3;
+
+    function resize() {
+      W = Math.min(window.innerWidth, 480);
+      H = Math.min(window.innerHeight, 720);
+      canvas.width = W;
+      canvas.height = H;
+      TILE = Math.floor(Math.min(W / COLS, H * 0.85 / ROWS));
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function reset() {
+      level = 1;
+      hideMode = false;
+      gameRunning = true;
+      guards = [];
+      items = [];
+      generateLevel();
+      document.getElementById('start').classList.add('hidden');
+      document.getElementById('gameover').classList.add('hidden');
+    }
+
+    function startGame() { reset(); }
+
+    function generateLevel() {
+      COLS = 16; ROWS = 12;
+      TILE = Math.floor(Math.min(W / COLS, H * 0.85 / ROWS));
+      map = [];
+      for (let y = 0; y < ROWS; y++) {
+        map[y] = [];
+        for (let x = 0; x < COLS; x++) {
+          if (x === 0 || x === COLS-1 || y === 0 || y === ROWS-1) map[y][x] = T_WALL;
+          else if (Math.random() < 0.25) map[y][x] = T_WALL;
+          else if (Math.random() < 0.3) map[y][x] = T_SHADOW;
+          else map[y][x] = T_FLOOR;
+        }
+      }
+
+      // Player start (top-left area)
+      px = 1; py = 1;
+      map[py][px] = T_FLOOR;
+
+      // Exit (bottom-right area)
+      do {
+        exitX = Math.floor(Math.random() * COLS);
+        exitY = Math.floor(Math.random() * ROWS);
+      } while (map[exitY][exitX] !== T_FLOOR || (exitX === px && exitY === py));
+      map[exitY][exitX] = T_EXIT;
+
+      // Guards
+      const numGuards = 2 + level;
+      for (let i = 0; i < numGuards; i++) {
+        let gx, gy;
+        do {
+          gx = Math.floor(Math.random() * COLS);
+          gy = Math.floor(Math.random() * ROWS);
+        } while (map[gy][gx] === T_WALL || (gx === px && gy === py) || (gx === exitX && gy === exitY));
+        guards.push({
+          x: gx, y: gy, dir: Math.floor(Math.random() * 4),
+          visionAngle: 0.8, visionRange: 4,
+          patrolTimer: 0, patrolDir: Math.floor(Math.random() * 4)
+        });
+      }
+
+      // Items (distraction rocks)
+      for (let i = 0; i < 2; i++) {
+        let ix, iy;
+        do {
+          ix = Math.floor(Math.random() * COLS);
+          iy = Math.floor(Math.random() * ROWS);
+        } while (map[iy][ix] !== T_FLOOR);
+        items.push({x: ix, y: iy, type: 'rock'});
+      }
+    }
+
+    function guardInVision(g) {
+      const dx = px - g.x, dy = py - g.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist > g.visionRange) return false;
+      // Simple line-of-sight check
+      const steps = Math.ceil(dist);
+      for (let i = 1; i <= steps; i++) {
+        const tx = g.x + (dx / steps) * i;
+        const ty = g.y + (dy / steps) * i;
+        const rx = Math.round(tx), ry = Math.round(ty);
+        if (rx < 0 || rx >= COLS || ry < 0 || ry >= ROWS) break;
+        if (map[ry][rx] === T_WALL) return false;
+      }
+      return true;
+    }
+
+    function movePlayer(dx, dy) {
+      if (!gameRunning) return;
+      const nx = px + dx, ny = py + dy;
+      if (ny < 0 || ny >= ROWS || nx < 0 || nx >= COLS) return;
+      if (map[ny][nx] === T_WALL) return;
+
+      px = nx; py = ny;
+
+      // Check if reached exit
+      if (map[ny][nx] === T_EXIT) {
+        level++;
+        guards = [];
+        items = [];
+        generateLevel();
+        return;
+      }
+
+      // Check if in shadow (hide mode)
+      hideMode = map[ny][nx] === T_SHADOW;
+
+      // Guard detection check
+      for (const g of guards) {
+        if (guardInVision(g) && !hideMode) {
+          gameOver();
+          return;
+        }
+      }
+    }
+
+    function useItem() {
+      if (!gameRunning) return;
+      // Find nearest guard and distract
+      for (const g of guards) {
+        const dx = g.x - px, dy = g.y - py;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 5) {
+          // Move guard to distraction location
+          g.x = px + (Math.random() > 0.5 ? 1 : -1);
+          g.y = py + (Math.random() > 0.5 ? 1 : -1);
+          return;
+        }
+      }
+    }
+
+    function updateGuards() {
+      for (const g of guards) {
+        g.patrolTimer++;
+        if (g.patrolTimer > 30) {
+          g.patrolTimer = 0;
+          // Random patrol
+          const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+          const d = dirs[Math.floor(Math.random() * 4)];
+          const nx = g.x + d[0], ny = g.y + d[1];
+          if (nx > 0 && nx < COLS-1 && ny > 0 && ny < ROWS-1 && map[ny][nx] !== T_WALL) {
+            g.x = nx;
+            g.y = ny;
+          }
+        }
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+
+      const ox = Math.floor((W - COLS * TILE) / 2);
+      const oy = Math.floor(H * 0.05);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const px2 = ox + x * TILE, py2 = oy + y * TILE;
+          const t = map[y][x];
+          switch (t) {
+            case T_WALL: ctx.fillStyle = '#1a1a1a'; break;
+            case T_FLOOR: ctx.fillStyle = '#0f0f0f'; break;
+            case T_SHADOW: ctx.fillStyle = '#060606'; break;
+            case T_EXIT: ctx.fillStyle = '#00ff88'; break;
+          }
+          ctx.fillRect(px2, py2, TILE, TILE);
+          if (t === T_EXIT) {
+            ctx.fillStyle = '#fff';
+            ctx.font = Math.floor(TILE * 0.5) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('▶', px2 + TILE/2, py2 + TILE/2 + 2);
+          }
+        }
+      }
+
+      // Guards
+      for (const g of guards) {
+        const gx2 = ox + g.x * TILE, gy2 = oy + g.y * TILE;
+        ctx.fillStyle = '#ff4466';
+        ctx.font = Math.floor(TILE * 0.5) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('●', gx2 + TILE/2, gy2 + TILE/2 + 2);
+        // Vision cone
+        ctx.fillStyle = 'rgba(255,68,102,0.1)';
+        const vr = g.visionRange * TILE;
+        ctx.beginPath();
+        ctx.arc(gx2 + TILE/2, gy2 + TILE/2, vr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Items
+      for (const item of items) {
+        const ix2 = ox + item.x * TILE, iy2 = oy + item.y * TILE;
+        ctx.fillStyle = '#ff8844';
+        ctx.font = Math.floor(TILE * 0.4) + 'px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('◈', ix2 + TILE/2, iy2 + TILE/2 + 2);
+      }
+
+      // Player
+      const ppx = ox + px * TILE, ppy = oy + py * TILE;
+      ctx.fillStyle = hideMode ? '#4488ff' : '#00ff88';
+      ctx.font = Math.floor(TILE * 0.5) + 'px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('◉', ppx + TILE/2, ppy + TILE/2 + 2);
+
+      // HUD
+      ctx.fillStyle = '#00ff88';
+      ctx.font = '14px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('📊 ' + level + '  ' + (hideMode ? '🟦 HIDDEN' : '🟢 VISIBLE'), 10, 20);
+
+      // Use item button
+      ctx.fillStyle = '#333';
+      ctx.fillRect(W/2 - 40, H - 40, 80, 30);
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('DISTRACT', W/2, H - 20);
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      const hs = localStorage.getItem('stealth_highscore') || 0;
+      if (level > parseInt(hs)) {
+        localStorage.setItem('stealth_highscore', level);
+        document.getElementById('hs-go').textContent = '🏆 New Best Level: ' + level;
+      } else {
+        document.getElementById('hs-go').textContent = '🏆 Best Level: ' + hs;
+      }
+      document.getElementById('go-score').textContent = 'Level: ' + level;
+      document.getElementById('gameover').classList.remove('hidden');
+    }
+
+    // Touch
+    let touchStartX = 0, touchStartY = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+    });
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      if (absDx > absDy && absDx > 30) movePlayer(dx > 0 ? 1 : -1, 0);
+      else if (absDy > 30) movePlayer(0, dy > 0 ? 1 : -1);
+      updateGuards();
+    });
+    canvas.addEventListener('click', (e) => {
+      if (!gameRunning) return;
+      const rect = canvas.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      // Distract button
+      if (y > H - 50) { useItem(); return; }
+    });
+
+    function loop() {
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    const saved = localStorage.getItem('stealth_highscore') || 0;
+    document.getElementById('hs-start').textContent = '🏆 Best Level: ' + saved;
+    loop();
+  </script>
+</body>
+</html>

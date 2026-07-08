@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>DUNGEON CRAWL</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
+    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
+    canvas { display: block; touch-action: none; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; font-family: 'Courier New', monospace;
+    }
+    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
+    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
+    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
+    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="start" class="overlay">
+    <h1>DUNGEON CRAWL</h1>
+    <p>Descend into procedural dungeons</p>
+    <p>Swipe to move | Bump to fight</p>
+    <div class="hs" id="hs-start">🏆 Deepest Floor: 0</div>
+    <button class="btn" onclick="startGame()">▶ DESCEND</button>
+  </div>
+  <div id="gameover" class="overlay hidden">
+    <h1>⚰️ GAME OVER</h1>
+    <p id="go-score">Floor: 0 | Gold: 0</p>
+    <div class="hs" id="hs-go">🏆 Best Floor: 0</div>
+    <button class="btn" onclick="startGame()">▶ TRY AGAIN</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H, TILE, COLS, ROWS, map, px, py, hp, maxHp, gold, floor, gameRunning, messages, turnCount;
+    const TYPES = { WALL:0, FLOOR:1, STAIRS:2, GOBLIN:3, DRAGON:4, POTION:5, GOLD:6, SCROLL:7 };
+
+    function resize() {
+      W = Math.min(window.innerWidth, 480);
+      H = Math.min(window.innerHeight, 720);
+      canvas.width = W;
+      canvas.height = H;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    function reset() {
+      hp = 50; maxHp = 50; gold = 0; floor = 1; turnCount = 0;
+      messages = [];
+      gameRunning = true;
+      generateFloor();
+      document.getElementById('start').classList.add('hidden');
+      document.getElementById('gameover').classList.add('hidden');
+    }
+
+    function startGame() {
+      reset();
+    }
+
+    function generateFloor() {
+      COLS = 16; ROWS = 12;
+      TILE = Math.floor(Math.min(W / COLS, H / ROWS));
+      map = [];
+      for (let y = 0; y < ROWS; y++) {
+        map[y] = [];
+        for (let x = 0; x < COLS; x++) {
+          if (x === 0 || x === COLS-1 || y === 0 || y === ROWS-1) map[y][x] = TYPES.WALL;
+          else map[y][x] = Math.random() < 0.25 ? TYPES.WALL : TYPES.FLOOR;
+        }
+      }
+
+      // Place stairs
+      let sx, sy;
+      do {
+        sx = Math.floor(Math.random() * COLS);
+        sy = Math.floor(Math.random() * ROWS);
+      } while (map[sy][sx] !== TYPES.FLOOR);
+      map[sy][sx] = TYPES.STAIRS;
+
+      // Place player near top-left
+      px = 1; py = 1;
+      map[py][px] = TYPES.FLOOR;
+
+      // Place monsters (goblins + dragons)
+      const numMonsters = 4 + floor;
+      for (let i = 0; i < numMonsters; i++) {
+        let mx, my;
+        do {
+          mx = Math.floor(Math.random() * COLS);
+          my = Math.floor(Math.random() * ROWS);
+        } while (map[my][mx] !== TYPES.FLOOR || (mx === px && my === py));
+        map[my][mx] = Math.random() < 0.2 ? TYPES.DRAGON : TYPES.GOBLIN;
+      }
+
+      // Place items
+      for (let i = 0; i < 3; i++) {
+        let ix, iy;
+        do {
+          ix = Math.floor(Math.random() * COLS);
+          iy = Math.floor(Math.random() * ROWS);
+        } while (map[iy][ix] !== TYPES.FLOOR);
+        map[iy][ix] = Math.random() < 0.5 ? TYPES.POTION : TYPES.GOLD;
+      }
+
+      messages.push('Floor ' + floor + ' — descend to find stairs');
+    }
+
+    function movePlayer(dx, dy) {
+      if (!gameRunning) return;
+      const nx = px + dx, ny = py + dy;
+      if (ny < 0 || ny >= ROWS || nx < 0 || nx >= COLS) return;
+      if (map[ny][nx] === TYPES.WALL) return;
+
+      // Handle tile interaction
+      switch (map[ny][nx]) {
+        case TYPES.GOBLIN:
+          const gh = 10 + floor * 5;
+          const gd = 2 + floor;
+          hp -= gd;
+          gold += gh;
+          messages.push('Fight goblin! -' + gd + 'HP +' + gh + 'gold');
+          map[ny][nx] = TYPES.FLOOR;
+          if (hp <= 0) { gameOver(); return; }
+          break;
+        case TYPES.DRAGON:
+          const dh = 20 + floor * 10;
+          const dd = 5 + floor * 2;
+          hp -= dd;
+          gold += dh;
+          messages.push('Fight DRAGON! -' + dd + 'HP +' + dh + 'gold');
+          map[ny][nx] = TYPES.FLOOR;
+          if (hp <= 0) { gameOver(); return; }
+          break;
+        case TYPES.POTION:
+          const heal = 15;
+          hp = Math.min(maxHp, hp + heal);
+          messages.push('Healing potion! +' + heal + 'HP');
+          map[ny][nx] = TYPES.FLOOR;
+          break;
+        case TYPES.GOLD:
+          const g = 5 + Math.floor(Math.random() * 10);
+          gold += g;
+          messages.push('Found ' + g + ' gold!');
+          map[ny][nx] = TYPES.FLOOR;
+          break;
+        case TYPES.STAIRS:
+          floor++;
+          messages.push('Descend to floor ' + floor + '!');
+          generateFloor();
+          return;
+      }
+      px = nx; py = ny;
+      turnCount++;
+
+      // Enemy turn: move goblins/dragons toward player
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (map[y][x] === TYPES.GOBLIN || map[y][x] === TYPES.DRAGON) {
+            // Move toward player
+            const dx2 = px - x, dy2 = py - y;
+            const adx = Math.abs(dx2), ady = Math.abs(dy2);
+            let mx = 0, my = 0;
+            if (adx > ady) { mx = dx2 > 0 ? 1 : -1; }
+            else { my = dy2 > 0 ? 1 : -1; }
+            const nx2 = x + mx, ny2 = y + my;
+            if (nx2 >= 0 && nx2 < COLS && ny2 >= 0 && ny2 < ROWS && map[ny2][nx2] === TYPES.FLOOR) {
+              map[y][x] = TYPES.FLOOR;
+              map[ny2][nx2] = map[y][x];
+            }
+          }
+        }
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+
+      // Draw map
+      const ox = Math.floor((W - COLS * TILE) / 2);
+      const oy = Math.floor((H - ROWS * TILE) / 2);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const tx = ox + x * TILE, ty = oy + y * TILE;
+          const t = map[y][x];
+          switch (t) {
+            case TYPES.WALL: ctx.fillStyle = '#1a1a1a'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.FLOOR: ctx.fillStyle = '#0f0f0f'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.STAIRS: ctx.fillStyle = '#00ff88'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.GOBLIN: ctx.fillStyle = '#ff6644'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.DRAGON: ctx.fillStyle = '#ff0088'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.POTION: ctx.fillStyle = '#44ff88'; ctx.fillRect(tx, ty, TILE, TILE); break;
+            case TYPES.GOLD: ctx.fillStyle = '#ffcc44'; ctx.fillRect(tx, ty, TILE, TILE); break;
+          }
+          // Tile character
+          if (t !== TYPES.WALL && t !== TYPES.FLOOR) {
+            ctx.fillStyle = '#fff';
+            ctx.font = Math.floor(TILE * 0.6) + 'px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const chars = {[TYPES.STAIRS]:'>',[TYPES.GOBLIN]:'G',[TYPES.DRAGON]:'D',[TYPES.POTION]:'!',[TYPES.GOLD]:'$'};
+            ctx.fillText(chars[t] || '?', tx + TILE/2, ty + TILE/2 + 2);
+          }
+        }
+      }
+
+      // Player
+      const px2 = ox + px * TILE, py2 = oy + py * TILE;
+      ctx.fillStyle = '#00ff88';
+      ctx.font = Math.floor(TILE * 0.6) + 'px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('@', px2 + TILE/2, py2 + TILE/2 + 2);
+
+      // HUD
+      ctx.fillStyle = '#00ff88';
+      ctx.font = '14px Courier New';
+      ctx.textAlign = 'left';
+      ctx.fillText('❤️ ' + hp + '/' + maxHp + '  💰 ' + gold + '  📊 ' + floor, 10, 20);
+
+      // Messages (show last 3)
+      ctx.fillStyle = '#666';
+      ctx.font = '11px Courier New';
+      ctx.textAlign = 'left';
+      const show = messages.slice(-3);
+      show.forEach((m, i) => {
+        ctx.fillText(m, 10, H - 60 + i * 16);
+      });
+    }
+
+    function gameOver() {
+      gameRunning = false;
+      const hs = localStorage.getItem('dc_highscore') || 0;
+      if (floor > parseInt(hs)) {
+        localStorage.setItem('dc_highscore', floor);
+        document.getElementById('hs-go').textContent = '🏆 New Best Floor: ' + floor;
+      } else {
+        document.getElementById('hs-go').textContent = '🏆 Best Floor: ' + hs;
+      }
+      document.getElementById('go-score').textContent = 'Floor: ' + floor + ' | Gold: ' + gold;
+      document.getElementById('gameover').classList.remove('hidden');
+    }
+
+    // Touch swipe handling
+    let touchStartX = 0, touchStartY = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+    });
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (!gameRunning) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      const absDx = Math.abs(dx), absDy = Math.abs(dy);
+      if (absDx > absDy && absDx > 30) movePlayer(dx > 0 ? 1 : -1, 0);
+      else if (absDy > 30) movePlayer(0, dy > 0 ? 1 : -1);
+    });
+
+    function loop() {
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    const saved = localStorage.getItem('dc_highscore') || 0;
+    document.getElementById('hs-start').textContent = '🏆 Deepest Floor: ' + saved;
+
+    loop();
+  </script>
+</body>
+</html>
