@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>The Shootist</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; touch-action:manipulation; }
+body { background:#0a0a0a; overflow:hidden; display:flex; align-items:center; justify-content:center; height:100dvh; font-family:'Courier New',monospace; }
+canvas { display:block; cursor:crosshair; }
+#start,#gameover{display:none;position:fixed;inset:0;z-index:10;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);padding:20px;text-align:center;}
+#start.active{display:flex;}#gameover.active{display:flex;}
+#start h1{color:#00ff88;font-size:clamp(2rem,6vw,3.5rem);margin-bottom:10px;text-shadow:0 0 20px #00ff88;}
+#start p{color:#ccc;font-size:clamp(1rem,3vw,1.4rem);margin-bottom:20px;line-height:1.6;}
+#start .controls{color:#888;font-size:.9rem;margin-bottom:20px;}
+.btn{background:#00ff88;color:#0a0a0a;border:none;padding:14px 48px;font-size:1.3rem;font-family:'Courier New',monospace;border-radius:4px;cursor:pointer;transition:.2s;}
+.btn:hover{background:#00cc6a;}
+#gameover h2{color:#ff4444;font-size:clamp(2rem,6vw,3rem);margin-bottom:10px;}
+#gameover p{color:#ccc;font-size:1.2rem;margin-bottom:10px;}
+#gameover .final-score{color:#00ff88;font-size:1.6rem;margin-bottom:20px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="start" class="active">
+  <h1>🏜️ THE SHOOTIST</h1>
+  <p>Aim and shoot the targets in this Western saloon gallery.</p>
+  <p class="controls">🎯 Click or tap to shoot • Hit bottles, cans, rats, and outlaws</p>
+  <button class="btn" id="startBtn">⚡ DRAW!</button>
+</div>
+
+<div id="gameover">
+  <h2>🔫 GUNSMOKE</h2>
+  <p>You were the fastest gun in the West...</p>
+  <p class="final-score">SCORE: <span id="finalScore">0</span></p>
+  <p id="bestScore"></p>
+  <button class="btn" id="restartBtn">🔄 ANOTHER ROUND</button>
+</div>
+
+<script>
+// === THE SHOOTIST — Western Shooting Gallery ===
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, scale;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  const r = 480/320;
+  let w = W, h = W/r;
+  if (h > H) { h = H; w = H*r; }
+  scale = Math.min(w/480, h/320);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = 480 * (W/w);
+  canvas.height = 320 * (H/h);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// === Game State ===
+const GAME_W = 480;
+const GAME_H = 320;
+const PLAYING = 1, DEAD = 2;
+let state = 0;
+let score = 0, lives = 3, round = 1, combo = 0;
+let best = parseInt(localStorage.getItem('shootist-best') || '0', 10);
+let targets = [];
+let bullets = [];
+let particles = [];
+let mouseX = GAME_W/2, mouseY = GAME_H/2;
+let firePressed = false;
+let lastFireTime = 0;
+let roundTimer = 0;
+let roundDuration = 30000; // 30s per round
+let gameoverTimeout = null;
+let spawnTimer = 0;
+let spawnInterval = 1500;
+let difficulty = 1;
+
+// === Audio ===
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playShoot() {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+  } catch(e) {}
+}
+function playHit() {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+  } catch(e) {}
+}
+function playMiss() {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+  } catch(e) {}
+}
+
+// === Target Types ===
+const TARGET_TYPES = [
+  { name:'bottle', color:'#8B5E3C', points:100, w:20, h:40, hitColor:'#ffd700' },
+  { name:'can', color:'#c0c0c0', points:50, w:22, h:32, hitColor:'#ff6600' },
+  { name:'rat', color:'#6B3A2A', points:200, w:18, h:14, hitColor:'#ff3333' },
+  { name:'outlaw', color:'#2d2d2d', points:300, w:28, h:44, hitColor:'#ff4444' },
+];
+
+// === Create Target ===
+function spawnTarget() {
+  const typeIdx = Math.floor(Math.random() * TARGET_TYPES.length);
+  const type = TARGET_TYPES[typeIdx];
+  const x = 60 + Math.random() * (GAME_W - 120);
+  const y = 40 + Math.random() * 160; // upper area
+  const speed = 0.3 + Math.random() * 0.7;
+  targets.push({
+    type, x, y,
+    vx: (Math.random() - 0.5) * speed * difficulty,
+    vy: (Math.random() - 0.5) * speed * difficulty,
+    life: 2000 + Math.random() * 2000, // ms before disappearing
+    born: Date.now(),
+    hit: false,
+    w: type.w, h: type.h
+  });
+}
+
+// === Shoot ===
+function shoot(x, y) {
+  if (state !== PLAYING) return;
+  firePressed = true;
+  lastFireTime = Date.now();
+  playShoot();
+
+  // Add muzzle flash particle
+  particles.push({ x, y, vx:0, vy:0, life:8, maxLife:8, color:'#ffff00', size:8 });
+
+  // Check hits
+  let hitAny = false;
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const t = targets[i];
+    if (t.hit) continue;
+    const dx = x - t.x, dy = y - t.y;
+    if (dx > -t.w/2 && dx < t.w/2 && dy > -t.h/2 && dy < t.h/2) {
+      t.hit = true;
+      hitAny = true;
+      combo++;
+      const bonus = Math.min(combo, 10);
+      const pts = t.type.points * (1 + bonus * 0.1);
+      score += Math.round(pts);
+      playHit();
+
+      // Hit particles
+      for (let p = 0; p < 6; p++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        particles.push({
+          x: t.x, y: t.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 20 + Math.random() * 10,
+          maxLife: 30,
+          color: t.type.hitColor,
+          size: 3 + Math.random() * 3
+        });
+      }
+      break;
+    }
+  }
+  if (!hitAny) {
+    combo = 0;
+    playMiss();
+    // Miss particles (dust)
+    for (let p = 0; p < 3; p++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 2;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 12,
+        maxLife: 12,
+        color: '#8B4513',
+        size: 2
+      });
+    }
+  }
+}
+
+// === Input ===
+function pos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width * GAME_W;
+  const y = (e.clientY - rect.top) / rect.height * GAME_H;
+  return { x, y };
+}
+canvas.addEventListener('mousemove', e => {
+  const p = pos(e);
+  mouseX = Math.max(0, Math.min(GAME_W, p.x));
+  mouseY = Math.max(0, Math.min(GAME_H, p.y));
+});
+canvas.addEventListener('click', e => {
+  initAudio();
+  const p = pos(e);
+  shoot(p.x, p.y);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  initAudio();
+  const t = e.touches[0];
+  const p = pos(t);
+  mouseX = Math.max(0, Math.min(GAME_W, p.x));
+  mouseY = Math.max(0, Math.min(GAME_H, p.y));
+  shoot(p.x, p.y);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  const p = pos(t);
+  mouseX = Math.max(0, Math.min(GAME_W, p.x));
+  mouseY = Math.max(0, Math.min(GAME_H, p.y));
+}, { passive: false });
+
+// === Overlay ===
+const startScreen = document.getElementById('start');
+const gameoverScreen = document.getElementById('gameover');
+const finalScore = document.getElementById('finalScore');
+const bestScore = document.getElementById('bestScore');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+
+function setOverlay(name) {
+  startScreen.classList.toggle('active', name === 'start');
+  gameoverScreen.classList.toggle('active', name === 'gameover');
+}
+
+function startGame() {
+  initAudio();
+  if (gameoverTimeout) { clearTimeout(gameoverTimeout); gameoverTimeout = null; }
+  state = PLAYING;
+  score = 0; lives = 3; round = 1; combo = 0; difficulty = 1;
+  targets = []; bullets = []; particles = [];
+  roundTimer = Date.now();
+  spawnTimer = Date.now();
+  spawnInterval = 1500;
+  setOverlay(null);
+}
+
+function endGame() {
+  state = DEAD;
+  if (score > best) { best = score; localStorage.setItem('shootist-best', best); }
+  finalScore.textContent = score;
+  bestScore.textContent = best > 0 ? '🏆 BEST: ' + best : '';
+  setOverlay('gameover');
+}
+
+startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+
+// === Update ===
+function update() {
+  if (state !== PLAYING) return;
+
+  // Spawn targets
+  const now = Date.now();
+  if (now - spawnTimer > spawnInterval) {
+    spawnTimer = now;
+    spawnTarget();
+    spawnInterval = Math.max(500, 1500 - round * 80);
+  }
+
+  // Check round timer
+  if (now - roundTimer > roundDuration) {
+    roundTimer = now;
+    round++;
+    difficulty = 1 + round * 0.3;
+    // Lose a life for missed targets
+    let missed = 0;
+    for (const t of targets) if (!t.hit) missed++;
+    if (missed > 5) lives--;
+    // Clear remaining targets
+    targets = [];
+    // Check game over
+    if (lives <= 0) { endGame(); return; }
+  }
+
+  // Move targets
+  for (let i = targets.length - 1; i >= 0; i--) {
+    const t = targets[i];
+    if (!t.hit) {
+      t.x += t.vx;
+      t.y += t.vy;
+      if (t.x < 20) t.x = 20;
+      if (t.x > GAME_W - 20) t.x = GAME_W - 20;
+      if (t.y < 20) t.y = 20;
+      if (t.y > 200) t.y = 200;
+    }
+    // Remove expired
+    if (t.hit && Date.now() - t.born > t.life + 300) {
+      targets.splice(i, 1);
+    } else if (!t.hit && Date.now() - t.born > t.life) {
+      targets.splice(i, 1);
+    }
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.95; p.vy *= 0.95;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// === Draw ===
+function draw() {
+  ctx.clearRect(0, 0, GAME_W, GAME_H);
+
+  // === Background — Saloon interior ===
+  // Wall
+  ctx.fillStyle = '#2a1a0e';
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
+  // Wooden planks
+  ctx.strokeStyle = '#3d2817';
+  ctx.lineWidth = 1;
+  for (let y = 0; y < GAME_H; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(GAME_W, y);
+    ctx.stroke();
+  }
+  // Counter/bar
+  ctx.fillStyle = '#5C3A1E';
+  ctx.fillRect(0, GAME_H - 60, GAME_W, 60);
+  ctx.fillStyle = '#7A4F28';
+  ctx.fillRect(0, GAME_H - 60, GAME_W, 6);
+  ctx.fillStyle = '#4A2E14';
+  ctx.fillRect(0, GAME_H - 60, GAME_W, 60);
+  // Counter top edge
+  ctx.fillStyle = '#8B5E3C';
+  ctx.fillRect(0, GAME_H - 60, GAME_W, 4);
+  // Shelves on wall
+  ctx.fillStyle = '#4A2E14';
+  ctx.fillRect(30, 20, 420, 8);
+  ctx.fillRect(30, 60, 420, 8);
+  ctx.fillRect(30, 100, 420, 8);
+  // Shelf items (bottles)
+  for (let i = 0; i < 12; i++) {
+    const sx = 40 + i * 38;
+    ctx.fillStyle = ['#8B5E3C','#6B8E23','#5B2C2C','#2B5B2C'][i % 4];
+    ctx.fillRect(sx, 15, 10, 25);
+    ctx.fillStyle = '#c8a060';
+    ctx.fillRect(sx + 2, 13, 6, 4);
+  }
+  // Wanted poster
+  ctx.fillStyle = '#d4b070';
+  ctx.fillRect(350, 120, 80, 100);
+  ctx.strokeStyle = '#2a1a0e';
+  ctx.strokeRect(350, 120, 80, 100);
+  ctx.fillStyle = '#1a0e06';
+  ctx.font = '7px monospace';
+  ctx.fillText('WANTED', 358, 138);
+  ctx.fillText('$5000', 362, 150);
+  // Outlaw face (simple)
+  ctx.fillStyle = '#3d2817';
+  ctx.fillRect(370, 155, 40, 40);
+  ctx.fillStyle = '#2a1a0e';
+  ctx.fillRect(380, 160, 20, 8);
+  ctx.fillRect(378, 175, 4, 4);
+  ctx.fillRect(398, 175, 4, 4);
+  // Clock
+  ctx.fillStyle = '#4A2E14';
+  ctx.beginPath();
+  ctx.arc(80, 140, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#d4b070';
+  ctx.beginPath();
+  ctx.arc(80, 140, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2a1a0e';
+  ctx.beginPath();
+  ctx.arc(80, 140, 16, 0, Math.PI * 2);
+  ctx.stroke();
+  // Clock hands
+  ctx.strokeStyle = '#1a0e06';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(80, 140);
+  ctx.lineTo(80, 128);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(80, 140);
+  ctx.lineTo(90, 134);
+  ctx.stroke();
+  ctx.fillStyle = '#1a0e06';
+  ctx.beginPath();
+  ctx.arc(80, 140, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === Targets ===
+  for (const t of targets) {
+    if (t.hit) {
+      // Shattered/fading
+      ctx.globalAlpha = 0.4;
+    }
+    ctx.save();
+    ctx.translate(t.x, t.y);
+
+    if (t.type.name === 'bottle') {
+      // Bottle shape
+      ctx.fillStyle = t.type.color;
+      ctx.fillRect(-5, -t.h/2, 10, t.h);
+      ctx.fillStyle = '#c8a060';
+      ctx.fillRect(-3, -t.h/2 - 4, 6, 6);
+      // Label
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(-4, -4, 8, 8);
+    } else if (t.type.name === 'can') {
+      // Tin can
+      ctx.fillStyle = t.type.color;
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
+      ctx.fillStyle = '#aaa';
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, 3);
+      ctx.fillRect(-t.w/2, t.h/2 - 3, t.w, 3);
+      // Label
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 6, t.w - 4, 8);
+    } else if (t.type.name === 'rat') {
+      // Rat
+      ctx.fillStyle = t.type.color;
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, t.h);
+      // Tail
+      ctx.strokeStyle = '#5a2a1a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-t.w/2, 0);
+      ctx.lineTo(-t.w/2 - 10, -5);
+      ctx.lineTo(-t.w/2 - 14, 0);
+      ctx.stroke();
+      // Eyes
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(-4, -3, 3, 3);
+      ctx.fillRect(2, -3, 3, 3);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(-3, -2, 2, 2);
+      ctx.fillRect(3, -2, 2, 2);
+    } else if (t.type.name === 'outlaw') {
+      // Outlaw silhouette
+      // Hat
+      ctx.fillStyle = '#1a0e06';
+      ctx.fillRect(-t.w/2, -t.h/2, t.w, 8);
+      ctx.fillRect(-t.w/2 + 4, -t.h/2 - 6, t.w - 8, 6);
+      // Head
+      ctx.fillStyle = t.type.color;
+      ctx.fillRect(-t.w/2 + 3, -t.h/2 + 4, t.w - 6, 14);
+      // Body
+      ctx.fillStyle = '#3d2817';
+      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 18, t.w - 4, 20);
+      // Legs
+      ctx.fillStyle = '#2a1a0e';
+      ctx.fillRect(-t.w/2 + 2, -t.h/2 + 38, 8, 8);
+      ctx.fillRect(t.w/2 - 10, -t.h/2 + 38, 8, 8);
+      // Eyes
+      ctx.fillStyle = '#ff3333';
+      ctx.fillRect(-3, -2, 4, 4);
+      ctx.fillRect(3, -2, 4, 4);
+      // Gun
+      ctx.fillStyle = '#444';
+      ctx.fillRect(t.w/2 - 6, -t.h/2 + 20, 16, 4);
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // === Crosshair ===
+  const cx = Math.max(0, Math.min(GAME_W, mouseX));
+  const cy = Math.max(0, Math.min(GAME_H, mouseY));
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 2;
+  // Outer circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  // Cross lines
+  ctx.beginPath();
+  ctx.moveTo(cx - 20, cy);
+  ctx.lineTo(cx + 20, cy);
+  ctx.moveTo(cx, cy - 20);
+  ctx.lineTo(cx, cy + 20);
+  ctx.stroke();
+  // Center dot
+  ctx.fillStyle = '#00ff88';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === Particles ===
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // === HUD ===
+  ctx.fillStyle = '#00ff88';
+  ctx.font = 'bold 16px monospace';
+  ctx.fillText('SCORE: ' + score, 10, 20);
+  ctx.fillStyle = '#ff4444';
+  ctx.fillText('LIVES: ', 10, 40);
+  for (let i = 0; i < lives; i++) {
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(55 + i * 16, 30, 10, 10);
+  }
+  ctx.fillStyle = '#ffaa00';
+  ctx.fillText('ROUND: ' + round, 10, 58);
+  ctx.fillStyle = '#888';
+  ctx.font = '12px monospace';
+  ctx.fillText('COMBO x' + combo, 10, 72);
+
+  // Best score
+  if (best > 0) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '10px monospace';
+    ctx.fillText('BEST: ' + best, GAME_W - 100, 16);
+  }
+}
+
+// === Loop ===
+let lastStep = 0;
+function loop(t) {
+  if (state === PLAYING && t - lastStep > 16) {
+    lastStep = t;
+    update();
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
