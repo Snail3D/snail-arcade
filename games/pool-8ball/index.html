@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>8 Ball Pool</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#1a0a00;overflow:hidden;font-family:'Segoe UI',Arial,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;margin:auto}
+#ui-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:flex;flex-direction:column;align-items:center}
+#info-bar{display:flex;align-items:center;gap:16px;padding:10px 20px;background:rgba(0,0,0,0.7);border-radius:12px;margin-top:10px;color:#fff;font-size:13px;pointer-events:auto}
+.player-info{display:flex;align-items:center;gap:6px;transition:color 0.2s}
+.player-info.active{color:#ffd700;font-weight:bold}
+.dot{width:10px;height:10px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);transition:border-color 0.2s,box-shadow 0.2s}
+.player-info.active .dot{border-color:#ffd700;box-shadow:0 0 8px #ffd700}
+#power-bar-container{width:180px;height:6px;background:rgba(255,255,255,0.15);border-radius:3px;overflow:hidden}
+#power-bar{height:100%;width:0%;background:linear-gradient(90deg,#4f4,#ff4,#f44);border-radius:3px}
+#message{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-size:32px;font-weight:bold;text-shadow:0 0 20px rgba(255,215,0,0.5);pointer-events:none;opacity:0;transition:opacity 0.3s;text-align:center;padding:0 20px}
+#message.visible{opacity:1}
+#restart-btn{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);padding:10px 30px;background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;pointer-events:auto;display:none}
+#restart-btn:hover{background:linear-gradient(135deg,#e74c3c,#ff6b6b)}
+#mode-select{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.9);border:2px solid #ffd700;border-radius:16px;padding:30px 40px;color:#fff;text-align:center;pointer-events:auto;z-index:10}
+#mode-select h2{margin-bottom:20px;color:#ffd700;font-size:24px}
+.mode-btn{display:block;width:100%;padding:12px 30px;margin:8px 0;background:linear-gradient(135deg,#2c3e50,#34495e);color:#fff;border:2px solid #555;border-radius:8px;font-size:16px;cursor:pointer;transition:all 0.2s}
+.mode-btn:hover{background:linear-gradient(135deg,#34495e,#2c3e50);border-color:#ffd700}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui-overlay">
+  <div id="info-bar">
+    <div class="player-info" id="p1-info">
+      <div class="dot" id="p1-dot"></div>
+      <span id="p1-name">You</span>
+      <span id="p1-label"></span>
+    </div>
+    <div id="power-bar-container"><div id="power-bar"></div></div>
+    <div class="player-info" id="p2-info">
+      <span id="p2-label"></span>
+      <span id="p2-name">CPU</span>
+      <div class="dot" id="p2-dot"></div>
+    </div>
+  </div>
+  <div id="message"></div>
+  <button id="restart-btn" onclick="initGame()">New Game</button>
+</div>
+
+<div id="mode-select">
+  <h2>🎱 8 Ball Pool</h2>
+  <button class="mode-btn" onclick="startGame('pvp')">👥 Two Players</button>
+  <button class="mode-btn" onclick="startGame('cpu')">🤖 vs CPU</button>
+</div>
+
+<script>
+// === CONFIG ===
+const TW=900,TH=480;
+const CUSHION=32, RW=TW-2*CUSHION, RH=TH-2*CUSHION;
+const POCKET_R=24, BALL_R=10;
+const FRICTION=0.985, MIN_VEL=0.06, MAX_POWER=16;
+const REST=0.94, CUSH_REST=0.82;
+const SUBSTEPS=4;
+
+const POCKETS=[
+  {x:CUSHION-3,y:CUSHION-3},{x:TW/2,y:CUSHION-5},{x:TW-CUSHION+3,y:CUSHION-3},
+  {x:CUSHION-3,y:TH-CUSHION+3},{x:TW/2,y:TH-CUSHION+5},{x:TW-CUSHION+3,y:TH-CUSHION+3}
+];
+
+const BALL_DEFS=[
+  {color:'#FFFDE7'},{color:'#FDD835'},{color:'#1E88E5'},{color:'#E53935'},
+  {color:'#8E24AA'},{color:'#FB8C00'},{color:'#43A047'},{color:'#6D4C41'},
+  {color:'#212121'},{color:'#FDD835',stripe:true},{color:'#1E88E5',stripe:true},
+  {color:'#E53935',stripe:true},{color:'#8E24AA',stripe:true},{color:'#FB8C00',stripe:true},
+  {color:'#43A047',stripe:true},{color:'#6D4C41',stripe:true}
+];
+
+let canvas,ctx;
+let balls=[],gameState='menu',currentPlayer=0,playerGroups=[null,null];
+let firstHit=null,foul=false,pocketedThisTurn=[];
+let aimAngle=0,aimPower=0,isCharging=false,powerStartTime=0;
+let ballPlaced=false,aiThinking=false;
+let mode='pvp';
+let messageTimer=null,placeAttempts=0;
+
+// === INIT ===
+function init(){
+  canvas=document.getElementById('game');
+  ctx=canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize',resize);
+  canvas.addEventListener('mousemove',onMouseMove);
+  canvas.addEventListener('mousedown',onMouseDown);
+  canvas.addEventListener('mouseup',onMouseUp);
+  canvas.addEventListener('touchstart',onTouchStart,{passive:false});
+  canvas.addEventListener('touchmove',onTouchMove,{passive:false});
+  canvas.addEventListener('touchend',onTouchEnd);
+  loop();
+}
+
+function startGame(m){
+  mode=m;
+  document.getElementById('p2-name').textContent=m==='cpu'?'CPU':'Player 2';
+  document.getElementById('mode-select').style.display='none';
+  initGame();
+}
+
+function resize(){
+  const sw=window.innerWidth,sh=window.innerHeight-50;
+  const s=Math.min(sw/TW,sh/TH);
+  canvas.width=TW*s;canvas.height=TH*s;
+  canvas.style.width=canvas.width+'px';
+  canvas.style.height=canvas.height+'px';
+  ctx.setTransform(s,0,0,s,0,0);
+}
+
+function initGame(){
+  balls=[];currentPlayer=0;playerGroups=[null,null];
+  gameState='aiming';isCharging=false;aiThinking=false;ballPlaced=false;
+  document.getElementById('restart-btn').style.display='none';
+  balls.push(makeBall(0,CUSHION+RW*0.28,TH/2));
+  const rx=CUSHION+RW*0.72,ry=TH/2,d=BALL_R*2.1;
+  const order=[1,9,2,10,8,3,11,4,12,5,13,6,14,7,15];
+  let idx=0;
+  for(let r=0;r<5;r++) for(let c=0;c<=r;c++){
+    balls.push(makeBall(order[idx],rx+r*d*Math.cos(Math.PI/6),ry+(c-r/2)*d));
+    idx++;
+  }
+  updateUI();
+}
+
+function makeBall(n,x,y){
+  return{num:n,x,y,vx:0,vy:0,active:true,...BALL_DEFS[n]};
+}
+
+// === INPUT ===
+function getPos(e){
+  const r=canvas.getBoundingClientRect();
+  return{x:(e.clientX-r.left)*(TW/r.width),y:(e.clientY-r.top)*(TH/r.height)};
+}
+
+function onMouseMove(e){
+  if(gameState==='aiming'||gameState==='charging'){
+    const p=getPos(e),b=balls[0];
+    if(b&&b.active) aimAngle=Math.atan2(p.y-b.y,p.x-b.x);
+  }
+}
+
+function onMouseDown(e){
+  if(gameState==='placing-cue'){
+    const p=getPos(e);
+    placeCue(p.x,p.y);
+    return;
+  }
+  if(gameState==='aiming'){
+    isCharging=true;gameState='charging';powerStartTime=performance.now();
+    document.getElementById('power-bar').style.width='0%';
+  }
+}
+
+function onMouseUp(e){
+  if(!isCharging||gameState!=='charging')return;
+  isCharging=false;
+  const elapsed=performance.now()-powerStartTime;
+  aimPower=Math.min(elapsed/1500,1)*MAX_POWER;
+  if(aimPower<0.3){gameState='aiming';document.getElementById('power-bar').style.width='0%';return;}
+  const b=balls[0];
+  b.vx=-Math.cos(aimAngle)*aimPower;
+  b.vy=-Math.sin(aimAngle)*aimPower;
+  endAiming();
+  document.getElementById('power-bar').style.width='0%';
+}
+
+function onTouchStart(e){e.preventDefault();const p=getPos(e);onMouseDown({clientX:e.touches[0].clientX,clientY:e.touches[0].clientY});}
+function onTouchMove(e){e.preventDefault();const p=getPos(e);if(gameState==='charging'){const b=balls[0];if(b&&b.active)aimAngle=Math.atan2(p.y-b.y,p.x-b.x);}}
+function onTouchEnd(e){e.preventDefault();onMouseUp({clientX:e.changedTouches[0].clientX,clientY:e.changedTouches[0].clientY});}
+
+function placeCue(x,y){
+  placeAttempts++;
+  const px=Math.max(CUSHION+BALL_R,Math.min(TW*0.45-BALL_R,x));
+  const py=Math.max(CUSHION+BALL_R,Math.min(TH-CUSHION-BALL_R,y));
+  if(!checkOverlap(px,py,0)){
+    balls[0].x=px;balls[0].y=py;balls[0].active=true;
+    gameState='aiming';placeAttempts=0;
+  } else if(placeAttempts>10){
+    // Auto-place if can't find spot
+    balls[0].x=TW*0.25;balls[0].y=TH/2;balls[0].active=true;
+    gameState='aiming';placeAttempts=0;
+  }
+}
+
+// === PHYSICS ===
+function endAiming(){
+  firstHit=null;foul=false;pocketedThisTurn=[];
+  gameState='moving';
+}
+
+function loop(){update();draw();requestAnimationFrame(loop);}
+
+function update(){
+  if(gameState!=='moving')return;
+  
+  for(let step=0;step<SUBSTEPS;step++){
+    // Sub-step physics for stability
+    for(const b of balls){
+      if(!b.active)continue;
+      b.x+=b.vx/SUBSTEPS;
+      b.y+=b.vy/SUBSTEPS;
+    }
+    
+    // Ball-ball collisions
+    for(let i=0;i<balls.length;i++){
+      for(let j=i+1;j<balls.length;j++){
+        const a=balls[i],b=balls[j];
+        if(!a.active||!b.active)continue;
+        const dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<BALL_R*2&&d>0.001){
+          const nx=dx/d,ny=dy/d;
+          const overlap=BALL_R*2-d;
+          a.x-=nx*overlap/2;a.y-=ny*overlap/2;
+          b.x+=nx*overlap/2;b.y+=ny*overlap/2;
+          const dvx=a.vx-b.vx,dvy=a.vy-b.vy;
+          const dot=dvx*nx+dvy*ny;
+          if(dot>0){
+            a.vx-=dot*nx*REST;a.vy-=dot*ny*REST;
+            b.vx+=dot*nx*REST;b.vy+=dot*ny*REST;
+          }
+          if(!firstHit&&(a.num===0||b.num===0)){
+            firstHit=a.num===0?b:a;
+          }
+        }
+      }
+    }
+    
+    // Cushion collisions
+    for(const b of balls){
+      if(!b.active)continue;
+      if(b.x-BALL_R<CUSHION){b.x=CUSHION+BALL_R;b.vx=Math.abs(b.vx)*CUSH_REST;}
+      if(b.x+BALL_R>TW-CUSHION){b.x=TW-CUSHION-BALL_R;b.vx=-Math.abs(b.vx)*CUSH_REST;}
+      if(b.y-BALL_R<CUSHION){b.y=CUSHION+BALL_R;b.vy=Math.abs(b.vy)*CUSH_REST;}
+      if(b.y+BALL_R>TH-CUSHION){b.y=TH-CUSHION-BALL_R;b.vy=-Math.abs(b.vy)*CUSH_REST;}
+    }
+    
+    // Pocket detection
+    for(const b of balls){
+      if(!b.active)continue;
+      for(const pk of POCKETS){
+        const dx=b.x-pk.x,dy=b.y-pk.y,d=Math.sqrt(dx*dx+dy*dy);
+        if(d<POCKET_R-BALL_R*0.3){
+          b.active=false;b.vx=0;b.vy=0;
+          pocketedThisTurn.push(b.num);
+          if(b.num===0)foul=true;
+          break;
+        }
+      }
+    }
+  }
+  
+  // Apply friction once per frame
+  for(const b of balls){
+    if(!b.active)continue;
+    b.vx*=FRICTION;b.vy*=FRICTION;
+    if(Math.abs(b.vx)<MIN_VEL&&Math.abs(b.vy)<MIN_VEL){b.vx=0;b.vy=0;}
+  }
+  
+  // Check if all stopped
+  const moving=balls.some(b=>b.active&&(b.vx!==0||b.vy!==0));
+  if(!moving){
+    endTurn();
+  }
+}
+
+function endTurn(){
+  const eightPocketed=pocketedThisTurn.includes(8);
+  const cuePocketed=pocketedThisTurn.includes(0);
+  
+  // Check 8-ball
+  if(eightPocketed){
+    const myGroup=playerGroups[currentPlayer];
+    if(!myGroup){
+      showMsg(`Player ${currentPlayer+1} loses! (Early 8)`);
+      gameState='game-over';document.getElementById('restart-btn').style.display='block';
+      if(mode==='cpu')scheduleAI();
+      return;
+    }
+    const remaining=balls.filter(b=>b.active&&b.num!==0&&b.num!==8);
+    const myBalls=remaining.filter(b=>{
+      if(myGroup==='solids')return b.num>=1&&b.num<=7;
+      return b.num>=9&&b.num<=15;
+    });
+    if(myBalls.length===0&&!cuePocketed){
+      showMsg(`Player ${currentPlayer+1} wins!`);
+      gameState='game-over';document.getElementById('restart-btn').style.display='block';
+      if(mode==='cpu')scheduleAI();
+      return;
+    } else {
+      showMsg(`Player ${currentPlayer+1} loses! (8 with balls left)`);
+      gameState='game-over';document.getElementById('restart-btn').style.display='block';
+      if(mode==='cpu')scheduleAI();
+      return;
+    }
+  }
+  
+  // Assign groups
+  if(!foul&&pocketedThisTurn.length>0){
+    const pn=pocketedThisTurn.find(n=>n!==0&&n!==8);
+    if(pn!==undefined&&playerGroups[0]===null){
+      playerGroups[0]=pn<=7?'solids':'stripes';
+      playerGroups[1]=pn<=7?'stripes':'solids';
+    }
+  }
+  
+  // Turn result
+  const myGroup=playerGroups[currentPlayer];
+  const myPocketed=pocketedThisTurn.filter(n=>{
+    if(n===0||n===8)return false;
+    if(!myGroup)return true;
+    if(myGroup==='solids')return n>=1&&n<=7;
+    return n>=9&&n<=15;
+  });
+  
+  if(foul||cuePocketed){
+    turnContinues=false;
+    if(cuePocketed){
+      balls[0].x=CUSHION+RW*0.28;balls[0].y=TH/2;balls[0].vx=0;balls[0].vy=0;
+      gameState='placing-cue';
+      showMsg('Foul! Place the cue ball');
+    } else {
+      showMsg('Foul!');
+      switchPlayer();
+    }
+  } else if(myPocketed.length>0){
+    // Continue turn
+    if(mode==='cpu'&&currentPlayer===1){
+      gameState='aiming';
+      scheduleAI();
+    } else {
+      gameState='aiming';
+    }
+  } else {
+    switchPlayer();
+  }
+  
+  updateUI();
+}
+
+function switchPlayer(){
+  currentPlayer=1-currentPlayer;
+  updateUI();
+  if(mode==='cpu'&&currentPlayer===1&&gameState!=='game-over'){
+    gameState='aiming';
+    scheduleAI();
+  }
+}
+
+function checkOverlap(x,y,num){
+  for(const b of balls){
+    if(b.active&&b.num!==num){
+      const dx=b.x-x,dy=b.y-y;
+      if(Math.sqrt(dx*dx+dy*dy)<BALL_R*2.3)return true;
+    }
+  }
+  return false;
+}
+
+// === AI ===
+function scheduleAI(){
+  aiThinking=true;
+  setTimeout(doAI,800+Math.random()*700);
+}
+
+function doAI(){
+  if(gameState==='game-over'||gameState==='menu')return;
+  if(mode!=='cpu'||currentPlayer!==1){aiThinking=false;return;}
+  
+  // If placing cue
+  if(gameState==='placing-cue'){
+    const cx=TW*0.2+Math.random()*RW*0.3;
+    const cy=TH*0.3+Math.random()*TH*0.4;
+    placeCue(cx,cy);
+    setTimeout(doAI,500);
+    return;
+  }
+  
+  const qb=balls[0];
+  if(!qb||!qb.active){aiThinking=false;return;}
+  
+  const myGroup=playerGroups[1];
+  let targets=[];
+  
+  if(myGroup==='solids'){
+    targets=balls.filter(b=>b.active&&b.num>=1&&b.num<=7);
+  } else if(myGroup==='stripes'){
+    targets=balls.filter(b=>b.active&&b.num>=9&&b.num<=15);
+  } else {
+    targets=balls.filter(b=>b.active&&b.num>=1&&b.num<=15);
+  }
+  
+  if(targets.length===0){
+    targets=balls.filter(b=>b.active&&b.num===8);
+  }
+  
+  if(targets.length===0){aiThinking=false;return;}
+  
+  // Pick best target (closest to a pocket)
+  let bestShot=null,bestScore=999999;
+  
+  for(const t of targets){
+    // Find best pocket for this target
+    for(const pk of POCKETS){
+      // Aim: cue ball should end up such that it hits target toward pocket
+      // Reverse: from pocket through target, cue ball should be on the opposite side
+      const dx=pk.x-t.x,dy=pk.y-t.y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<0.001)continue;
+      const nx=dx/d,ny=dy/d;
+      // Cue ball position needed
+      const cx=t.x-nx*BALL_R*2;
+      const cy=t.y-ny*BALL_R*2;
+      if(cx<CUSHION+BALL_R||cx>TW-CUSHION-BALL_R||cy<CUSHION+BALL_R||cy>TH-CUSHION-BALL_R)continue;
+      if(checkOverlap(cx,cy,0))continue;
+      
+      // Distance from cue ball to aim point
+      const dist=Math.sqrt((qb.x-cx)*(qb.x-cx)+(qb.y-cy)*(qb.y-cy));
+      const pocketDist=d+BALL_R*2;
+      const score=dist+-pocketDist*0.3; // Prefer shorter shots
+      if(score<bestScore){bestScore=score;bestShot={cx,cy,pk};}
+    }
+  }
+  
+  if(!bestShot){
+    // Fallback: just shoot randomly toward the pack
+    const cx=CUSHION+RW*0.5+Math.random()*RW*0.3;
+    const cy=TH*0.3+Math.random()*TH*0.4;
+    bestShot={cx,cy,pk:POCKETS[Math.floor(Math.random()*6)]};
+  }
+  
+  // Calculate angle from cue ball to aim point
+  const angle=Math.atan2(bestShot.cy-qb.y,bestShot.cx-qb.x);
+  const dist=Math.sqrt((bestShot.cx-qb.x)**2+(bestShot.cy-qb.y)**2);
+  
+  // Power: longer shots need more power
+  let power=Math.min(dist/TW*MAX_POWER*1.2+2,MAX_POWER);
+  power*=0.7+Math.random()*0.3; // Add some randomness
+  power=Math.max(2,Math.min(power,MAX_POWER));
+  
+  // Execute shot
+  qb.vx=-Math.cos(angle)*power;
+  qb.vy=-Math.sin(angle)*power;
+  endAiming();
+  aiThinking=false;
+}
+
+// === RENDERING ===
+function draw(){
+  ctx.clearRect(0,0,TW,TH);
+  
+  // Rail background
+  ctx.fillStyle='#5d3a1a';
+  ctx.fillRect(0,0,TW,TH);
+  
+  // Outer rail border
+  ctx.fillStyle='#3e2410';
+  ctx.fillRect(0,0,TW,CUSHION-2);
+  ctx.fillRect(0,TH-CUSHION+2,TW,CUSHION-2);
+  ctx.fillRect(0,0,CUSHION-2,TH);
+  ctx.fillRect(TW-CUSHION+2,0,CUSHION-2,TH);
+  
+  // Inner rail line
+  ctx.strokeStyle='#7a5a3a';
+  ctx.lineWidth=2;
+  ctx.strokeRect(CUSHION-1,CUSHION-1,RW+2,RH+2);
+  
+  // Cloth
+  const grad=ctx.createRadialGradient(TW/2,TH/2,30,TW/2,TH/2,RW*0.5);
+  grad.addColorStop(0,'#1e8a3a');
+  grad.addColorStop(1,'#0d7a2e');
+  ctx.fillStyle=grad;
+  ctx.fillRect(CUSHION,CUSHION,RW,RH);
+  
+  // Diamonds
+  ctx.fillStyle='#d4a857';
+  for(let i=1;i<=3;i++){
+    drawDiamond(CUSHION+i*RW/4,CUSHION/2);
+    drawDiamond(CUSHION+i*RW/4,TH-CUSHION/2);
+    drawDiamond(CUSHION/2,CUSHION+i*RH/4);
+    drawDiamond(TW-CUSHION/2,CUSHION+i*RH/4);
+  }
+  
+  // Head string
+  ctx.setLineDash([4,6]);ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(CUSHION+RW*0.28,CUSHION);ctx.lineTo(CUSHION+RW*0.28,TH-CUSHION);
+  ctx.stroke();ctx.setLineDash([]);
+  
+  // Pockets
+  for(const pk of POCKETS){
+    ctx.beginPath();ctx.arc(pk.x,pk.y,POCKET_R,0,Math.PI*2);
+    ctx.fillStyle='#0a0a0a';ctx.fill();
+    ctx.strokeStyle='#333';ctx.lineWidth=2;ctx.stroke();
+  }
+  
+  // Balls
+  for(const b of balls){
+    if(!b.active)continue;
+    drawBall(b);
+  }
+  
+  // Aim line
+  if((gameState==='aiming'||gameState==='charging')&&balls[0]&&balls[0].active&&!aiThinking){
+    drawAimLine();
+  }
+  
+  // Cue stick
+  if((gameState==='aiming'||gameState==='charging')&&balls[0]&&balls[0].active&&!aiThinking){
+    drawCue();
+  }
+  
+  // Power bar
+  if(gameState==='charging'){
+    const elapsed=performance.now()-powerStartTime;
+    const power=Math.min(elapsed/1500,1);
+    document.getElementById('power-bar').style.width=(power*100)+'%';
+  }
+  
+  // AI thinking indicator
+  if(aiThinking){
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.fillRect(0,0,TW,TH);
+    ctx.fillStyle='#ffd700';ctx.font='bold 24px Arial';ctx.textAlign='center';
+    ctx.fillText('CPU is thinking...',TW/2,TH/2);
+  }
+}
+
+function drawDiamond(x,y){
+  ctx.beginPath();ctx.moveTo(x,y-4);ctx.lineTo(x+4,y);ctx.lineTo(x,y+4);ctx.lineTo(x-4,y);ctx.closePath();ctx.fill();
+}
+
+function drawBall(b){
+  ctx.save();
+  // Shadow
+  ctx.beginPath();ctx.arc(b.x+1.5,b.y+1.5,BALL_R,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.3)';ctx.fill();
+  
+  ctx.beginPath();ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2);
+  ctx.fillStyle=b.color;ctx.fill();
+  
+  if(b.num===0){
+    ctx.fillStyle='#f0f0e8';ctx.fill();
+  } else if(b.stripe){
+    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R*0.65,0,Math.PI*2);
+    ctx.fillStyle='#fff';ctx.fill();
+    // Redraw top and bottom halves with ball color
+    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2);ctx.clip();
+    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R*0.65,0,Math.PI*2);
+    ctx.fillStyle='#fff';ctx.fill();
+    ctx.restore();ctx.save();
+    ctx.beginPath();ctx.arc(b.x,b.y-BALL_R*0.65,BALL_R*0.65,Math.PI*1.5,Math.PI*0.5);ctx.fillStyle=b.color;ctx.fill();
+    ctx.beginPath();ctx.arc(b.x,b.y+BALL_R*0.65,BALL_R*0.65,Math.PI*0.5,Math.PI*1.5);ctx.fillStyle=b.color;ctx.fill();
+  }
+  
+  // Number circle
+  if(b.num>0){
+    ctx.beginPath();ctx.arc(b.x,b.y,5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+    ctx.fillStyle='#000';ctx.font=b.num>=10?'bold 7px Arial':'bold 8px Arial';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(b.num,b.x,b.y+0.5);
+  }
+  
+  // Shine
+  ctx.beginPath();ctx.arc(b.x-2.5,b.y-2.5,2.5,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,0.35)';ctx.fill();
+  ctx.restore();
+}
+
+function drawAimLine(){
+  const b=balls[0];
+  const len=400;
+  const ex=b.x+Math.cos(aimAngle)*len;
+  const ey=b.y+Math.sin(aimAngle)*len;
+  ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;ctx.setLineDash([6,6]);
+  ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.setLineDash([]);
+}
+
+function drawCue(){
+  const b=balls[0];
+  const pullBack=gameState==='charging'?aimPower*3:0;
+  const len=200;
+  const sx=b.x-Math.cos(aimAngle)*(BALL_R+5+pullBack);
+  const sy=b.y-Math.sin(aimAngle)*(BALL_R+5+pullBack);
+  const ex=sx-Math.cos(aimAngle)*len;
+  const ey=sy-Math.sin(aimAngle)*len;
+  
+  ctx.strokeStyle='rgba(0,0,0,0.2)';ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(sx+2,sy+2);ctx.lineTo(ex+2,ey+2);ctx.stroke();
+  
+  const cg=ctx.createLinearGradient(sx,sy,ex,ey);
+  cg.addColorStop(0,'#f5deb3');cg.addColorStop(0.05,'#fff');
+  cg.addColorStop(0.1,'#d4a857');cg.addColorStop(0.5,'#8B4513');cg.addColorStop(1,'#2c1810');
+  ctx.strokeStyle=cg;ctx.lineWidth=4.5;
+  ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();
+}
+
+// === UI ===
+function updateUI(){
+  const p1=document.getElementById('p1-info'),p2=document.getElementById('p2-info');
+  p1.classList.toggle('active',currentPlayer===0);
+  p2.classList.toggle('active',currentPlayer===1);
+  document.getElementById('p1-dot').classList.toggle('active',currentPlayer===0);
+  document.getElementById('p2-dot').classList.toggle('active',currentPlayer===1);
+  const g1=playerGroups[0],g2=playerGroups[1];
+  document.getElementById('p1-label').textContent=g1?(g1==='solids'?'● Solids':'◐ Stripes'):'';
+  document.getElementById('p2-label').textContent=g2?(g2==='solids'?'● Solids':'◐ Stripes'):'';
+}
+
+function showMsg(text){
+  const el=document.getElementById('message');
+  el.textContent=text;el.classList.add('visible');
+  clearTimeout(messageTimer);
+  messageTimer=setTimeout(()=>el.classList.remove('visible'),2500);
+}
+
+// === START ===
+window.addEventListener('load',init);
+</script>
+</body>
+</html>
