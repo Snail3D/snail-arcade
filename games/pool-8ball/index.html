@@ -57,7 +57,7 @@ canvas{display:block;margin:auto}
 const TW=900,TH=480;
 const CUSHION=32, RW=TW-2*CUSHION, RH=TH-2*CUSHION;
 const POCKET_R=24, BALL_R=10;
-const FRICTION=0.985, MIN_VEL=0.06, MAX_POWER=16;
+const FRICTION=0.997, MIN_VEL=0.03, MAX_POWER=16;
 const REST=0.94, CUSH_REST=0.82;
 const SUBSTEPS=4;
 
@@ -279,7 +279,6 @@ function endTurn(){
     if(!myGroup){
       showMsg(`Player ${currentPlayer+1} loses! (Early 8)`);
       gameState='game-over';document.getElementById('restart-btn').style.display='block';
-      if(mode==='cpu')scheduleAI();
       return;
     }
     const remaining=balls.filter(b=>b.active&&b.num!==0&&b.num!==8);
@@ -290,17 +289,15 @@ function endTurn(){
     if(myBalls.length===0&&!cuePocketed){
       showMsg(`Player ${currentPlayer+1} wins!`);
       gameState='game-over';document.getElementById('restart-btn').style.display='block';
-      if(mode==='cpu')scheduleAI();
       return;
     } else {
       showMsg(`Player ${currentPlayer+1} loses! (8 with balls left)`);
       gameState='game-over';document.getElementById('restart-btn').style.display='block';
-      if(mode==='cpu')scheduleAI();
       return;
     }
   }
   
-  // Assign groups
+  // Assign groups on first legal pocket
   if(!foul&&pocketedThisTurn.length>0){
     const pn=pocketedThisTurn.find(n=>n!==0&&n!==8);
     if(pn!==undefined&&playerGroups[0]===null){
@@ -309,17 +306,17 @@ function endTurn(){
     }
   }
   
-  // Turn result
+  // Determine if turn continues
   const myGroup=playerGroups[currentPlayer];
   const myPocketed=pocketedThisTurn.filter(n=>{
     if(n===0||n===8)return false;
-    if(!myGroup)return true;
+    if(!myGroup)return true; // open table
     if(myGroup==='solids')return n>=1&&n<=7;
     return n>=9&&n<=15;
   });
   
+  // Foul or cue pocketed → switch turn
   if(foul||cuePocketed){
-    turnContinues=false;
     if(cuePocketed){
       balls[0].x=CUSHION+RW*0.28;balls[0].y=TH/2;balls[0].vx=0;balls[0].vy=0;
       gameState='placing-cue';
@@ -328,18 +325,24 @@ function endTurn(){
       showMsg('Foul!');
       switchPlayer();
     }
-  } else if(myPocketed.length>0){
-    // Continue turn
+    updateUI();
+    return;
+  }
+  
+  // Scored own ball → continue turn
+  if(myPocketed.length>0){
     if(mode==='cpu'&&currentPlayer===1){
       gameState='aiming';
       scheduleAI();
     } else {
       gameState='aiming';
     }
-  } else {
-    switchPlayer();
+    updateUI();
+    return;
   }
   
+  // Missed → switch turn
+  switchPlayer();
   updateUI();
 }
 
@@ -544,20 +547,22 @@ function drawBall(b){
   ctx.fillStyle=b.color;ctx.fill();
   
   if(b.num===0){
+    // Cue ball
     ctx.fillStyle='#f0f0e8';ctx.fill();
   } else if(b.stripe){
-    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R*0.65,0,Math.PI*2);
-    ctx.fillStyle='#fff';ctx.fill();
-    // Redraw top and bottom halves with ball color
-    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2);ctx.clip();
-    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R*0.65,0,Math.PI*2);
-    ctx.fillStyle='#fff';ctx.fill();
-    ctx.restore();ctx.save();
-    ctx.beginPath();ctx.arc(b.x,b.y-BALL_R*0.65,BALL_R*0.65,Math.PI*1.5,Math.PI*0.5);ctx.fillStyle=b.color;ctx.fill();
-    ctx.beginPath();ctx.arc(b.x,b.y+BALL_R*0.65,BALL_R*0.65,Math.PI*0.5,Math.PI*1.5);ctx.fillStyle=b.color;ctx.fill();
+    // Stripe: full color ball, white band across middle
+    // Draw full color first (already done above)
+    // Now draw white stripe across middle using clip
+    ctx.beginPath();ctx.arc(b.x,b.y,BALL_R,0,Math.PI*2);
+    ctx.save();ctx.clip();
+    // White stripe
+    ctx.fillStyle='#fff';
+    ctx.fillRect(b.x-BALL_R, b.y-BALL_R*0.55, BALL_R*2, BALL_R*1.1);
+    ctx.restore();
+    // Redraw number circle on top of stripe
   }
   
-  // Number circle
+  // Number circle (white background)
   if(b.num>0){
     ctx.beginPath();ctx.arc(b.x,b.y,5,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
     ctx.fillStyle='#000';ctx.font=b.num>=10?'bold 7px Arial':'bold 8px Arial';
