@@ -6,298 +6,113 @@
 <title>WANTED Poster Generator</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-
 body {
     font-family: Georgia, 'Times New Roman', serif;
     background: #1a0f08;
     color: #F5E6C8;
     min-height: 100vh;
 }
+.app { max-width: 900px; margin: 0 auto; padding: 20px; }
+h1 { text-align: center; font-size: 2.5rem; color: #F5E6C8; margin-bottom: 8px; letter-spacing: 4px; }
+.subtitle { text-align: center; color: #a08060; margin-bottom: 30px; font-style: italic; }
 
-.app {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 20px;
-}
+.step { display: none; }
+.step.active { display: block; }
 
-h1 {
-    text-align: center;
-    font-size: 2.5rem;
-    color: #F5E6C8;
-    margin-bottom: 8px;
-    letter-spacing: 4px;
-}
-
-.subtitle {
-    text-align: center;
-    color: #a08060;
-    margin-bottom: 30px;
-    font-style: italic;
-}
-
-/* Steps */
-.step {
-    display: none;
-}
-.step.active {
-    display: block;
-}
-
-/* Upload area */
 .upload-area {
     border: 3px dashed #a08060;
     border-radius: 12px;
-    padding: 40px 20px;
+    padding: 50px 20px;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s;
     background: rgba(160,128,96,0.1);
 }
-.upload-area:hover {
-    border-color: #F5E6C8;
-    background: rgba(160,128,96,0.2);
-}
+.upload-area:hover { border-color: #F5E6C8; background: rgba(160,128,96,0.2); }
+.upload-icon { font-size: 4rem; margin-bottom: 10px; }
 
-.upload-icon {
-    font-size: 4rem;
-    margin-bottom: 10px;
-}
-
-.btn-row {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    margin-top: 20px;
-    flex-wrap: wrap;
-}
-
+.btn-row { display: flex; gap: 12px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
 button, .btn {
-    background: #8B4513;
-    color: #F5E6C8;
-    border: 2px solid #a08060;
-    padding: 12px 28px;
-    font-size: 1rem;
-    font-family: Georgia, serif;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
+    background: #8B4513; color: #F5E6C8; border: 2px solid #a08060;
+    padding: 14px 32px; font-size: 1.1rem; font-family: Georgia, serif;
+    cursor: pointer; border-radius: 8px; transition: all 0.2s; min-width: 180px;
 }
-button:hover, .btn:hover {
-    background: #a0522d;
-    transform: translateY(-1px);
-}
+button:hover, .btn:hover { background: #a0522d; transform: translateY(-2px); }
 
-/* Preview */
-.preview-container {
-    text-align: center;
-    margin: 20px 0;
-}
+.preview-container { text-align: center; margin: 20px 0; }
+#preview-img { max-width: 300px; max-height: 300px; border-radius: 8px; border: 3px solid #a08060; }
 
-#preview-img {
-    max-width: 300px;
-    max-height: 300px;
-    border-radius: 8px;
-    border: 3px solid #a08060;
-}
-
-/* Template grid */
 .template-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 16px;
-    margin: 20px 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px; margin: 20px 0;
 }
-
 .template-card {
-    background: #F5E6C8;
-    color: #3B2314;
-    border-radius: 8px;
-    padding: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-align: center;
-    border: 3px solid transparent;
+    background: #F5E6C8; color: #3B2314; border-radius: 8px; padding: 14px;
+    cursor: pointer; transition: all 0.2s; text-align: center; border: 3px solid transparent;
 }
-.template-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-}
-.template-card.selected {
-    border-color: #8B0000;
-    box-shadow: 0 0 16px rgba(139,0,0,0.5);
-}
-
+.template-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.template-card.selected { border-color: #8B0000; box-shadow: 0 0 16px rgba(139,0,0,0.5); }
 .template-preview {
-    width: 100%;
-    aspect-ratio: 4/5;
-    background: #e8d5b7;
-    border-radius: 4px;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 3rem;
+    width: 100%; aspect-ratio: 4/5; background: #e8d5b7; border-radius: 4px;
+    margin-bottom: 8px; display: flex; align-items: center; justify-content: center; font-size: 3rem;
 }
+.template-name { font-weight: bold; font-size: 0.95rem; }
 
-.template-name {
-    font-weight: bold;
-    font-size: 0.95rem;
-}
+.poster-wrapper { text-align: center; margin: 20px 0; }
+#poster-canvas { max-width: 100%; border-radius: 4px; box-shadow: 0 12px 48px rgba(0,0,0,0.5); }
 
-/* Poster canvas */
-.poster-wrapper {
-    text-align: center;
-    margin: 20px 0;
-}
-
-#poster-canvas {
-    max-width: 100%;
-    border-radius: 4px;
-    box-shadow: 0 12px 48px rgba(0,0,0,0.5);
-}
-
-/* Loading */
-.loading {
-    text-align: center;
-    padding: 40px;
-}
-
+.loading { text-align: center; padding: 40px; }
 .spinner {
-    display: inline-block;
-    width: 48px;
-    height: 48px;
-    border: 4px solid #a08060;
-    border-top-color: #F5E6C8;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+    display: inline-block; width: 48px; height: 48px; border: 4px solid #a08060;
+    border-top-color: #F5E6C8; border-radius: 50%; animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { margin-top: 16px; color: #a08060; }
+
+.name-input-group { text-align: center; margin: 16px 0; }
+.name-input-group label { display: block; margin-bottom: 8px; color: #a08060; }
+.name-input-group input[type="text"] {
+    background: rgba(160,128,96,0.2); border: 2px solid #a08060; color: #F5E6C8;
+    padding: 10px 16px; font-size: 1rem; font-family: Georgia, serif;
+    border-radius: 6px; width: 280px; max-width: 80%;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
+.download-btn { background: #2d5a1e; border-color: #4a8c30; font-size: 1.1rem; padding: 14px 36px; }
+.download-btn:hover { background: #3a7a28; }
 
-.loading-text {
-    margin-top: 16px;
-    color: #a08060;
+.custom-fields { margin: 16px 0; display: grid; gap: 10px; max-width: 400px; margin-left: auto; margin-right: auto; }
+.custom-field label { display: block; color: #a08060; font-size: 0.9rem; margin-bottom: 4px; }
+.custom-field select {
+    background: rgba(160,128,96,0.2); border: 2px solid #a08060; color: #F5E6C8;
+    padding: 8px 12px; font-size: 0.95rem; font-family: Georgia, serif; border-radius: 4px; width: 100%;
 }
+.custom-field select option { background: #3B2314; color: #F5E6C8; }
 
-/* File inputs styled as buttons */
-.file-btn {
-    display: inline-block;
-    background: #8B4513;
-    color: #F5E6C8;
-    border: 2px solid #a08060;
-    padding: 12px 28px;
-    font-size: 1rem;
-    font-family: Georgia, serif;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-}
-.file-btn:hover {
-    background: #a0522d;
-    transform: translateY(-1px);
-}
-/* Style the native file button */
-.file-btn::file-selector-button {
-    background: #8B4513;
-    color: #F5E6C8;
-    border: 2px solid #a08060;
-    padding: 12px 28px;
-    font-size: 1rem;
-    font-family: Georgia, serif;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-}
-.file-btn::file-selector-button:hover {
-    background: #a0522d;
-}
-
-/* Hidden inputs */
-.hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-
-/* Name input */
-.name-input-group {
-    text-align: center;
-    margin: 16px 0;
-}
-.name-input-group label {
-    display: block;
-    margin-bottom: 8px;
-    color: #a08060;
-}
-.name-input-group input {
-    background: rgba(160,128,96,0.2);
-    border: 2px solid #a08060;
-    color: #F5E6C8;
-    padding: 10px 16px;
-    font-size: 1rem;
-    font-family: Georgia, serif;
-    border-radius: 6px;
-    width: 280px;
-    max-width: 80%;
-}
-
-/* Download button */
-.download-btn {
-    background: #2d5a1e;
-    border-color: #4a8c30;
-    font-size: 1.1rem;
-    padding: 14px 36px;
-}
-.download-btn:hover {
-    background: #3a7a28;
-}
-
-/* Custom fields */
-.custom-fields {
-    margin: 16px 0;
-    display: grid;
-    gap: 10px;
-    max-width: 400px;
-    margin-left: auto;
-    margin-right: auto;
-}
-.custom-field label {
-    display: block;
-    color: #a08060;
-    font-size: 0.9rem;
-    margin-bottom: 4px;
-}
-.custom-field input, .custom-field select {
-    background: rgba(160,128,96,0.2);
-    border: 2px solid #a08060;
-    color: #F5E6C8;
-    padding: 8px 12px;
-    font-size: 0.95rem;
-    font-family: Georgia, serif;
-    border-radius: 4px;
-    width: 100%;
-}
-.custom-field select option {
-    background: #3B2314;
-    color: #F5E6C8;
+/* File inputs — visible but pushed off-screen */
+#file-input, #camera-input {
+    position: fixed; bottom: -1px; left: -1px; width: 1px; height: 1px; opacity: 0.01; pointer-events: auto; z-index: -1;
 }
 
 </style>
 </head>
 <body>
 <div class="app">
-    <h1>⚔ WANTED ⚔</h1>
+    <h1>&#9876; WANTED &#9876;</h1>
     <p class="subtitle">Poster Generator — Create your own outlaw poster!</p>
 
-    <!-- Step 1: Upload Photo -->
+    <!-- Step 1: Upload -->
     <div id="step-upload" class="step active">
-        <div class="upload-area" id="drop-zone">
-            <div class="upload-icon">📸</div>
+        <div class="upload-area" onclick="document.getElementById('file-input').click()">
+            <div class="upload-icon">&#128247;</div>
             <p><strong>Drop a photo here</strong></p>
-            <p style="color:#a08060; margin-top:4px;">or click to browse files</p>
+            <p style="color:#a08060; margin-top:4px;">or tap to browse files</p>
         </div>
         <div class="btn-row">
-            <input type="file" id="camera-input" accept="image/*" capture="user" class="file-btn" title="Take Photo">
-            <input type="file" id="file-input" accept="image/*" class="file-btn" title="Upload File">
+            <button onclick="document.getElementById('camera-input').click()">&#128247; Take Photo</button>
+            <button onclick="document.getElementById('file-input').click()">&#128193; Upload File</button>
         </div>
+        <input type="file" id="file-input" accept="image/*">
+        <input type="file" id="camera-input" accept="image/*" capture="user">
 
         <div id="preview-section" style="display:none;">
             <div class="preview-container">
@@ -305,22 +120,22 @@ button:hover, .btn:hover {
             </div>
             <div class="name-input-group">
                 <label for="subject-name">Name on poster:</label>
-                <input type="text" id="subject-name" placeholder="Enter name..." value="">
+                <input type="text" id="subject-name" placeholder="Enter name...">
             </div>
             <div class="btn-row">
-                <button id="remove-bg-btn">✨ Remove Background</button>
-                <button id="skip-bg-btn">Skip → Pick Template</button>
+                <button onclick="removeBg()">&#10024; Remove Background</button>
+                <button onclick="goTemplate()">Skip &#8594; Pick Template</button>
             </div>
         </div>
 
         <div id="loading-section" style="display:none;" class="loading">
             <div class="spinner"></div>
-            <p class="loading-text">Removing background... this runs in your browser.</p>
+            <p class="loading-text">Removing background...</p>
             <p style="color:#706050; font-size:0.85rem;">First load downloads ~40MB model (cached after).</p>
         </div>
     </div>
 
-    <!-- Step 2: Pick Template -->
+    <!-- Step 2: Template -->
     <div id="step-template" class="step">
         <h2 style="text-align:center; margin-bottom:16px;">Pick a Template</h2>
         <div class="template-grid" id="template-grid"></div>
@@ -334,24 +149,24 @@ button:hover, .btn:hover {
                     <option value="$5,000">$5,000</option>
                     <option value="$10,000">$10,000</option>
                     <option value="$50,000">$50,000</option>
-                    <option value="DEATH">$DEATH SENTENCE</option>
+                    <option value="DEATH">DEATH SENTENCE</option>
                 </select>
             </div>
         </div>
         <div class="btn-row">
-            <button id="generate-btn" disabled>⚔ Generate Poster</button>
+            <button id="generate-btn" disabled onclick="goResult()">&#9876; Generate Poster</button>
         </div>
     </div>
 
-    <!-- Step 3: View & Download -->
+    <!-- Step 3: Result -->
     <div id="step-result" class="step">
         <h2 style="text-align:center; margin-bottom:16px;">Your Wanted Poster</h2>
         <div class="poster-wrapper">
             <canvas id="poster-canvas"></canvas>
         </div>
         <div class="btn-row">
-            <button class="download-btn" id="download-btn">💾 Download PNG</button>
-            <button id="retry-btn">🔄 Try Another Template</button>
+            <button class="download-btn" onclick="downloadPoster()">&#128190; Download PNG</button>
+            <button onclick="showStep('step-template')">&#128260; Try Another Template</button>
         </div>
     </div>
 </div>
@@ -359,368 +174,159 @@ button:hover, .btn:hover {
 <script type="module">
 import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.12/+esm';
 
-// ── Templates ──
 const templates = [
-    {
-        id: 'classic',
-        name: 'Classic Western',
-        emoji: '🤠',
-        bg: '#F5E6C8',
-        border: '#3B2314',
-        accent: '#8B0000',
-        title: 'WANTED',
-        subtitle: 'DEAD OR ALIVE',
-        danger: 'DANGER — DO NOT APPROACH',
-        description: 'Armed with memes and bad decisions.',
-        footer: '★ ★ ★ ★ ★'
-    },
-    {
-        id: 'pirate',
-        name: 'Pirate Bounty',
-        emoji: '🏴‍☠️',
-        bg: '#F0E4D0',
-        border: '#1a3a5c',
-        accent: '#8B0000',
-        title: 'WANTED',
-        subtitle: 'PIRATE BOUNTY',
-        danger: '⚓ DANGEROUS ⚓',
-        description: 'Known to plunder and party.',
-        footer: '☠ ☠ ☠'
-    },
-    {
-        id: 'cyberpunk',
-        name: 'Cyberpunk',
-        emoji: '🤖',
-        bg: '#0a0a1a',
-        border: '#ff006e',
-        accent: '#00f5d4',
-        title: 'WANTED',
-        subtitle: 'NETRUNNER BOUNTY',
-        danger: '⚠ HIGHLY DANGEROUS ⚠',
-        description: 'Hacked the mainframe. Again.',
-        footer: '▓▒░ CYBERPUNK ░▒▓'
-    },
-    {
-        id: 'medieval',
-        name: 'Medieval',
-        emoji: '⚔️',
-        bg: '#E8D5B7',
-        border: '#4a3728',
-        accent: '#6B0000',
-        title: 'WANTED',
-        subtitle: 'BY ORDER OF THE KING',
-        danger: '⚔ TREACHEROUS ⚔',
-        description: 'Accused of wizardry and tax evasion.',
-        footer: '♛ BY ROYAL DECREE ♛'
-    },
-    {
-        id: 'space',
-        name: 'Space Bounty',
-        emoji: '🚀',
-        bg: '#0d1b2a',
-        border: '#ffd60a',
-        accent: '#ff6b35',
-        title: 'WANTED',
-        subtitle: 'GALACTIC BOUNTY',
-        danger: '☄ INTERSTELLAR THREAT ☄',
-        description: 'Stole a spaceship. Probably.',
-        footer: '✦ GALACTIC FEDERATION ✦'
-    },
-    {
-        id: 'zombie',
-        name: 'Zombie Apocalypse',
-        emoji: '🧟',
-        bg: '#2d3a1f',
-        border: '#5a7a2a',
-        accent: '#8B0000',
-        title: 'WANTED',
-        subtitle: 'INFECTED — DO NOT APPROACH',
-        danger: '☣ BIOHAZARD ☣',
-        description: 'Last seen eating brains at the mall.',
-        footer: '☠ SURVIVE AT ALL COSTS ☠'
-    },
-    {
-        id: 'samurai',
-        name: 'Ronin Hunter',
-        emoji: '🗡️',
-        bg: '#f0e6d3',
-        border: '#8B0000',
-        accent: '#1a1a2e',
-        title: 'WANTED',
-        subtitle: 'RONIN — MASTERLESS SAMURAI',
-        danger: '⚔ DEADLY SKILLS ⚔',
-        description: 'Master swordsman. Do not provoke.',
-        footer: '侍 HONOR IS DEAD 侍'
-    },
-    {
-        id: 'viking',
-        name: 'Viking Raider',
-        emoji: '🪓',
-        bg: '#d4c5a9',
-        border: '#2c3e50',
-        accent: '#c0392b',
-        title: 'WANTED',
-        subtitle: 'VIKING RAID BOUNTY',
-        danger: '⚔ FEARLESS WARRIOR ⚔',
-        description: 'Raided three villages before breakfast.',
-        footer: 'ᛟ VALHALLA AWAITS ᛟ'
-    },
-    {
-        id: 'detective',
-        name: 'Noir Detective',
-        emoji: '🕵️',
-        bg: '#2c2c2c',
-        border: '#d4af37',
-        accent: '#8B0000',
-        title: 'WANTED',
-        subtitle: 'FEDERAL BOUNTY',
-        danger: '⚠ ARMED & DANGEROUS ⚠',
-        description: 'Witness to a crime. Won\'t talk.',
-        footer: '★ FEDERAL BUREAU ★'
-    },
-    {
-        id: 'wizard',
-        name: 'Dark Wizard',
-        emoji: '🧙',
-        bg: '#1a0a2e',
-        border: '#9b59b6',
-        accent: '#e74c3c',
-        title: 'WANTED',
-        subtitle: 'SORCERERS COUNCIL BOUNTY',
-        danger: '✦ DANGEROUS MAGIC ✦',
-        description: 'Cast forbidden spells. Again.',
-        footer: '☽ ORDER OF THE MOON ☾'
-    }
+    { id:'classic', name:'Classic Western', emoji:'\ud83e\udd20', bg:'#F5E6C8', border:'#3B2314', accent:'#8B0000', title:'WANTED', subtitle:'DEAD OR ALIVE', danger:'DANGER \u2014 DO NOT APPROACH', desc:'Armed with memes and bad decisions.', footer:'\u2605 \u2605 \u2605 \u2605 \u2605' },
+    { id:'pirate', name:'Pirate Bounty', emoji:'\ud83c\udff4\u200d\u2620\ufe0f', bg:'#F0E4D0', border:'#1a3a5c', accent:'#8B0000', title:'WANTED', subtitle:'PIRATE BOUNTY', danger:'\u2693 DANGEROUS \u2693', desc:'Known to plunder and party.', footer:'\u2620 \u2620 \u2620' },
+    { id:'cyberpunk', name:'Cyberpunk', emoji:'\ud83e\udd16', bg:'#0a0a1a', border:'#ff006e', accent:'#00f5d4', title:'WANTED', subtitle:'NETRUNNER BOUNTY', danger:'\u26a0 HIGHLY DANGEROUS \u26a0', desc:'Hacked the mainframe. Again.', footer:'\u2593\u2592\u2591 CYBERPUNK \u2591\u2592\u2593' },
+    { id:'medieval', name:'Medieval', emoji:'\u2694\ufe0f', bg:'#E8D5B7', border:'#4a3728', accent:'#6B0000', title:'WANTED', subtitle:'BY ORDER OF THE KING', danger:'\u2694 TREACHEROUS \u2694', desc:'Accused of wizardry and tax evasion.', footer:'\u265b BY ROYAL DECREE \u265b' },
+    { id:'space', name:'Space Bounty', emoji:'\ud83d\ude80', bg:'#0d1b2a', border:'#ffd60a', accent:'#ff6b35', title:'WANTED', subtitle:'GALACTIC BOUNTY', danger:'\u2604 INTERSTELLAR THREAT \u2604', desc:'Stole a spaceship. Probably.', footer:'\u2726 GALACTIC FEDERATION \u2726' },
+    { id:'zombie', name:'Zombie Apocalypse', emoji:'\ud83e\udddf', bg:'#2d3a1f', border:'#5a7a2a', accent:'#8B0000', title:'WANTED', subtitle:'INFECTED \u2014 DO NOT APPROACH', danger:'\u2623 BIOHAZARD \u2623', desc:'Last seen eating brains at the mall.', footer:'\u2620 SURVIVE AT ALL COSTS \u2620' },
+    { id:'samurai', name:'Ronin Hunter', emoji:'\ud83d\udde1\ufe0f', bg:'#f0e6d3', border:'#8B0000', accent:'#1a1a2e', title:'WANTED', subtitle:'RONIN \u2014 MASTERLESS SAMURAI', danger:'\u2694 DEADLY SKILLS \u2694', desc:'Master swordsman. Do not provoke.', footer:'\u4f8b HONOR IS DEAD \u4f8b' },
+    { id:'viking', name:'Viking Raider', emoji:'\ud83e\udd93', bg:'#d4c5a9', border:'#2c3e50', accent:'#c0392b', title:'WANTED', subtitle:'VIKING RAID BOUNTY', danger:'\u2694 FEARLESS WARRIOR \u2694', desc:'Raided three villages before breakfast.', footer:'\u16ef VALHALLA AWAITS \u16ef' },
+    { id:'detective', name:'Noir Detective', emoji:'\ud83d\udd75\ufe0f', bg:'#2c2c2c', border:'#d4af37', accent:'#8B0000', title:'WANTED', subtitle:'FEDERAL BOUNTY', danger:'\u26a0 ARMED & DANGEROUS \u26a0', desc:"Witness to a crime. Won't talk.", footer:'\u2605 FEDERAL BUREAU \u2605' },
+    { id:'wizard', name:'Dark Wizard', emoji:'\ud83e\uddd9', bg:'#1a0a2e', border:'#9b59b6', accent:'#e74c3c', title:'WANTED', subtitle:"SORCERER'S COUNCIL BOUNTY", danger:'\u2726 DANGEROUS MAGIC \u2726', desc:'Cast forbidden spells. Again.', footer:'\u263d ORDER OF THE MOON \u263e' }
 ];
 
-// ── State ──
-let userImage = null;       // original image element
-let processedCanvas = null; // canvas with bg removed (or original)
-let selectedTemplate = null;
-
-// ── DOM refs ──
-const dropZone = document.getElementById('drop-zone');
+let userImage = null, processedCanvas = null, selectedTemplate = null;
 const fileInput = document.getElementById('file-input');
 const cameraInput = document.getElementById('camera-input');
 const previewSection = document.getElementById('preview-section');
 const previewImg = document.getElementById('preview-img');
 const loadingSection = document.getElementById('loading-section');
-const templateGrid = document.getElementById('template-grid');
-const generateBtn = document.getElementById('generate-btn');
-const posterCanvas = document.getElementById('poster-canvas');
 
-// ── Step navigation ──
-function showStep(id) {
-    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-}
-
-// ── File handling ──
-dropZone.addEventListener('click', () => fileInput.click());
-
-[fileInput, cameraInput].forEach(input => {
-    input.addEventListener('change', e => {
-        const file = e.target.files[0];
-        if (file) handleFile(file);
-    });
-});
-
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#F5E6C8'; });
-dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#a08060'; });
-dropZone.addEventListener('drop', e => {
+// Drag & drop
+const dz = document.getElementById('drop-zone') || document.querySelector('.upload-area');
+dz.addEventListener('dragover', e => { e.preventDefault(); });
+dz.addEventListener('drop', e => {
     e.preventDefault();
-    dropZone.style.borderColor = '#a08060';
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) handleFile(file);
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('image/')) loadFile(f);
 });
 
-function handleFile(file) {
+[fileInput, cameraInput].forEach(inp => {
+    inp.addEventListener('change', () => { if (inp.files[0]) loadFile(inp.files[0]); });
+});
+
+function loadFile(file) {
     const reader = new FileReader();
     reader.onload = e => {
         const img = new Image();
         img.onload = () => {
-            userImage = img;
-            processedCanvas = null; // reset
+            userImage = img; processedCanvas = null;
             previewImg.src = e.target.result;
             previewSection.style.display = 'block';
-            dropZone.style.display = 'none';
-            document.querySelector('.btn-row').style.display = 'none';
+            dz.style.display = 'none';
+            document.querySelector('#step-upload .btn-row').style.display = 'none';
         };
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
 
-// ── Background removal ──
-document.getElementById('remove-bg-btn').addEventListener('click', async () => {
+window.removeBg = async function() {
     previewSection.style.display = 'none';
     loadingSection.style.display = 'block';
-
     try {
         const blob = await imglyRemoveBackground(userImage.src, {
-            progress: (key, current, total) => {
-                const pct = Math.round((current / total) * 100);
-                document.querySelector('.loading-text').textContent = `Removing background... ${pct}%`;
-            }
+            progress: (k, c, t) => document.querySelector('.loading-text').textContent = `Removing background... ${Math.round(c/t*100)}%`
         });
         const url = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
-            // Draw to canvas for later use
             const c = document.createElement('canvas');
-            c.width = img.naturalWidth;
-            c.height = img.naturalHeight;
-            const ctx = c.getContext('2d');
-            ctx.drawImage(img, 0, 0);
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
             processedCanvas = c;
             previewImg.src = url;
             loadingSection.style.display = 'none';
-            showStep('step-template');
+            goTemplate();
         };
         img.src = url;
-    } catch (err) {
+    } catch(err) {
         console.error('BG removal failed:', err);
         alert('Background removal failed. Using original image.');
         previewSection.style.display = 'block';
         loadingSection.style.display = 'none';
     }
-});
+};
 
-document.getElementById('skip-bg-btn').addEventListener('click', () => {
-    showStep('step-template');
-});
+window.goTemplate = function() { showStep('step-template'); };
+window.goResult = function() { if (!selectedTemplate || !userImage) return; showStep('step-result'); drawPoster(); };
+window.downloadPoster = function() {
+    const a = document.createElement('a');
+    a.download = 'wanted-poster.png';
+    a.href = posterCanvas.toDataURL('image/png');
+    a.click();
+};
 
-// ── Template selection ──
+function showStep(id) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+// Build template grid
+const grid = document.getElementById('template-grid');
 templates.forEach(t => {
     const card = document.createElement('div');
     card.className = 'template-card';
-    card.innerHTML = `
-        <div class="template-preview" style="background:${t.bg}; color:${t.border}">${t.emoji}</div>
-        <div class="template-name">${t.name}</div>
-    `;
-    card.addEventListener('click', () => {
+    card.innerHTML = `<div class="template-preview" style="background:${t.bg};color:${t.border}">${t.emoji}</div><div class="template-name">${t.name}</div>`;
+    card.onclick = () => {
         document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         selectedTemplate = t;
-        generateBtn.disabled = false;
-    });
-    templateGrid.appendChild(card);
-});
-
-// ── Generate poster ──
-generateBtn.addEventListener('click', () => {
-    if (!processedCanvas && !userImage) return;
-    showStep('step-result');
-    drawPoster();
+        document.getElementById('generate-btn').disabled = false;
+    };
+    grid.appendChild(card);
 });
 
 function drawPoster() {
-    const t = selectedTemplate;
-    const W = 800, H = 1100;
-    posterCanvas.width = W;
-    posterCanvas.height = H;
-    const ctx = posterCanvas.getContext('2d');
+    const t = selectedTemplate, W = 800, H = 1100;
+    const canvas = document.getElementById('poster-canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
 
-    // Background
-    ctx.fillStyle = t.bg;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = t.bg; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = t.border; ctx.lineWidth = 8; ctx.strokeRect(20, 20, W-40, H-40);
+    ctx.lineWidth = 3; ctx.strokeRect(30, 30, W-60, H-60);
 
-    // Borders
-    ctx.strokeStyle = t.border;
-    ctx.lineWidth = 8;
-    ctx.strokeRect(20, 20, W - 40, H - 40);
-    ctx.lineWidth = 3;
-    ctx.strokeRect(30, 30, W - 60, H - 60);
-
-    // Title
-    ctx.fillStyle = t.border;
     ctx.textAlign = 'center';
-    ctx.font = 'bold 72px Georgia, serif';
-    ctx.fillText(t.title, W / 2, 100);
+    ctx.fillStyle = t.border; ctx.font = 'bold 72px Georgia, serif';
+    ctx.fillText(t.title, W/2, 100);
+    ctx.font = 'italic 24px Georgia, serif'; ctx.fillStyle = t.accent;
+    ctx.fillText(t.subtitle, W/2, 135);
 
-    // Subtitle
-    ctx.font = 'italic 24px Georgia, serif';
-    ctx.fillStyle = t.accent;
-    ctx.fillText(t.subtitle, W / 2, 135);
-
-    // Face frame
-    const faceX = 250, faceY = 170, faceW = 300, faceH = 300;
-    ctx.strokeStyle = t.border;
-    ctx.lineWidth = 4;
-    ctx.strokeRect(faceX, faceY, faceW, faceH);
-
-    // Draw the image (with or without bg removal)
+    const fx=250, fy=170, fw=300, fh=300;
+    ctx.strokeStyle = t.border; ctx.lineWidth = 4; ctx.strokeRect(fx, fy, fw, fh);
     const src = processedCanvas || userImage;
     if (src) {
-        // Cover-fit into frame
-        const imgRatio = src.naturalWidth / src.naturalHeight;
-        const frameRatio = faceW / faceH;
-        let sx, sy, sw, sh;
-        if (imgRatio > frameRatio) {
-            sh = src.naturalHeight;
-            sw = sh * frameRatio;
-            sx = (src.naturalWidth - sw) / 2;
-            sy = 0;
-        } else {
-            sw = src.naturalWidth;
-            sh = sw / frameRatio;
-            sx = 0;
-            sy = (src.naturalHeight - sh) / 2;
-        }
-        ctx.drawImage(src, sx, sy, sw, sh, faceX + 5, faceY + 5, faceW - 10, faceH - 10);
+        const ir = src.naturalWidth/src.naturalHeight, fr = fw/fh;
+        let sx,sy,sw,sh;
+        if (ir > fr) { sh=src.naturalHeight; sw=sh*fr; sx=(src.naturalWidth-sw)/2; sy=0; }
+        else { sw=src.naturalWidth; sh=sw/fr; sx=0; sy=(src.naturalHeight-sh)/2; }
+        ctx.drawImage(src, sx,sy,sw,sh, fx+5,fy+5,fw-10,fh-10);
     }
 
-    // Danger text
-    ctx.font = 'bold 28px Georgia, serif';
-    ctx.fillStyle = t.accent;
-    ctx.fillText(t.danger, W / 2, 510);
-
-    // REWARD title
-    ctx.font = 'bold 56px Georgia, serif';
-    ctx.fillStyle = t.border;
-    ctx.fillText('REWARD', W / 2, 575);
-
-    // Reward amount
+    ctx.font = 'bold 28px Georgia, serif'; ctx.fillStyle = t.accent;
+    ctx.fillText(t.danger, W/2, 510);
+    ctx.font = 'bold 56px Georgia, serif'; ctx.fillStyle = t.border;
+    ctx.fillText('REWARD', W/2, 575);
     const reward = document.getElementById('reward-select').value;
-    ctx.font = 'bold 40px Georgia, serif';
-    ctx.fillStyle = t.accent;
-    ctx.fillText(reward, W / 2, 630);
+    ctx.font = 'bold 40px Georgia, serif'; ctx.fillStyle = t.accent;
+    ctx.fillText(reward, W/2, 630);
 
-    // Name
     const name = document.getElementById('subject-name').value || 'UNKNOWN';
-    ctx.font = '28px Georgia, serif';
-    ctx.fillStyle = t.border;
-    ctx.fillText(`Name: ${name}`, W / 2, 710);
-
-    // Description
+    ctx.font = '28px Georgia, serif'; ctx.fillStyle = t.border;
+    ctx.fillText(`Name: ${name}`, W/2, 710);
     ctx.font = 'italic 24px Georgia, serif';
-    ctx.fillText(t.description, W / 2, 760);
-
-    // Extra info lines
+    ctx.fillText(t.desc, W/2, 760);
     ctx.font = '22px Georgia, serif';
-    ctx.fillText('Last Seen: Austin, Texas', W / 2, 810);
-    ctx.fillText('If spotted, do not engage.', W / 2, 855);
-    ctx.fillText('Contact local authorities immediately.', W / 2, 900);
+    ctx.fillText('Last Seen: Austin, Texas', W/2, 810);
+    ctx.fillText('If spotted, do not engage.', W/2, 855);
+    ctx.fillText('Contact local authorities immediately.', W/2, 900);
 
-    // Footer stars
-    ctx.font = '32px Georgia, serif';
-    ctx.fillStyle = t.accent;
-    ctx.fillText(t.footer, W / 2, 1010);
+    ctx.font = '32px Georgia, serif'; ctx.fillStyle = t.accent;
+    ctx.fillText(t.footer, W/2, 1010);
 }
-
-// ── Download ──
-document.getElementById('download-btn').addEventListener('click', () => {
-    const link = document.createElement('a');
-    link.download = 'wanted-poster.png';
-    link.href = posterCanvas.toDataURL('image/png');
-    link.click();
-});
-
-// ── Retry ──
-document.getElementById('retry-btn').addEventListener('click', () => {
-    showStep('step-template');
-});
-
 </script>
 </body>
 </html>
