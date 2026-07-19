@@ -181,7 +181,25 @@ button:hover, .btn:hover {
     color: #a08060;
 }
 
-/* Hidden inputs - can't use display:none or browsers block programmatic clicks */
+/* File inputs styled as buttons */
+.file-btn {
+    display: inline-block;
+    background: #8B4513;
+    color: #F5E6C8;
+    border: 2px solid #a08060;
+    padding: 12px 28px;
+    font-size: 1rem;
+    font-family: Georgia, serif;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.file-btn:hover {
+    background: #a0522d;
+    transform: translateY(-1px);
+}
+
+/* Hidden inputs */
 .hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* Name input */
@@ -262,11 +280,9 @@ button:hover, .btn:hover {
             <p style="color:#a08060; margin-top:4px;">or click to browse files</p>
         </div>
         <div class="btn-row">
-            <label for="camera-input" class="btn">📷 Take Photo</label>
-            <label for="file-input" class="btn">📁 Upload File</label>
+            <input type="file" id="camera-input" accept="image/*" capture="user" class="file-btn" title="Take Photo">
+            <input type="file" id="file-input" accept="image/*" class="file-btn" title="Upload File">
         </div>
-        <input type="file" id="file-input" accept="image/*" class="hidden">
-        <input type="file" id="camera-input" accept="image/*" capture="user" class="hidden">
 
         <div id="preview-section" style="display:none;">
             <div class="preview-container">
