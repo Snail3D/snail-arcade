@@ -198,6 +198,21 @@ button:hover, .btn:hover {
     background: #a0522d;
     transform: translateY(-1px);
 }
+/* Style the native file button */
+.file-btn::file-selector-button {
+    background: #8B4513;
+    color: #F5E6C8;
+    border: 2px solid #a08060;
+    padding: 12px 28px;
+    font-size: 1rem;
+    font-family: Georgia, serif;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+.file-btn::file-selector-button:hover {
+    background: #a0522d;
+}
 
 /* Hidden inputs */
 .hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
