@@ -181,8 +181,8 @@ button:hover, .btn:hover {
     color: #a08060;
 }
 
-/* Hidden inputs */
-.hidden { display: none; }
+/* Hidden inputs - can't use display:none or browsers block programmatic clicks */
+.hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 /* Name input */
 .name-input-group {
