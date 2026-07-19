@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WANTED Poster Generator</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: Georgia, 'Times New Roman', serif;
+    background: #1a0f08;
+    color: #F5E6C8;
+    min-height: 100vh;
+}
+
+.app {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    font-size: 2.5rem;
+    color: #F5E6C8;
+    margin-bottom: 8px;
+    letter-spacing: 4px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #a08060;
+    margin-bottom: 30px;
+    font-style: italic;
+}
+
+/* Steps */
+.step {
+    display: none;
+}
+.step.active {
+    display: block;
+}
+
+/* Upload area */
+.upload-area {
+    border: 3px dashed #a08060;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: rgba(160,128,96,0.1);
+}
+.upload-area:hover {
+    border-color: #F5E6C8;
+    background: rgba(160,128,96,0.2);
+}
+
+.upload-icon {
+    font-size: 4rem;
+    margin-bottom: 10px;
+}
+
+.btn-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+button, .btn {
+    background: #8B4513;
+    color: #F5E6C8;
+    border: 2px solid #a08060;
+    padding: 12px 28px;
+    font-size: 1rem;
+    font-family: Georgia, serif;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+button:hover, .btn:hover {
+    background: #a0522d;
+    transform: translateY(-1px);
+}
+
+/* Preview */
+.preview-container {
+    text-align: center;
+    margin: 20px 0;
+}
+
+#preview-img {
+    max-width: 300px;
+    max-height: 300px;
+    border-radius: 8px;
+    border: 3px solid #a08060;
+}
+
+/* Template grid */
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.template-card {
+    background: #F5E6C8;
+    color: #3B2314;
+    border-radius: 8px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    border: 3px solid transparent;
+}
+.template-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.template-card.selected {
+    border-color: #8B0000;
+    box-shadow: 0 0 16px rgba(139,0,0,0.5);
+}
+
+.template-preview {
+    width: 100%;
+    aspect-ratio: 4/5;
+    background: #e8d5b7;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+}
+
+.template-name {
+    font-weight: bold;
+    font-size: 0.95rem;
+}
+
+/* Poster canvas */
+.poster-wrapper {
+    text-align: center;
+    margin: 20px 0;
+}
+
+#poster-canvas {
+    max-width: 100%;
+    border-radius: 4px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+}
+
+/* Loading */
+.loading {
+    text-align: center;
+    padding: 40px;
+}
+
+.spinner {
+    display: inline-block;
+    width: 48px;
+    height: 48px;
+    border: 4px solid #a08060;
+    border-top-color: #F5E6C8;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    margin-top: 16px;
+    color: #a08060;
+}
+
+/* Hidden inputs */
+.hidden { display: none; }
+
+/* Name input */
+.name-input-group {
+    text-align: center;
+    margin: 16px 0;
+}
+.name-input-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #a08060;
+}
+.name-input-group input {
+    background: rgba(160,128,96,0.2);
+    border: 2px solid #a08060;
+    color: #F5E6C8;
+    padding: 10px 16px;
+    font-size: 1rem;
+    font-family: Georgia, serif;
+    border-radius: 6px;
+    width: 280px;
+    max-width: 80%;
+}
+
+/* Download button */
+.download-btn {
+    background: #2d5a1e;
+    border-color: #4a8c30;
+    font-size: 1.1rem;
+    padding: 14px 36px;
+}
+.download-btn:hover {
+    background: #3a7a28;
+}
+
+/* Custom fields */
+.custom-fields {
+    margin: 16px 0;
+    display: grid;
+    gap: 10px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.custom-field label {
+    display: block;
+    color: #a08060;
+    font-size: 0.9rem;
+    margin-bottom: 4px;
+}
+.custom-field input, .custom-field select {
+    background: rgba(160,128,96,0.2);
+    border: 2px solid #a08060;
+    color: #F5E6C8;
+    padding: 8px 12px;
+    font-size: 0.95rem;
+    font-family: Georgia, serif;
+    border-radius: 4px;
+    width: 100%;
+}
+.custom-field select option {
+    background: #3B2314;
+    color: #F5E6C8;
+}
+
+</style>
+</head>
+<body>
+<div class="app">
+    <h1>⚔ WANTED ⚔</h1>
+    <p class="subtitle">Poster Generator — Create your own outlaw poster!</p>
+
+    <!-- Step 1: Upload Photo -->
+    <div id="step-upload" class="step active">
+        <div class="upload-area" id="drop-zone">
+            <div class="upload-icon">📸</div>
+            <p><strong>Drop a photo here</strong></p>
+            <p style="color:#a08060; margin-top:4px;">or click to browse files</p>
+        </div>
+        <div class="btn-row">
+            <button id="camera-btn">📷 Take Photo</button>
+            <button id="upload-btn">📁 Upload File</button>
+        </div>
+        <input type="file" id="file-input" accept="image/*" class="hidden">
+        <input type="file" id="camera-input" accept="image/*" capture="user" class="hidden">
+
+        <div id="preview-section" style="display:none;">
+            <div class="preview-container">
+                <img id="preview-img" alt="Preview">
+            </div>
+            <div class="name-input-group">
+                <label for="subject-name">Name on poster:</label>
+                <input type="text" id="subject-name" placeholder="Enter name..." value="">
+            </div>
+            <div class="btn-row">
+                <button id="remove-bg-btn">✨ Remove Background</button>
+                <button id="skip-bg-btn">Skip → Pick Template</button>
+            </div>
+        </div>
+
+        <div id="loading-section" style="display:none;" class="loading">
+            <div class="spinner"></div>
+            <p class="loading-text">Removing background... this runs in your browser.</p>
+            <p style="color:#706050; font-size:0.85rem;">First load downloads ~40MB model (cached after).</p>
+        </div>
+    </div>
+
+    <!-- Step 2: Pick Template -->
+    <div id="step-template" class="step">
+        <h2 style="text-align:center; margin-bottom:16px;">Pick a Template</h2>
+        <div class="template-grid" id="template-grid"></div>
+        <div class="custom-fields">
+            <div class="custom-field">
+                <label>Reward Amount:</label>
+                <select id="reward-select">
+                    <option value="$500">$500</option>
+                    <option value="$1,000">$1,000</option>
+                    <option value="$2,500" selected>$2,500</option>
+                    <option value="$5,000">$5,000</option>
+                    <option value="$10,000">$10,000</option>
+                    <option value="$50,000">$50,000</option>
+                    <option value="DEATH">$DEATH SENTENCE</option>
+                </select>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button id="generate-btn" disabled>⚔ Generate Poster</button>
+        </div>
+    </div>
+
+    <!-- Step 3: View & Download -->
+    <div id="step-result" class="step">
+        <h2 style="text-align:center; margin-bottom:16px;">Your Wanted Poster</h2>
+        <div class="poster-wrapper">
+            <canvas id="poster-canvas"></canvas>
+        </div>
+        <div class="btn-row">
+            <button class="download-btn" id="download-btn">💾 Download PNG</button>
+            <button id="retry-btn">🔄 Try Another Template</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.12/+esm';
+
+// ── Templates ──
+const templates = [
+    {
+        id: 'classic',
+        name: 'Classic Western',
+        emoji: '🤠',
+        bg: '#F5E6C8',
+        border: '#3B2314',
+        accent: '#8B0000',
+        title: 'WANTED',
+        subtitle: 'DEAD OR ALIVE',
+        danger: 'DANGER — DO NOT APPROACH',
+        description: 'Armed with memes and bad decisions.',
+        footer: '★ ★ ★ ★ ★'
+    },
+    {
+        id: 'pirate',
+        name: 'Pirate Bounty',
+        emoji: '🏴‍☠️',
+        bg: '#F0E4D0',
+        border: '#1a3a5c',
+        accent: '#8B0000',
+        title: 'WANTED',
+        subtitle: 'PIRATE BOUNTY',
+        danger: '⚓ DANGEROUS ⚓',
+        description: 'Known to plunder and party.',
+        footer: '☠ ☠ ☠'
+    },
+    {
+        id: 'cyberpunk',
+        name: 'Cyberpunk',
+        emoji: '🤖',
+        bg: '#0a0a1a',
+        border: '#ff006e',
+        accent: '#00f5d4',
+        title: 'WANTED',
+        subtitle: 'NETRUNNER BOUNTY',
+        danger: '⚠ HIGHLY DANGEROUS ⚠',
+        description: 'Hacked the mainframe. Again.',
+        footer: '▓▒░ CYBERPUNK ░▒▓'
+    },
+    {
+        id: 'medieval',
+        name: 'Medieval',
+        emoji: '⚔️',
+        bg: '#E8D5B7',
+        border: '#4a3728',
+        accent: '#6B0000',
+        title: 'WANTED',
+        subtitle: 'BY ORDER OF THE KING',
+        danger: '⚔ TREACHEROUS ⚔',
+        description: 'Accused of wizardry and tax evasion.',
+        footer: '♛ BY ROYAL DECREE ♛'
+    },
+    {
+        id: 'space',
+        name: 'Space Bounty',
+        emoji: '🚀',
+        bg: '#0d1b2a',
+        border: '#ffd60a',
+        accent: '#ff6b35',
+        title: 'WANTED',
+        subtitle: 'GALACTIC BOUNTY',
+        danger: '☄ INTERSTELLAR THREAT ☄',
+        description: 'Stole a spaceship. Probably.',
+        footer: '✦ GALACTIC FEDERATION ✦'
+    },
+    {
+        id: 'zombie',
+        name: 'Zombie Apocalypse',
+        emoji: '🧟',
+        bg: '#2d3a1f',
+        border: '#5a7a2a',
+        accent: '#8B0000',
+        title: 'WANTED',
+        subtitle: 'INFECTED — DO NOT APPROACH',
+        danger: '☣ BIOHAZARD ☣',
+        description: 'Last seen eating brains at the mall.',
+        footer: '☠ SURVIVE AT ALL COSTS ☠'
+    },
+    {
+        id: 'samurai',
+        name: 'Ronin Hunter',
+        emoji: '🗡️',
+        bg: '#f0e6d3',
+        border: '#8B0000',
+        accent: '#1a1a2e',
+        title: 'WANTED',
+        subtitle: 'RONIN — MASTERLESS SAMURAI',
+        danger: '⚔ DEADLY SKILLS ⚔',
+        description: 'Master swordsman. Do not provoke.',
+        footer: '侍 HONOR IS DEAD 侍'
+    },
+    {
+        id: 'viking',
+        name: 'Viking Raider',
+        emoji: '🪓',
+        bg: '#d4c5a9',
+        border: '#2c3e50',
+        accent: '#c0392b',
+        title: 'WANTED',
+        subtitle: 'VIKING RAID BOUNTY',
+        danger: '⚔ FEARLESS WARRIOR ⚔',
+        description: 'Raided three villages before breakfast.',
+        footer: 'ᛟ VALHALLA AWAITS ᛟ'
+    },
+    {
+        id: 'detective',
+        name: 'Noir Detective',
+        emoji: '🕵️',
+        bg: '#2c2c2c',
+        border: '#d4af37',
+        accent: '#8B0000',
+        title: 'WANTED',
+        subtitle: 'FEDERAL BOUNTY',
+        danger: '⚠ ARMED & DANGEROUS ⚠',
+        description: 'Witness to a crime. Won\'t talk.',
+        footer: '★ FEDERAL BUREAU ★'
+    },
+    {
+        id: 'wizard',
+        name: 'Dark Wizard',
+        emoji: '🧙',
+        bg: '#1a0a2e',
+        border: '#9b59b6',
+        accent: '#e74c3c',
+        title: 'WANTED',
+        subtitle: 'SORCERERS COUNCIL BOUNTY',
+        danger: '✦ DANGEROUS MAGIC ✦',
+        description: 'Cast forbidden spells. Again.',
+        footer: '☽ ORDER OF THE MOON ☾'
+    }
+];
+
+// ── State ──
+let userImage = null;       // original image element
+let processedCanvas = null; // canvas with bg removed (or original)
+let selectedTemplate = null;
+
+// ── DOM refs ──
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const cameraInput = document.getElementById('camera-input');
+const previewSection = document.getElementById('preview-section');
+const previewImg = document.getElementById('preview-img');
+const loadingSection = document.getElementById('loading-section');
+const templateGrid = document.getElementById('template-grid');
+const generateBtn = document.getElementById('generate-btn');
+const posterCanvas = document.getElementById('poster-canvas');
+
+// ── Step navigation ──
+function showStep(id) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+// ── File handling ──
+dropZone.addEventListener('click', () => fileInput.click());
+document.getElementById('upload-btn').addEventListener('click', () => fileInput.click());
+document.getElementById('camera-btn').addEventListener('click', () => cameraInput.click());
+
+[fileInput, cameraInput].forEach(input => {
+    input.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) handleFile(file);
+    });
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#F5E6C8'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#a08060'; });
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.style.borderColor = '#a08060';
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) handleFile(file);
+});
+
+function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+            userImage = img;
+            processedCanvas = null; // reset
+            previewImg.src = e.target.result;
+            previewSection.style.display = 'block';
+            dropZone.style.display = 'none';
+            document.querySelector('.btn-row').style.display = 'none';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// ── Background removal ──
+document.getElementById('remove-bg-btn').addEventListener('click', async () => {
+    previewSection.style.display = 'none';
+    loadingSection.style.display = 'block';
+
+    try {
+        const blob = await imglyRemoveBackground(userImage.src, {
+            progress: (key, current, total) => {
+                const pct = Math.round((current / total) * 100);
+                document.querySelector('.loading-text').textContent = `Removing background... ${pct}%`;
+            }
+        });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+            // Draw to canvas for later use
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            processedCanvas = c;
+            previewImg.src = url;
+            loadingSection.style.display = 'none';
+            showStep('step-template');
+        };
+        img.src = url;
+    } catch (err) {
+        console.error('BG removal failed:', err);
+        alert('Background removal failed. Using original image.');
+        previewSection.style.display = 'block';
+        loadingSection.style.display = 'none';
+    }
+});
+
+document.getElementById('skip-bg-btn').addEventListener('click', () => {
+    showStep('step-template');
+});
+
+// ── Template selection ──
+templates.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'template-card';
+    card.innerHTML = `
+        <div class="template-preview" style="background:${t.bg}; color:${t.border}">${t.emoji}</div>
+        <div class="template-name">${t.name}</div>
+    `;
+    card.addEventListener('click', () => {
+        document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedTemplate = t;
+        generateBtn.disabled = false;
+    });
+    templateGrid.appendChild(card);
+});
+
+// ── Generate poster ──
+generateBtn.addEventListener('click', () => {
+    if (!processedCanvas && !userImage) return;
+    showStep('step-result');
+    drawPoster();
+});
+
+function drawPoster() {
+    const t = selectedTemplate;
+    const W = 800, H = 1100;
+    posterCanvas.width = W;
+    posterCanvas.height = H;
+    const ctx = posterCanvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = t.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Borders
+    ctx.strokeStyle = t.border;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(20, 20, W - 40, H - 40);
+    ctx.lineWidth = 3;
+    ctx.strokeRect(30, 30, W - 60, H - 60);
+
+    // Title
+    ctx.fillStyle = t.border;
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 72px Georgia, serif';
+    ctx.fillText(t.title, W / 2, 100);
+
+    // Subtitle
+    ctx.font = 'italic 24px Georgia, serif';
+    ctx.fillStyle = t.accent;
+    ctx.fillText(t.subtitle, W / 2, 135);
+
+    // Face frame
+    const faceX = 250, faceY = 170, faceW = 300, faceH = 300;
+    ctx.strokeStyle = t.border;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(faceX, faceY, faceW, faceH);
+
+    // Draw the image (with or without bg removal)
+    const src = processedCanvas || userImage;
+    if (src) {
+        // Cover-fit into frame
+        const imgRatio = src.naturalWidth / src.naturalHeight;
+        const frameRatio = faceW / faceH;
+        let sx, sy, sw, sh;
+        if (imgRatio > frameRatio) {
+            sh = src.naturalHeight;
+            sw = sh * frameRatio;
+            sx = (src.naturalWidth - sw) / 2;
+            sy = 0;
+        } else {
+            sw = src.naturalWidth;
+            sh = sw / frameRatio;
+            sx = 0;
+            sy = (src.naturalHeight - sh) / 2;
+        }
+        ctx.drawImage(src, sx, sy, sw, sh, faceX + 5, faceY + 5, faceW - 10, faceH - 10);
+    }
+
+    // Danger text
+    ctx.font = 'bold 28px Georgia, serif';
+    ctx.fillStyle = t.accent;
+    ctx.fillText(t.danger, W / 2, 510);
+
+    // REWARD title
+    ctx.font = 'bold 56px Georgia, serif';
+    ctx.fillStyle = t.border;
+    ctx.fillText('REWARD', W / 2, 575);
+
+    // Reward amount
+    const reward = document.getElementById('reward-select').value;
+    ctx.font = 'bold 40px Georgia, serif';
+    ctx.fillStyle = t.accent;
+    ctx.fillText(reward, W / 2, 630);
+
+    // Name
+    const name = document.getElementById('subject-name').value || 'UNKNOWN';
+    ctx.font = '28px Georgia, serif';
+    ctx.fillStyle = t.border;
+    ctx.fillText(`Name: ${name}`, W / 2, 710);
+
+    // Description
+    ctx.font = 'italic 24px Georgia, serif';
+    ctx.fillText(t.description, W / 2, 760);
+
+    // Extra info lines
+    ctx.font = '22px Georgia, serif';
+    ctx.fillText('Last Seen: Austin, Texas', W / 2, 810);
+    ctx.fillText('If spotted, do not engage.', W / 2, 855);
+    ctx.fillText('Contact local authorities immediately.', W / 2, 900);
+
+    // Footer stars
+    ctx.font = '32px Georgia, serif';
+    ctx.fillStyle = t.accent;
+    ctx.fillText(t.footer, W / 2, 1010);
+}
+
+// ── Download ──
+document.getElementById('download-btn').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'wanted-poster.png';
+    link.href = posterCanvas.toDataURL('image/png');
+    link.click();
+});
+
+// ── Retry ──
+document.getElementById('retry-btn').addEventListener('click', () => {
+    showStep('step-template');
+});
+
+</script>
+</body>
+</html>
