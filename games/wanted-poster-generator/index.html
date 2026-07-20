@@ -90,31 +90,30 @@ button:hover, .btn:hover { background: #a0522d; transform: translateY(-2px); }
 
 /* Visible file input buttons — native file picker works on mobile */
 .file-btn {
-    display: inline-block;
     background: #8B4513;
     color: #F5E6C8;
     border: 2px solid #a08060;
-    padding: 14px 32px;
     font-size: 1.1rem;
     font-family: Georgia, serif;
     cursor: pointer;
     border-radius: 8px;
-    min-width: 180px;
-    text-align: center;
+    padding: 4px 12px;
     transition: all 0.2s;
+    width: auto;
+    flex: 0 1 auto;
 }
-.file-btn:hover { background: #a0522d; transform: translateY(-2px); }
+.file-btn:hover { background: #a0522d; border-color: #F5E6C8; }
 .file-btn::file-selector-button {
     background: #8B4513;
     color: #F5E6C8;
-    border: none;
-    padding: 14px 32px;
+    border: 2px solid transparent;
+    padding: 8px 20px;
     font-size: 1.1rem;
     font-family: Georgia, serif;
     cursor: pointer;
-    border-radius: 8px;
+    border-radius: 6px;
     transition: all 0.2s;
-    margin: -14px -32px;
+    margin-right: 8px;
 }
 .file-btn:hover::file-selector-button { background: #a0522d; }
 .file-btn:active::file-selector-button { background: #6b3a0f; }
@@ -201,7 +200,7 @@ button:hover, .btn:hover { background: #a0522d; transform: translateY(-2px); }
 </div>
 
 <script type="module">
-import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.12/+esm';
+import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm';
 
 const templates = [
     { id:'classic', name:'Classic Western', emoji:'\ud83e\udd20', bg:'#F5E6C8', border:'#3B2314', accent:'#8B0000', title:'WANTED', subtitle:'DEAD OR ALIVE', danger:'DANGER \u2014 DO NOT APPROACH', desc:'Armed with memes and bad decisions.', footer:'\u2605 \u2605 \u2605 \u2605 \u2605' },
@@ -256,7 +255,10 @@ window.removeBg = async function() {
     previewSection.style.display = 'none';
     loadingSection.style.display = 'block';
     try {
-        const blob = await imglyRemoveBackground(userImage.src, {
+        // Convert data URL to Blob — library doesn't accept data URLs
+        const res = await fetch(userImage.src);
+        const imageBlob = await res.blob();
+        const blob = await imglyRemoveBackground(imageBlob, {
             progress: (k, c, t) => document.querySelector('.loading-text').textContent = `Removing background... ${Math.round(c/t*100)}%`
         });
         const url = URL.createObjectURL(blob);
