@@ -199,8 +199,17 @@ button:hover, .btn:hover { background: #a0522d; transform: translateY(-2px); }
     </div>
 </div>
 
-<script type="module">
-import imglyRemoveBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm';
+<script>
+// Dynamic import — works even when module scripts are blocked
+let imglyRemoveBackground;
+(async () => {
+    try {
+        const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+        imglyRemoveBackground = mod.removeBackground;
+    } catch(e) {
+        console.warn('BG removal library failed to load:', e);
+    }
+})();
 
 const templates = [
     { id:'classic', name:'Classic Western', emoji:'\ud83e\udd20', bg:'#F5E6C8', border:'#3B2314', accent:'#8B0000', title:'WANTED', subtitle:'DEAD OR ALIVE', danger:'DANGER \u2014 DO NOT APPROACH', desc:'Armed with memes and bad decisions.', footer:'\u2605 \u2605 \u2605 \u2605 \u2605' },
