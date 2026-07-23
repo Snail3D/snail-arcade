@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Thoughts of the Heart</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;overflow:hidden;font-family:'Courier New',monospace;color:#fff}
+canvas{display:block;position:fixed;top:0;left:0;image-rendering:pixelated}
+#overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;pointer-events:none}
+#overlay.active{pointer-events:auto}
+#title{font-size:clamp(1.5rem,5vw,3rem);color:#ff0044;text-shadow:0 0 20px #ff004488,0 0 40px #ff004444;margin-bottom:0.5em;letter-spacing:0.1em}
+#subtitle{font-size:clamp(0.8rem,2vw,1.2rem);color:#888;margin-bottom:2em;text-align:center;max-width:500px;line-height:1.4}
+.btn{font-family:'Courier New',monospace;font-size:1.2rem;padding:12px 40px;background:transparent;border:1px solid #ff0044;color:#ff0044;cursor:pointer;pointer-events:auto;transition:0.2s;letter-spacing:0.15em}
+.btn:hover{background:#ff0044;color:#0a0a0a;box-shadow:0 0 20px #ff004488}
+.btn:active{transform:scale(0.95)}
+#gameover{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:20;background:rgba(0,0,0,0.85)}
+#gameover.active{display:flex}
+#gameover h1{font-size:clamp(1.5rem,4vw,2.5rem);color:#ff0044;text-shadow:0 0 20px #ff004488;margin-bottom:0.3em}
+#gameover p{color:#aaa;margin-bottom:1em;font-size:1.1rem}
+#gameover .btn{margin-top:0.5em}
+#thoughts{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);font-size:0.9rem;color:#666;text-align:center;z-index:5;pointer-events:none;width:90%;max-width:600px;line-height:1.4;text-shadow:0 0 10px #000}
+#hint{position:fixed;top:20px;right:20px;font-size:0.8rem;color:#444;z-index:5;pointer-events:none;text-align:right}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="overlay" class="active">
+  <div id="title">THOUGHTS OF THE HEART</div>
+  <div id="subtitle">"The heart is perverse above all things, and unsearchable; who can know it? I am the Lord, Who search the heart." — Jeremiah 17:9<br><br>Demons watch. They infer. They cannot see inside. Guard your will.</div>
+  <button class="btn" id="startBtn">ENTER THE MIND</button>
+</div>
+<div id="gameover">
+  <h1>YOUR THOUGHTS LAID BARE</h1>
+  <p>The demon has read the signs of your body and inferred your inner intent.</p>
+  <p id="finalScore"></p>
+  <button class="btn" id="restartBtn">GUARD AGAIN</button>
+</div>
+<div id="thoughts"></div>
+<div id="hint">[S] to shield &bull; [W] to will &bull; [F] to focus</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const gameover = document.getElementById('gameover');
+  const thoughtsEl = document.getElementById('thoughts');
+  const finalScore = document.getElementById('finalScore');
+
+  let W, H, scale;
+  function resize(){
+    W = window.innerWidth;
+    H = window.innerHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // --- Game State ---
+  let state = 'menu'; // menu | playing | dead
+  let score = 0;
+  let wave = 0;
+  let best = parseInt(localStorage.getItem('thoughts-of-heart-best') || '0', 10);
+
+  // --- Player ---
+  let px = 0, py = 0; // normalized [0,1] coords
+  let pvx = 0, pvy = 0;
+  const P_RADIUS = 18;
+  const P_SPEED = 0.008;
+  const P_FRICTION = 0.92;
+
+  // --- Will (shield energy) ---
+  let will = 100;
+  let willMax = 100;
+  const WILL_REGEN = 0.08;
+
+  // --- Thoughts (collectibles) ---
+  let thoughts = [];
+  const THOUGHT_RADIUS = 10;
+  const THOUGHT_POOL = 50;
+
+  // --- Demons ---
+  let demons = [];
+  const MAX_DEMONS = 6;
+  let demonSpawnTimer = 0;
+  const DEMON_SPAWN_INTERVAL = 120;
+
+  // --- Focus particles ---
+  let focusParticles = [];
+
+  // --- Keys ---
+  const keys = {};
+  document.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if(e.key === 's' || e.key === 'S') shieldBurst();
+    if(e.key === 'f' || e.key === 'F') focusBurst();
+    if(e.key === 'w' || e.key === 'W') willGather();
+  });
+  document.addEventListener('keyup', e => keys[e.key] = false);
+
+  // Touch
+  let touch = {x:0,y:0,active:false};
+  document.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    touch.x = t.clientX / W; touch.y = t.clientY / H;
+    touch.active = true;
+  }, {passive:false});
+  document.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    touch.x = t.clientX / W; touch.y = t.clientY / H;
+  }, {passive:false});
+  document.addEventListener('touchend', e => {
+    touch.active = false;
+  }, {passive:false});
+
+  // Mouse
+  let mouse = {x:0.5, y:0.5, active:false};
+  document.addEventListener('mousemove', e => {
+    mouse.x = e.clientX / W;
+    mouse.y = e.clientY / H;
+    mouse.active = true;
+  });
+
+  // --- Game Logic ---
+  function reset() {
+    score = 0;
+    wave = 0;
+    will = willMax;
+    px = 0.5; py = 0.85;
+    pvx = 0; pvy = 0;
+    thoughts = [];
+    demons = [];
+    focusParticles = [];
+    demonSpawnTimer = 60;
+    spawnThoughts();
+    state = 'playing';
+    overlay.classList.remove('active');
+    gameover.classList.remove('active');
+    thoughtsEl.textContent = '';
+  }
+
+  function spawnThoughts() {
+    thoughts = [];
+    for (let i = 0; i < THOUGHT_POOL; i++) {
+      thoughts.push({
+        x: 0.05 + Math.random() * 0.9,
+        y: 0.05 + Math.random() * 0.7,
+        text: randomThought(),
+        glow: 0,
+        collected: false
+      });
+    }
+  }
+
+  const THOUGHT_TEXTS = [
+    "I am the Lord, Who search the heart",
+    "The heart is perverse above all things",
+    "Demons are not omniscient",
+    "Secret thoughts depend on free will",
+    "Only God knows the secrets of hearts",
+    "The rational creature is subject to God only",
+    "Demons learn dispositions by bodily signs",
+    "The will shuts up its secrets",
+    "Angels do not know human secret thoughts",
+    "Your will is yours alone",
+    "They cannot directly see the interior act",
+    "God alone can work in the soul",
+    "The heart is unsearchable",
+    "Demons penetrate occult bodily modifications",
+    "Even demons cannot read the mind",
+    "The soul expresses thoughts by signs in the body",
+    "Thoughts are discovered by change of countenance",
+    "The brightness of the body shows forth the soul",
+    "No creature can see the will's interior",
+    "What is proper to God does not belong to angels",
+    "Consider what depends on the will",
+    "The will is not subject to the sensitive appetite",
+    "You cannot know the things of a man but by his spirit",
+    "Demons watch the face and pulse",
+    "Your inner sanctuary is private to God",
+    "The act of the will has no form",
+    "Only the Creator sustains the soul",
+    "Angels know all that passes in the external world",
+    "They know the totality of creatures",
+    "But they do not know secret thoughts",
+    "The mind is a fortress",
+    "Guard your will"
+  ];
+
+  let lastThoughtIndex = 0;
+  function randomThought() {
+    const t = THOUGHT_TEXTS[lastThoughtIndex % THOUGHT_TEXTS.length];
+    lastThoughtIndex++;
+    return t;
+  }
+
+  function spawnDemon() {
+    const side = Math.floor(Math.random() * 4);
+    let x, y;
+    if (side === 0) { x = -0.05; y = Math.random(); }
+    else if (side === 1) { x = 1.05; y = Math.random(); }
+    else if (side === 2) { x = Math.random(); y = -0.05; }
+    else { x = Math.random(); y = 1.05; }
+    const types = ['watcher', 'whisperer', 'reader'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    demons.push({
+      x, y,
+      vx: 0, vy: 0,
+      type,
+      size: type === 'reader' ? 24 : type === 'whisperer' ? 20 : 28,
+      pulse: 0,
+      glow: Math.random() * Math.PI * 2,
+      phase: Math.random() * Math.PI * 2,
+      trail: []
+    });
+  }
+
+  function shieldBurst() {
+    if (will < 15) return;
+    will -= 15;
+    // Emit shield particles
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.02 + Math.random() * 0.02;
+      focusParticles.push({
+        x: px, y: py,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 60,
+        maxLife: 60,
+        color: '#00ff88'
+      });
+    }
+    // Push demons away
+    for (const d of demons) {
+      const dx = d.x - px;
+      const dy = d.y - py;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 0.15) {
+        const ang = Math.atan2(dy, dx);
+        const push = 0.04 / Math.max(dist, 0.01);
+        d.vx += Math.cos(ang) * push;
+        d.vy += Math.sin(ang) * push;
+      }
+    }
+  }
+
+  function focusBurst() {
+    if (will < 10) return;
+    will -= 10;
+    // Emit focus particles that attract thoughts
+    for (let i = 0; i < 15; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.01 + Math.random() * 0.015;
+      focusParticles.push({
+        x: px, y: py,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 90,
+        maxLife: 90,
+        color: '#ff8800'
+      });
+    }
+  }
+
+  function willGather() {
+    if (will >= willMax) return;
+    will = Math.min(willMax, will + 5);
+    // Small particle burst
+    for (let i = 0; i < 5; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      focusParticles.push({
+        x: px, y: py,
+        vx: Math.cos(angle) * 0.005,
+        vy: Math.sin(angle) * 0.005,
+        life: 30,
+        maxLife: 30,
+        color: '#8888ff'
+      });
+    }
+  }
+
+  function collectThought(t) {
+    if (t.collected) return;
+    t.collected = true;
+    score++;
+    // Show the thought text
+    thoughtsEl.textContent = t.text;
+    setTimeout(() => {
+      if (thoughtsEl.textContent === t.text) thoughtsEl.textContent = '';
+    }, 3000);
+    // Particle burst
+    for (let i = 0; i < 10; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.008 + Math.random() * 0.01;
+      focusParticles.push({
+        x: t.x, y: t.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 40,
+        maxLife: 40,
+        color: '#ff0044'
+      });
+    }
+    // Respawn a new thought
+    thoughts.push({
+      x: 0.05 + Math.random() * 0.9,
+      y: 0.05 + Math.random() * 0.7,
+      text: randomThought(),
+      glow: 0,
+      collected: false
+    });
+  }
+
+  function die() {
+    state = 'dead';
+    if (score > best) {
+      best = score;
+      localStorage.setItem('thoughts-of-heart-best', best);
+    }
+    finalScore.textContent = `Thoughts Collected: ${score}  |  Best: ${best}`;
+    gameover.classList.add('active');
+  }
+
+  // --- Update ---
+  function update() {
+    if (state !== 'playing') return;
+
+    // Player movement
+    let tx = 0, ty = 0;
+    if (keys['ArrowLeft'] || keys['a'] || keys['A']) tx = -1;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) tx = 1;
+    if (keys['ArrowUp'] || keys['w'] || keys['W']) ty = -1;
+    if (keys['ArrowDown'] || keys['s'] || keys['S']) ty = 1;
+
+    if (touch.active) {
+      const dx = touch.x - px;
+      const dy = touch.y - py;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist > 0.02) {
+        tx = dx / dist;
+        ty = dy / dist;
+      }
+    }
+    if (mouse.active && !touch.active) {
+      // mouse controls for desktop
+      const dx = mouse.x - px;
+      const dy = mouse.y - py;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist > 0.02) {
+        tx = dx / dist;
+        ty = dy / dist;
+      }
+    }
+
+    pvx += tx * P_SPEED;
+    pvy += ty * P_SPEED;
+    pvx *= P_FRICTION;
+    pvy *= P_FRICTION;
+    px += pvx;
+    py += pvy;
+    px = Math.max(P_RADIUS/W, Math.min(1 - P_RADIUS/W, px));
+    py = Math.max(P_RADIUS/H, Math.min(1 - P_RADIUS/H, py));
+
+    // Will regen
+    will = Math.min(willMax, will + WILL_REGEN);
+
+    // Spawn demons
+    demonSpawnTimer++;
+    const waveDemons = Math.min(MAX_DEMONS, 1 + Math.floor(wave / 100));
+    if (demonSpawnTimer >= DEMON_SPAWN_INTERVAL && demons.length < waveDemons) {
+      spawnDemon();
+      demonSpawnTimer = 0;
+    }
+
+    // Update demons
+    for (const d of demons) {
+      const dx = px - d.x;
+      const dy = py - d.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const speed = 0.002 + wave * 0.00005;
+      if (dist > 0.001) {
+        d.vx += (dx / dist) * speed;
+        d.vy += (dy / dist) * speed;
+      }
+      // Add some wobble
+      d.vx += Math.sin(d.phase + Date.now() * 0.001) * 0.0003;
+      d.vy += Math.cos(d.phase + Date.now() * 0.0013) * 0.0003;
+      d.vx *= 0.97;
+      d.vy *= 0.97;
+      d.x += d.vx;
+      d.y += d.vy;
+      d.pulse += 0.05;
+      d.glow += 0.03;
+
+      // Trail
+      d.trail.push({x: d.x, y: d.y});
+      if (d.trail.length > 8) d.trail.shift();
+
+      // Collision with player
+      if (dist < 0.035) {
+        will -= 0.5;
+        if (will <= 0) die();
+      }
+    }
+
+    // Collect thoughts
+    for (const t of thoughts) {
+      if (t.collected) continue;
+      const dx = px - t.x;
+      const dy = py - t.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 0.03) collectThought(t);
+      t.glow += 0.02;
+    }
+
+    // Update focus particles
+    focusParticles = focusParticles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life--;
+      return p.life > 0;
+    });
+
+    // Wave progression
+    wave++;
+  }
+
+  // --- Render ---
+  function drawBackground() {
+    // Dark gradient background
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.6);
+    grad.addColorStop(0, '#1a0a0a');
+    grad.addColorStop(0.5, '#0d0505');
+    grad.addColorStop(1, '#050101');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, Math.max(W, H) * 0.3, W/2, H/2, Math.max(W, H) * 0.7);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawWill() {
+    // Will bar
+    const barW = 300;
+    const barH = 8;
+    const bx = W/2 - barW/2;
+    const by = H - 30;
+    ctx.fillStyle = '#333';
+    ctx.fillRect(bx, by, barW, barH);
+    const pct = will / willMax;
+    const col = pct > 0.5 ? '#00ff88' : pct > 0.25 ? '#ff8800' : '#ff0044';
+    ctx.fillStyle = col;
+    ctx.fillRect(bx, by, barW * pct, barH);
+    ctx.strokeStyle = '#555';
+    ctx.strokeRect(bx, by, barW, barH);
+
+    // Label
+    ctx.fillStyle = '#888';
+    ctx.font = '11px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('WILL', W/2, by - 8);
+    ctx.fillText(Math.round(will) + '/' + willMax, W/2, by + barH + 14);
+  }
+
+  function drawThoughts() {
+    for (const t of thoughts) {
+      if (t.collected) continue;
+      const x = t.x * W;
+      const y = t.y * H;
+      const glow = Math.sin(t.glow) * 0.3 + 0.7;
+      const rad = THOUGHT_RADIUS * (1 + Math.sin(t.glow) * 0.1);
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(x, y, rad * 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,0,68,${glow * 0.15})`;
+      ctx.fill();
+
+      // Core
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,0,68,${glow * 0.8})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(255,0,68,${glow})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Inner spark
+      ctx.beginPath();
+      ctx.arc(x - rad * 0.2, y - rad * 0.2, rad * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${glow * 0.4})`;
+      ctx.fill();
+    }
+  }
+
+  function drawDemons() {
+    for (const d of demons) {
+      const x = d.x * W;
+      const y = d.y * H;
+      const size = d.size;
+      const pulse = Math.sin(d.pulse) * 3;
+
+      // Trail
+      for (let i = 0; i < d.trail.length; i++) {
+        const t = d.trail[i];
+        const alpha = (i / d.trail.length) * 0.3;
+        ctx.beginPath();
+        ctx.arc(t.x * W, t.y * H, size * 0.3 * (i / d.trail.length), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(139,0,0,${alpha})`;
+        ctx.fill();
+      }
+
+      // Glow
+      const g = Math.sin(d.glow) * 0.15 + 0.15;
+      ctx.beginPath();
+      ctx.arc(x, y, size + pulse + 10, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(139,0,0,${g})`;
+      ctx.fill();
+
+      // Body
+      ctx.beginPath();
+      ctx.arc(x, y, size + pulse, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, size + pulse);
+      grad.addColorStop(0, '#8b0000');
+      grad.addColorStop(0.6, '#660000');
+      grad.addColorStop(1, '#330000');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Eyes (two small circles)
+      const eyeOff = size * 0.35;
+      const eyeR = size * 0.18;
+      ctx.fillStyle = '#ff0044';
+      ctx.beginPath();
+      ctx.arc(x - eyeOff, y - eyeOff * 0.5, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + eyeOff, y - eyeOff * 0.5, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+      // Pupils
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(x - eyeOff + Math.sin(d.pulse) * 2, y - eyeOff * 0.5, eyeR * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + eyeOff + Math.sin(d.pulse) * 2, y - eyeOff * 0.5, eyeR * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Mouth / maw
+      ctx.beginPath();
+      ctx.arc(x, y + size * 0.3, size * 0.3, Math.PI * 0.1, Math.PI * 0.9);
+      ctx.strokeStyle = '#ff0044';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = '#660000';
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(d.type.toUpperCase(), x, y + size + pulse + 16);
+    }
+  }
+
+  function drawPlayer() {
+    const x = px * W;
+    const y = py * H;
+    const rad = P_RADIUS;
+
+    // Light aura (the soul's glow)
+    const aura = ctx.createRadialGradient(x, y, 0, x, y, rad * 3);
+    aura.addColorStop(0, 'rgba(255,255,255,0.1)');
+    aura.addColorStop(0.5, 'rgba(255,255,255,0.03)');
+    aura.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(x, y, rad * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Body
+    const pct = will / willMax;
+    const bodyCol = pct > 0.5 ? '#4488ff' : pct > 0.25 ? '#8844ff' : '#ff4444';
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+    const pg = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    pg.addColorStop(0, bodyCol);
+    pg.addColorStop(0.7, '#2244aa');
+    pg.addColorStop(1, '#112255');
+    ctx.fillStyle = pg;
+    ctx.fill();
+
+    // Inner light
+    ctx.beginPath();
+    ctx.arc(x - rad * 0.2, y - rad * 0.2, rad * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.fill();
+
+    // Cross / heart symbol
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - rad * 0.35, y);
+    ctx.lineTo(x + rad * 0.35, y);
+    ctx.moveTo(x, y - rad * 0.35);
+    ctx.lineTo(x, y + rad * 0.35);
+    ctx.stroke();
+
+    // Will indicator ring
+    ctx.beginPath();
+    ctx.arc(x, y, rad + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(0,255,136,${pct * 0.5})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawParticles() {
+    for (const p of focusParticles) {
+      const x = p.x * W;
+      const y = p.y * H;
+      const alpha = p.life / p.maxLife;
+      ctx.beginPath();
+      ctx.arc(x, y, 3 * alpha, 0, Math.PI * 2);
+      ctx.fillStyle = p.color + Math.round(alpha * 180).toString(16).padStart(2, '0');
+      ctx.fill();
+    }
+  }
+
+  function drawScore() {
+    ctx.fillStyle = '#888';
+    ctx.font = '14px Courier New';
+    ctx.textAlign = 'left';
+    ctx.fillText('THOUGHTS: ' + score, 20, 30);
+    ctx.fillText('BEST: ' + best, 20, 50);
+    ctx.fillText('WAVE: ' + Math.floor(wave / 60) + ' (' + demons.length + ' demons)', 20, 70);
+  }
+
+  function render() {
+    drawBackground();
+    drawThoughts();
+    drawDemons();
+    drawParticles();
+    drawPlayer();
+    drawScore();
+    drawWill();
+  }
+
+  // --- Loop ---
+  function loop() {
+    update();
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // --- Start ---
+  document.getElementById('startBtn').addEventListener('click', reset);
+  document.getElementById('restartBtn').addEventListener('click', reset);
+
+  // Initial render for menu
+  function menuRender() {
+    drawBackground();
+    // Animate some floating thoughts in background
+    for (let i = 0; i < 20; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const s = Math.sin(Date.now() * 0.001 + i) * 0.3 + 0.7;
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,0,68,${s * 0.1})`;
+      ctx.fill();
+    }
+  }
+
+  let menuLoop;
+  function startMenu() {
+    let frame = 0;
+    function ml() {
+      ctx.clearRect(0, 0, W, H);
+      drawBackground();
+      for (let i = 0; i < 30; i++) {
+        const x = W/2 + Math.cos(frame * 0.003 + i * 2.1) * 200;
+        const y = H/2 + Math.sin(frame * 0.003 + i * 1.7) * 200;
+        const s = Math.sin(frame * 0.005 + i) * 0.3 + 0.7;
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,0,68,${s * 0.08})`;
+        ctx.fill();
+      }
+      frame++;
+      menuLoop = requestAnimationFrame(ml);
+    }
+    ml();
+  }
+  startMenu();
+
+  // Switch to game loop on start
+  document.getElementById('startBtn').addEventListener('click', () => {
+    cancelAnimationFrame(menuLoop);
+    loop();
+  });
+  document.getElementById('restartBtn').addEventListener('click', () => {
+    cancelAnimationFrame(menuLoop);
+    loop();
+  });
+
+})();
+</script>
+</body>
+</html>
