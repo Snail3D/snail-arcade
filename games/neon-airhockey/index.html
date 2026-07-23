@@ -225,12 +225,12 @@
 
   // Puck settings
   const PUCK_R = 18;
-  const PUCK_START_SPEED = { x: 5.5, y: 3.0 };   // initial velocity magnitude per axis
+  const PUCK_START_SPEED = { x: 3.0, y: 5.5 };   // initial velocity magnitude per axis (mostly vertical now)
   const MAX_PUCK_SPEED = 26;
 
   // --- Player objects ---
-  const p1 = { x: MID_X - FIELD_WIDTH * 0.18, y: GAME_H / 2 + 80, r: PADDLE_R, vx: 0, vy: 0, aiControlled: false };
-  const p2 = { x: MID_X + FIELD_WIDTH * 0.18, y: GAME_H / 2 - 80, r: PADDLE_R, vx: 0, vy: 0, aiControlled: true };
+  const p1 = { x: MID_X, y: GAME_H / 2 + 60, r: PADDLE_R, vx: 0, vy: 0, aiControlled: false };
+  const p2 = { x: MID_X, y: GAME_H / 2 - 60, r: PADDLE_R, vx: 0, vy: 0, aiControlled: true };
 
   // Puck with vapor trail history
   const puck = {
@@ -293,8 +293,8 @@
 
   function moveP1To(pos) {
     const targetX = Math.max(FIELD_LEFT + p1.r, Math.min(FIELD_RIGHT - p1.r, pos.x));
-    const maxY = FIELD_TOP; // restrict P1 to bottom half
-    const minY = MID_X + GOAL_WIDTH / 2;
+    // Restrict P1 to bottom half of field (defends bottom goal)
+    const minY = GAME_H / 2 + GOAL_WIDTH / 2;
     if (minY > FIELD_BOTTOM - p1.r) minY = FIELD_BOTTOM - p1.r;
     const targetY = Math.max(minY, Math.min(FIELD_BOTTOM - p1.r, pos.y));
 
@@ -413,11 +413,13 @@
 
   // --- Game logic ---
   function resetPuck(direction = 1) {
+    // direction=1 sends puck toward P1 (downward, positive y) — used when AI scores
+    // direction=-1 sends puck toward P2/AI (upward, negative y) — used when P1 scores
     puck.x = MID_X;
     puck.y = GAME_H / 2;
-    const angle = (Math.random() * Math.PI / 4 - Math.PI / 8); // ±22.5 degrees
-    const speedX = PUCK_START_SPEED.x * direction;
-    const speedY = PUCK_START_SPEED.y * Math.sin(angle) + 0.5;
+    const angle = (Math.random() * Math.PI / 4 - Math.PI / 8); // ±22.5 degrees horizontal spread
+    const speedX = PUCK_START_SPEED.x * direction * 0.7;       // mostly vertical, some horizontal drift
+    const speedY = PUCK_START_SPEED.y * direction + (Math.random() - 0.5) * 1.5;
     puck.vx = speedX;
     puck.vy = speedY;
     // Normalize to consistent start speed
@@ -439,7 +441,7 @@
     setOverlay(null);
     score1 = 0; score2 = 0;
     updateScore();
-    // Random initial direction
+    // Random initial direction (send toward either player)
     resetPuck(Math.random() < 0.5 ? -1 : 1);
     bestEl.parentElement.style.display = 'none';
     controlsHint.style.display = gameMode === '1p' ? 'block' : 'none';
@@ -568,18 +570,34 @@
     ctx.arc(MID_X, GAME_H / 2, PUCK_R * 1.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Goals (neon red openings on each side at center)
-    drawGoal(FIELD_LEFT - GOAL_THICKNESS, MID_X + GOAL_WIDTH/2, FIELD_TOP, GOAL_WIDTH);   // left goal area
-    drawGoal(FieldRight() - GOAL_THICKNESS, MID_X + GOAL_WIDTH/2, FIELD_TOP, GOAL_WIDTH);  // right goal area
+    // Goals (neon red openings on each end wall at center)
+    // P1 defends bottom goal, P2/AI defends top goal
+    drawGoal(MID_X - GOAL_WIDTH/2, FIELD_BOTTOM + GOAL_THICKNESS, 'top');   // bottom goal — P1's goal
+    drawGoal(MID_X - GOAL_WIDTH/2, FIELD_TOP - GOAL_THICKNESS, 'bottom');  // top goal — P2/AI's goal
 
-    // Goal posts (neon)
+    // Goal posts (neon) — vertical lines at top and bottom with goal openings in center
     ctx.strokeStyle = '#ff0066';
     ctx.lineWidth = GOAL_THICKNESS;
     ctx.shadowBlur = 18;
-    // Left goal line
+    // Top goal line (P2/AI defends this end)
     ctx.beginPath();
-    ctx.moveTo(FIELD_LEFT - GOAL_THICKNESS, MID_X);
-    ctx.lineTo(FIELD_RIGHT + GOAL_THICKNESS, MID_X);
+    const topGoalLeftX = MID_X - GOAL_WIDTH/2 - GOAL_THICKNESS*2;
+    const topGoalRightX = MID_X + GOAL_WIDTH/2 + GOAL_THICKNESS*2;
+    // Draw left segment of top goal line (left wall to goal opening)
+    ctx.moveTo(FIELD_LEFT, FIELD_TOP);
+    ctx.lineTo(topGoalLeftX, FIELD_TOP);
+    // Draw right segment of top goal line (goal opening to right wall)
+    ctx.moveTo(topGoalRightX, FIELD_TOP);
+    ctx.lineTo(FIELD_RIGHT, FIELD_TOP);
+
+    // Bottom goal line (P1 defends this end)
+    ctx.beginPath();
+    const botGoalLeftX = MID_X - GOAL_WIDTH/2 - GOAL_THICKNESS*2;
+    const botGoalRightX = MID_X + GOAL_WIDTH/2 + GOAL_THICKNESS*2;
+    ctx.moveTo(FIELD_LEFT, FIELD_BOTTOM);
+    ctx.lineTo(botGoalLeftX, FIELD_BOTTOM);
+    ctx.moveTo(botGoalRightX, FIELD_BOTTOM);
+    ctx.lineTo(FIELD_RIGHT, FIELD_BOTTOM);
 
     // Corner arcs (rounded corners hint) — subtle neon quarter circles at each corner of play area
     const cornerR = 20;
@@ -619,37 +637,49 @@
 
   function FieldRight() { return FIELD_RIGHT; }
 
-  function drawGoal(x, goalMidY, topBound, width) {
+  function drawGoal(goalMidX, wallY, orientation) {
     // Draw the goal mouth as a glowing rectangle (visual only — collision handled separately)
     const halfW = GOAL_WIDTH / 2;
     ctx.save();
-    const goalGrad = ctx.createLinearGradient(0, 0, FIELD_LEFT - x + GOAL_THICKNESS, 0);
-    if (x < GAME_W/2) {
+
+    if (orientation === 'top') {
+      // Goal at bottom of field (FIELD_BOTTOM) — opening faces down, toward P1's side
+      const goalGrad = ctx.createLinearGradient(0, wallY - GOAL_THICKNESS*3, 0, wallY);
       goalGrad.addColorStop(0, 'rgba(255,0,102,0.6)');
       goalGrad.addColorStop(1, 'rgba(255,0,102,0.1)');
+      ctx.fillStyle = goalGrad;
+      ctx.fillRect(goalMidX - halfW - GOAL_THICKNESS*2, wallY - GOAL_THICKNESS*3, GOAL_WIDTH + GOAL_THICKNESS*4, GOAL_THICKNESS * 3);
+
+      // Goal edge line (neon) — vertical lines marking goal opening edges
+      ctx.strokeStyle = '#ff0066';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(goalMidX - halfW, wallY);
+      ctx.lineTo(goalMidX - halfW, FIELD_BOTTOM + GOAL_THICKNESS*2);
+      ctx.moveTo(goalMidX + halfW, wallY);
+      ctx.lineTo(goalMidX + halfW, FIELD_BOTTOM + GOAL_THICKNESS*2);
+      ctx.stroke();
     } else {
+      // orientation === 'bottom' — goal at top of field (FIELD_TOP) — opening faces up
+      const goalGrad = ctx.createLinearGradient(0, wallY, 0, wallY + GOAL_THICKNESS*3);
       goalGrad.addColorStop(0, 'rgba(255,0,102,0.1)');
       goalGrad.addColorStop(1, 'rgba(255,0,102,0.6)');
+      ctx.fillStyle = goalGrad;
+      ctx.fillRect(goalMidX - halfW - GOAL_THICKNESS*2, wallY, GOAL_WIDTH + GOAL_THICKNESS*4, GOAL_THICKNESS * 3);
+
+      // Goal edge line (neon) — vertical lines marking goal opening edges
+      ctx.strokeStyle = '#ff0066';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(goalMidX - halfW, wallY);
+      ctx.lineTo(goalMidX - halfW, FIELD_TOP - GOAL_THICKNESS*2);
+      ctx.moveTo(goalMidX + halfW, wallY);
+      ctx.lineTo(goalMidX + halfW, FIELD_TOP - GOAL_THICKNESS*2);
+      ctx.stroke();
     }
-    ctx.fillStyle = goalGrad;
-    if (x < GAME_W/2) {
-      ctx.fillRect(FIELD_LEFT - GOAL_THICKNESS*2, goalMidY - halfW, GOAL_THICKNESS * 3 + FIELD_PAD, width);
-    } else {
-      ctx.fillRect(FIELD_RIGHT, goalMidY - halfW, GOAL_THICKNESS * 3 + FIELD_PAD, width);
-    }
-    // Goal edge line (neon)
-    ctx.strokeStyle = '#ff0066';
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    if (x < GAME_W/2) {
-      ctx.moveTo(FIELD_LEFT - GOAL_THICKNESS, goalMidY - halfW);
-      ctx.lineTo(FIELD_LEFT - GOAL_THICKNESS, goalMidY + halfW);
-    } else {
-      ctx.moveTo(FIELD_RIGHT + GOAL_THICKNESS, goalMidY - halfW);
-      ctx.lineTo(FIELD_RIGHT + GOAL_THICKNESS, goalMidY + halfW);
-    }
-    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -687,24 +717,8 @@
     ctx.arc(p.x, p.y, p.r * 0.18, 0, Math.PI * 2);
     ctx.fill();
 
-    // Speed trail particles on paddle (when moving fast)
-    if (p.vx !== 0 || p.vy !== 0) {
-      const speed = Math.hypot(p.vx, p.vy);
-      if (speed > 8 && Math.random() < 0.4) {
-        const angle = Math.atan2(p.vy, p.vx) + Math.PI;
-        const spread = 0.6;
-        for (let i = 0; i < 3; i++) {
-          const a = angle + (Math.random() - 0.5) * spread;
-          particles.push({
-            x: p.x, y: p.y,
-            vx: Math.cos(a) * speed * 0.4 * Math.random(),
-            vy: Math.sin(a) * speed * 0.4 * Math.random(),
-            r: 1 + Math.random() * 2, life: 0.6 + Math.random() * 0.3,
-            color: color,
-          });
-        }
-      }
-    }
+    // Paddle speed trail particles REMOVED — paddles should NOT leave trails
+    // (only the puck generates vapor trail effects)
 
     ctx.restore();
   }
@@ -815,9 +829,9 @@
   function drawReadyBob() {
     // Gentle bobbing for paddles in ready state
     const t = Date.now() / 600;
-    p1.y = GAME_H / 2 + 80 + Math.sin(t) * 4;
+    p1.y = GAME_H / 2 + 60 + Math.sin(t) * 4;
     if (!p2.aiControlled && gameMode === '2p') {
-      p2.y = GAME_H / 2 - 80 + Math.cos(t) * 4;
+      p2.y = GAME_H / 2 - 60 + Math.cos(t) * 4;
     }
   }
 
@@ -856,15 +870,15 @@
     puck.x += puck.vx;
     puck.y += puck.vy;
 
-    // Track trail (cap length based on speed)
-    const maxTrailLen = Math.min(18, Math.floor(Math.hypot(puck.vx, puck.vy) * 2));
+    // Track trail (cap length based on speed) — shorter, faster-fading
+    const maxTrailLen = Math.min(10, Math.floor(Math.hypot(puck.vx, puck.vy) * 1.5));
     if (maxTrailLen > 3 && Math.random() < 0.6) {
       puck.trail.push({ x: puck.x, y: puck.y, life: 1 });
     }
-    // Age trail segments
+    // Age trail segments — faster decay so they don't linger too long
     for (let i = puck.trail.length - 1; i >= 0; i--) {
       const seg = puck.trail[i];
-      seg.life -= 0.035;
+      seg.life -= 0.08; // was 0.035, now decays ~2x faster
       if (seg.life <= 0) puck.trail.splice(i, 1);
     }
     // Trim to max length
@@ -880,16 +894,7 @@
       puck.vy *= scale;
     }
 
-    // --- Wall collisions (top and bottom of field) ---
-    if (puck.y - PUCK_R < FIELD_TOP) {
-      puck.y = FIELD_TOP + PUCK_R;
-      puck.vy = Math.abs(puck.vy) * WALL_BOUNCE_DAMPING;
-    } else if (puck.y + PUCK_R > FIELD_BOTTOM) {
-      puck.y = FIELD_BOTTOM - PUCK_R;
-      puck.vy = -Math.abs(puck.vy) * WALL_BOUNCE_DAMPING;
-    }
-
-    // --- Left/right wall collisions (side boards, not goals) ---
+    // --- Side wall collisions (left and right boards — always solid) ---
     if (puck.x - PUCK_R < FIELD_LEFT) {
       puck.x = FIELD_LEFT + PUCK_R;
       puck.vx = Math.abs(puck.vx) * WALL_BOUNCE_DAMPING;
@@ -898,35 +903,35 @@
       puck.vx = -Math.abs(puck.vx) * WALL_BOUNCE_DAMPING;
     }
 
-    // --- Goal collision (left goal opening) ---
-    const leftGoalTop = MID_X - GOAL_WIDTH / 2;
-    const leftGoalBottom = MID_X + GOAL_WIDTH / 2;
-    if (puck.x - PUCK_R < FIELD_LEFT - GOAL_THICKNESS * 3 && puck.vx < 0) {
-      // Check if within goal opening vertically AND horizontally close enough to goal plane
-      if (puck.y > leftGoalTop + PUCK_R && puck.y < leftGoalBottom - PUCK_R) {
+    // --- Goal collision (top goal — P2/AI defends) ---
+    const goalLeftX = MID_X - GOAL_WIDTH / 2;
+    const goalRightX = MID_X + GOAL_WIDTH / 2;
+    if (puck.y - PUCK_R < FIELD_TOP && puck.vy < 0) {
+      // Check if within goal opening horizontally
+      if (puck.x > goalLeftX + PUCK_R && puck.x < goalRightX - PUCK_R) {
         score2++;
         updateScore();
-        resetPuck(1); // send toward P1 (right direction = positive x... wait, need to flip)
+        resetPuck(1); // send toward P1 (downward = positive y direction)
         return;
       } else {
-        // Hit goal post — bounce off the side wall extension
-        puck.x = FIELD_LEFT - GOAL_THICKNESS * 3 + PUCK_R;
-        puck.vx = Math.abs(puck.vx) * WALL_BOUNCE_DAMPING * 1.1; // slight speed boost on post hit
+        // Hit top post — bounce off
+        puck.y = FIELD_TOP + PUCK_R;
+        puck.vy = Math.abs(puck.vy) * WALL_BOUNCE_DAMPING;
       }
     }
 
-    // --- Goal collision (right goal opening) ---
-    const rightGoalTop = MID_X - GOAL_WIDTH / 2;
-    const rightGoalBottom = MID_X + GOAL_WIDTH / 2;
-    if (puck.x + PUCK_R > FIELD_RIGHT + GOAL_THICKNESS * 3 && puck.vx > 0) {
-      if (puck.y > rightGoalTop + PUCK_R && puck.y < rightGoalBottom - PUCK_R) {
+    // --- Goal collision (bottom goal — P1 defends) ---
+    if (puck.y + PUCK_R > FIELD_BOTTOM && puck.vy > 0) {
+      // Check if within goal opening horizontally
+      if (puck.x > goalLeftX + PUCK_R && puck.x < goalRightX - PUCK_R) {
         score1++;
         updateScore();
-        resetPuck(-1); // send toward P2
+        resetPuck(-1); // send toward P2 (upward = negative y direction)
         return;
       } else {
-        puck.x = FIELD_RIGHT + GOAL_THICKNESS * 3 - PUCK_R;
-        puck.vx = -Math.abs(puck.vx) * WALL_BOUNCE_DAMPING * 1.1;
+        // Hit bottom post — bounce off
+        puck.y = FIELD_BOTTOM - PUCK_R;
+        puck.vy = -Math.abs(puck.vy) * WALL_BOUNCE_DAMPING;
       }
     }
 
@@ -968,43 +973,44 @@
       let newAngle;
 
       if (isPlayer1) {
-        // P1 hits: aim toward right side, angle determined by hit position + paddle movement
-        const relativeY = dy / p.r;  // -1 to 1 range across paddle face
-        const deflection = relativeY * Math.PI / 3; // ±60 degrees based on vertical position
+        // P1 hits: aim upward toward AI's goal (top), angle determined by hit position + paddle movement
+        const relativeX = dx / p.r;  // -1 to 1 range across paddle face horizontally
+        const deflection = relativeX * Math.PI / 3; // ±60 degrees based on horizontal position
 
-        // Factor in paddle velocity (sweep shots)
-        const sweepFactor = (p.vy * 0.4);
-        newAngle = Math.atan2(puck.vy + sweepFactor, Math.abs(puck.vx)) + deflection * 0;
-
-        // More direct: compute based on impact position
-        // Aim toward goal side of the field with some variation from paddle movement
-        const targetX = FIELD_RIGHT - PUCK_R * 4; // aim near right edge
-        let targetY = puck.y + relativeY * (FIELD_BOTTOM - FIELD_TOP) * 0.3;
+        // Aim toward P2's goal area (top of field) with some variation from paddle movement
+        let targetY = FIELD_TOP + GOAL_WIDTH/2 + PUCK_R * 4; // aim near top goal
+        const relativeX_factor = dx / p.r; // -1 to 1 based on where puck hits paddle face horizontally
+        let targetX = puck.x + relativeX_factor * (FIELD_RIGHT - FIELD_LEFT) * 0.3;
 
         // Add paddle velocity influence for sweep shots
-        targetY += p.vy * 1.5;
+        targetY += p.vx * 1.5; // horizontal paddle movement influences vertical aim
+        targetX += p.vy * 0.8;
 
         const aimDx = targetX - puck.x;
         const aimDy = targetY - puck.y;
         newAngle = Math.atan2(aimDy, aimDx);
 
-        // Ensure minimum angle to prevent dink shots straight back
-        if (Math.abs(newAngle) < BOUNCE_MIN_ANGLE) {
-          newAngle = newAngle < 0 ? -BOUNCE_MIN_ANGLE : BOUNCE_MIN_ANGLE;
+        // Ensure minimum angle to prevent dink shots straight back (toward bottom)
+        if (Math.abs(newAngle) < BOUNCE_MIN_ANGLE && newAngle > 0) {
+          newAngle = BOUNCE_MIN_ANGLE;
         }
       } else {
-        // P2 hits: aim toward left side
-        const relativeY = dy / p.r;
-        let targetX = FIELD_LEFT + PUCK_R * 4;
-        let targetY = puck.y + relativeY * (FIELD_BOTTOM - FIELD_TOP) * 0.3;
-        targetY += p.vy * 1.5;
+        // P2/AI hits: aim downward toward P1's goal (bottom of field)
+        const relativeX = dx / p.r;
+        let targetY = FIELD_BOTTOM - GOAL_WIDTH/2 - PUCK_R * 4; // aim near bottom goal
+        const relativeX_factor = dx / p.r;
+        let targetX = puck.x + relativeX_factor * (FIELD_RIGHT - FIELD_LEFT) * 0.3;
+
+        targetY += p.vx * 1.5;
+        targetX += p.vy * 0.8;
 
         const aimDx = targetX - puck.x;
         const aimDy = targetY - puck.y;
         newAngle = Math.atan2(aimDy, aimDx);
 
-        if (Math.abs(newAngle) < BOUNCE_MIN_ANGLE) {
-          newAngle = newAngle < 0 ? -BOUNCE_MIN_ANGLE : BOUNCE_MIN_ANGLE;
+        // Ensure minimum angle to prevent dink shots straight back (toward top)
+        if (Math.abs(newAngle) < BOUNCE_MIN_ANGLE && newAngle < 0) {
+          newAngle = -BOUNCE_MIN_ANGLE;
         }
       }
 
@@ -1048,12 +1054,14 @@
     resolvePaddleCollision(p2, false);
 
     // --- Paddle boundary clamping ---
+    // P1 clamped to bottom half of field (defends bottom goal)
+    const p1MinY = GAME_H / 2 + GOAL_WIDTH/2 + 2;
     p1.x = Math.max(FIELD_LEFT + p1.r, Math.min(FIELD_RIGHT - p1.r, p1.x));
-    p1.y = Math.max(MID_X + GOAL_WIDTH/2 + 2, Math.min(FIELD_BOTTOM - p1.r, p1.y));
+    p1.y = Math.max(p1MinY, Math.min(FIELD_BOTTOM - p1.r, p1.y));
 
-    // P2 boundary (restricted to top half)
-    const p2MinY = FIELD_TOP;
-    const p2MaxY = MID_X - GOAL_WIDTH/2 - 2;
+    // P2 boundary (restricted to top half — defends top goal)
+    const p2MinY = FIELD_TOP + 30;
+    const p2MaxY = GAME_H / 2 - GOAL_WIDTH/2 - 2;
     p2.x = Math.max(FIELD_LEFT + p2.r, Math.min(FIELD_RIGHT - p2.r, p2.x));
     p2.y = Math.max(p2MinY, Math.min(p2MaxY, p2.y));
 
@@ -1072,30 +1080,30 @@
     // --- AI for P2 (single-player mode) ---
     if (p2.aiControlled && gameMode === '1p') {
       const aiSpeed = aiDifficulty === 'hard' ? AI_SPEED_HARD : AI_SPEED_EASY;
-      // Predict where puck will be when it reaches the right side of field
-      let predictedY = predictPuckY();
+      // Predict where puck will be when it reaches P2's defensive zone (top goal area)
+      let predictedX = predictPuckY();
 
       // Add difficulty-based reaction imperfection for easy mode
       if (aiDifficulty === 'easy') {
         // Intentional mistakes — occasionally aim slightly off
         if (Math.random() < 0.15) {
-          predictedY += (Math.random() - 0.5) * GOAL_WIDTH;
+          predictedX += (Math.random() - 0.5) * GOAL_WIDTH;
         }
         // Sometimes "forget" to move for a frame
         if (Math.random() < 0.08) return;
       } else {
         // Hard AI: add some anticipation and better positioning
-        predictedY += (puck.vy * 8); // lead the target more aggressively
+        predictedX += (puck.vx * 8); // lead the target more aggressively
       }
 
-      const dy = predictedY - p2.y;
-      if (Math.abs(dy) > aiSpeed * 0.3) {
-        p2.vy = Math.sign(dy) * aiSpeed;
+      const dx = predictedX - p2.x;
+      if (Math.abs(dx) > aiSpeed * 0.3) {
+        p2.vx = Math.sign(dx) * aiSpeed;
       } else {
-        p2.vy = dy * 0.4; // smooth approach at close range
+        p2.vx = dx * 0.4; // smooth approach at close range
       }
 
-      // AI also tries to move horizontally toward center-ish for better angle coverage on hard
+      // AI also tries to move vertically toward center-ish for better angle coverage on hard
       if (aiDifficulty === 'hard') {
         const targetX = MID_X + FIELD_WIDTH * 0.15;
         p2.vx = (targetX - p2.x) * 0.03;
@@ -1121,44 +1129,42 @@
     hudP2.textContent = score2;
   }
 
-  // Predict where the puck will be when it reaches P2's x position (for AI)
+  // Predict where the puck will be when it reaches P2's defensive zone (for AI)
   function predictPuckY() {
     if (puck.vx === 0 && puck.vy === 0) return p2.y;
 
-    const targetX = p2.x;
-    const timeToReach = Math.abs((targetX - puck.x) / puck.vx);
-    let predictedY = puck.y + puck.vy * timeToReach;
+    // Time for puck to reach P2's goal line (FIELD_TOP + GOAL_WIDTH/2 area — top of field)
+    const targetY = FIELD_TOP + GOAL_WIDTH / 2;
+    let timeToReach = Math.abs((targetY - puck.y) / puck.vy);
 
-    // Bounce prediction off top/bottom walls (simple reflection)
-    const fieldTravel = FIELD_BOTTOM - FIELD_TOP;
-    if (predictedY < FIELD_TOP || predictedY > FIELD_BOTTOM) {
-      // Reflect once or twice for reasonable prediction
-      let dir = puck.vy < 0 ? -1 : 1;
-      let remainingDist = Math.abs(predictedY - FIELD_TOP * (puck.vy < 0 ? 1 : 0));
+    // If moving away from AI, predict based on bounce off bottom wall first
+    if (puck.vy > 0 && p2.y < GAME_H/2) {
+      // Puck heading toward P1 — it will bounce off bottom post then come back up
+      const timeToBottom = Math.abs((FIELD_BOTTOM - GOAL_WIDTH/2 - puck.y) / puck.vy);
+      timeToReach += timeToBottom * 2; // round trip to bottom and back to top zone
+    }
 
-      if (dir < 0) {
-        // heading up — bounce off top
-        const distToTop = puck.y - FIELD_TOP;
-        predictedY = FIELD_TOP + (distToTop - remainingDist);
-        dir = 1;
+    let predictedY = puck.x + puck.vx * timeToReach; // predict X at target Y
+
+    // Simulate side wall bounces (left/right field boundaries) using proper reflection
+    const fieldWidthTravel = FIELD_RIGHT - FIELD_LEFT;
+    if (predictedY < FIELD_LEFT || predictedY > FIELD_RIGHT) {
+      let travel = predictedY - FIELD_LEFT;
+      const cycleLen = fieldWidthTravel * 2;
+      // Fold position back using triangle wave so it bounces correctly off both side walls
+      if (travel < 0) travel = Math.abs(travel);
+      travel = travel % cycleLen;
+      if (travel > fieldWidthTravel) {
+        predictedY = FIELD_RIGHT - (travel - fieldWidthTravel);
       } else {
-        const distToBottom = FIELD_BOTTOM - puck.y;
-        predictedY = FIELD_BOTTOM - (remainingDist - distToBottom);
-        dir = -1;
-      }
-
-      // One more bounce if needed
-      if (predictedY < FIELD_TOP) {
-        predictedY = FIELD_TOP + (FIELD_TOP - predictedY);
-      } else if (predictedY > FIELD_BOTTOM) {
-        predictedY = FIELD_BOTTOM - (predictedY - FIELD_BOTTOM);
+        predictedY = FIELD_LEFT + travel;
       }
     }
 
     // Clamp to P2's allowed movement range with slight margin
-    const minY = FIELD_TOP + p2.r;
-    const maxY = MID_X - GOAL_WIDTH/2 - 2 - p2.r;
-    return Math.max(minY, Math.min(maxY, predictedY));
+    const minX = FIELD_LEFT + p2.r;
+    const maxX = FieldRight() - GOAL_WIDTH/2 - 2 - p2.r;
+    return Math.max(minX, Math.min(maxX, predictedY));
   }
 
   function updateDead() {
@@ -1168,10 +1174,10 @@
     if (Math.hypot(puck.vx, puck.vy) < 0.3) {
       puck.vx = 0; puck.vy = 0;
     }
-    // Fade trail quickly
+    // Fade trail quickly after goal
     for (let i = puck.trail.length - 1; i >= 0; i--) {
       const seg = puck.trail[i];
-      seg.life -= 0.08;
+      seg.life -= 0.12; // even faster fade in dead state
       if (seg.life <= 0) puck.trail.splice(i, 1);
     }
 
