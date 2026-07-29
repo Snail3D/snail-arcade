@@ -1,305 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>NEON PINBALL</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
-    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
-    canvas { display: block; touch-action: none; }
-    .overlay {
-      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      z-index: 10; font-family: 'Courier New', monospace;
-    }
-    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
-    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
-    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
-    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
-    .hidden { display: none !important; }
-  </style>
-</head>
-<body>
-  <canvas id="c"></canvas>
-  <div id="start" class="overlay">
-    <h1>NEON PINBALL</h1>
-    <p>Swipe to launch | Tap flippers</p>
-    <div class="hs" id="hs-start">🏆 High Score: 0</div>
-    <button class="btn" onclick="startGame()">▶ PLAY</button>
-  </div>
-  <div id="gameover" class="overlay hidden">
-    <h1>GAME OVER</h1>
-    <p id="go-score">Score: 0</p>
-    <div class="hs" id="hs-go">🏆 Best: 0</div>
-    <button class="btn" onclick="startGame()">▶ PLAY AGAIN</button>
-  </div>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    let W, H, ball, flippers, bumpers, targets, score, ballsLeft, gameRunning, frame, multiplier, plungerPower;
-bumpers = [];
-
-    function resize() {
-      W = Math.min(window.innerWidth, 480);
-      H = Math.min(window.innerHeight, 720);
-      canvas.width = W;
-      canvas.height = H;
-    }
-    resize();
-    window.addEventListener('resize', resize);
-
-    function reset() {
-      score = 0;
-      ballsLeft = 3;
-      multiplier = 1;
-      plungerPower = 0;
-      frame = 0;
-      flippers = [
-        {x: W * 0.3, y: H - 60, angle: 0, targetAngle: 0, side: 'left'},
-        {x: W * 0.7, y: H - 60, angle: 0, targetAngle: 0, side: 'right'}
-      ];
-      bumpers = [
-        {x: W * 0.25, y: H * 0.35, r: 20, points: 10},
-        {x: W * 0.5, y: H * 0.3, r: 20, points: 15},
-        {x: W * 0.75, y: H * 0.35, r: 20, points: 10},
-        {x: W * 0.35, y: H * 0.5, r: 18, points: 20},
-        {x: W * 0.65, y: H * 0.5, r: 18, points: 20},
-      ];
-      targets = [
-        {x: W * 0.15, y: H * 0.2, hit: false, points: 50},
-        {x: W * 0.5, y: H * 0.15, hit: false, points: 100},
-        {x: W * 0.85, y: H * 0.2, hit: false, points: 50},
-      ];
-      ball = {x: W * 0.5, y: H * 0.1, vx: 0, vy: 5, r: 8, active: false};
-      gameRunning = true;
-      document.getElementById('start').classList.add('hidden');
-      document.getElementById('gameover').classList.add('hidden');
-    }
-
-    function startGame() { reset(); }
-
-    function launchBall(power) {
-      if (ball.active) return;
-      ball.active = true;
-      ball.x = W * 0.5;
-      ball.y = H * 0.8;
-      ball.vx = (Math.random() - 0.5) * 2;
-      ball.vy = -power * 2 - 5;
-    }
-
-    function flip(side) {
-      for (const f of flippers) {
-        if (f.side === side) f.targetAngle = 1;
-      }
-    }
-
-    function unflip(side) {
-      for (const f of flippers) {
-        if (f.side === side) f.targetAngle = 0;
-      }
-    }
-
-    function update() {
-      if (!gameRunning) return;
-      frame++;
-
-      // Flipper animation
-      for (const f of flippers) {
-        const diff = f.targetAngle - f.angle;
-        f.angle += diff * 0.15;
-      }
-
-      if (!ball.active) {
-        // Plunger charging
-        if (plungerPower < 5) plungerPower += 0.1;
-        return;
-      }
-
-      // Ball physics
-      ball.x += ball.vx;
-      ball.y += ball.vy;
-      ball.vy += 0.15; // gravity
-
-      // Wall bounce
-      if (ball.x < ball.r) { ball.x = ball.r; ball.vx *= -0.8; }
-      if (ball.x > W - ball.r) { ball.x = W - ball.r; ball.vx *= -0.8; }
-      if (ball.y < ball.r) { ball.y = ball.r; ball.vy *= -0.8; }
-
-      // Drain (bottom)
-      if (ball.y > H + ball.r) {
-        ballsLeft--;
-        if (ballsLeft <= 0) { gameOver(); return; }
-        ball.active = false;
-        plungerPower = 0;
-      }
-
-      // Flipper collision
-      for (const f of flippers) {
-        const fx = f.x, fy = f.y;
-        const dx = ball.x - fx, dy = ball.y - fy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < ball.r + 15) {
-          const angle = f.angle * 0.5;
-          const nx = Math.cos(angle), ny = Math.sin(angle);
-          const dot = ball.vx * nx + ball.vy * ny;
-          if (dot > 0) continue;
-          ball.vx = -dot * nx * 1.5;
-          ball.vy = -dot * ny * 1.5;
-        }
-      }
-
-      // Bumper collision
-      for (const b of bumpers) {
-        const dx = ball.x - b.x, dy = ball.y - b.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < ball.r + b.r) {
-          score += b.points * multiplier;
-          const nx = dx / dist, ny = dy / dist;
-          ball.vx = nx * 5;
-          ball.vy = ny * 5;
-          multiplier = Math.min(10, multiplier + 0.1);
-        }
-      }
-
-      // Target collision
-      for (const t of targets) {
-        if (t.hit) continue;
-        const dx = ball.x - t.x, dy = ball.y - t.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < ball.r + 15) {
-          score += t.points * multiplier;
-          t.hit = true;
-        }
-      }
-    }
-
-    function draw() {
-  if (!bumpers || bumpers.length === 0) return;
-      ctx.fillStyle = '#0a0a0f';
-      ctx.fillRect(0, 0, W, H);
-
-      // Playfield border
-      ctx.strokeStyle = '#00ff88';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(5, 5, W - 10, H - 10);
-
-      // Bumpers
-      for (const b of bumpers) {
-        ctx.fillStyle = '#ff4466';
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = '14px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText(b.points, b.x, b.y + 4);
-      }
-
-      // Targets
-      for (const t of targets) {
-        ctx.fillStyle = t.hit ? '#666' : '#ff8844';
-        ctx.fillRect(t.x - 12, t.y - 12, 24, 24);
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText(t.hit ? '✓' : t.points, t.x, t.y + 4);
-      }
-
-      // Flippers
-      for (const f of flippers) {
-        const len = 40;
-        const angle = f.angle * 0.5;
-        const ex = f.x + Math.cos(Math.PI - angle) * len;
-        const ey = f.y + Math.sin(Math.PI - angle) * len;
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.moveTo(f.x, f.y);
-        ctx.lineTo(ex, ey);
-        ctx.stroke();
-      }
-
-      // Ball
-      if (ball.active) {
-        ctx.fillStyle = '#ff8844';
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#ff8844';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-
-      // HUD
-      ctx.fillStyle = '#00ff88';
-      ctx.font = '14px Courier New';
-      ctx.textAlign = 'left';
-      ctx.fillText('⭐ ' + score + '  🎱 ' + ballsLeft + '  ✖' + multiplier.toFixed(1), 10, 20);
-
-      // Plunger power
-      if (!ball.active) {
-        ctx.fillStyle = '#444';
-        ctx.fillRect(W/2 - 50, H - 80, 100, 10);
-        ctx.fillStyle = '#00ff88';
-        ctx.fillRect(W/2 - 50, H - 80, plungerPower * 20, 10);
-        ctx.fillStyle = '#888';
-        ctx.font = '12px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText('Swipe up to launch!', W/2, H - 90);
-      }
-    }
-
-    function gameOver() {
-      gameRunning = false;
-      const hs = localStorage.getItem('pinball_highscore') || 0;
-      if (score > parseInt(hs)) {
-        localStorage.setItem('pinball_highscore', score);
-        document.getElementById('hs-go').textContent = '🏆 New High Score: ' + score;
-      } else {
-        document.getElementById('hs-go').textContent = '🏆 Best: ' + hs;
-      }
-      document.getElementById('go-score').textContent = 'Score: ' + score;
-      document.getElementById('gameover').classList.remove('hidden');
-    }
-
-    // Touch controls
-    let swipeStartY = 0;
-    canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const t = e.touches[0];
-      const rect = canvas.getBoundingClientRect();
-      const y = t.clientY - rect.top;
-      swipeStartY = y;
-      // Left/right flippers
-      if (y > H - 100) {
-        if (t.clientX < W / 2) flip('left');
-        else flip('right');
-      }
-    });
-    canvas.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      unflip('left');
-      unflip('right');
-      // Swipe up to launch
-      if (!ball.active) {
-        const rect = canvas.getBoundingClientRect();
-        const dy = e.changedTouches[0].clientY - swipeStartY;
-        if (dy < -30) launchBall(Math.min(5, Math.abs(dy) / 30));
-      }
-    });
-
-    function loop() {
-      update();
-      draw();
-      requestAnimationFrame(loop);
-    }
-
-    const saved = localStorage.getItem('pinball_highscore') || 0;
-    document.getElementById('hs-start').textContent = '🏆 High Score: ' + saved;
-    loop();
-  </script>
-</body>
-</html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Neon Pinball — Snail Arcade</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;height:100dvh;overflow:hidden;background:#0a0a0a;color:#fff;font-family:'Courier New',monospace;touch-action:none;-webkit-tap-highlight-color:transparent}body{display:grid;place-items:center}#wrap{position:relative;width:100%;height:100%;display:grid;place-items:center}canvas{display:block;background:#080712;box-shadow:0 0 40px rgba(0,0,0,.7),0 0 30px rgba(0,255,136,.1);touch-action:none}#start,#gameover{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,5,10,.89);padding:20px;z-index:5}#start.active,#gameover.active{display:flex}.panel{width:min(400px,92vw);text-align:center;padding:28px 22px;border:2px solid #00ff88;border-radius:16px;background:rgba(10,10,15,.97);box-shadow:0 0 35px #00ff8840}.panel h1{font-size:clamp(29px,9vw,47px);color:#00ff88;text-shadow:0 0 20px #00ff8877}.panel h2{font-size:34px;color:#ff4f7b}.panel p{margin:10px 0;color:#aaa;line-height:1.45}.panel .best{color:#00ff88;font-size:18px}.panel button{margin-top:12px;padding:14px 28px;border:0;border-radius:8px;background:#00ff88;color:#051009;font:700 18px 'Courier New';cursor:pointer}.panel .hint{font-size:13px;color:#777}.new{color:#ffe04d!important;font-weight:bold}
+</style>
+</head><body><div id="wrap"><canvas id="game" width="480" height="720"></canvas>
+<div id="start"><div class="panel"><h1>NEON PINBALL</h1><p>Launch, flip, and light all three reactor targets.<br>Complete banks to raise the multiplier.</p><p><b>← / Z</b> LEFT &nbsp; <b>→ / /</b> RIGHT<br><b>SPACE</b> launch</p><p class="best">BEST <span id="startBest">0</span></p><button id="startBtn">START TABLE</button><p class="hint">On touch: tap left or right half. Tap launcher lane to serve.</p></div></div>
+<div id="gameover"><div class="panel"><h2>TABLE TILT</h2><p id="result">Score 0</p><p class="best">BEST <span id="overBest">0</span></p><p id="record" class="new"></p><button id="retryBtn">PLAY AGAIN</button></div></div>
+</div><script>
+(()=>{'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d'),start=document.getElementById('start'),over=document.getElementById('gameover');
+const GW=480,GH=720,startBest=document.getElementById('startBest'),overBest=document.getElementById('overBest'),result=document.getElementById('result'),record=document.getElementById('record');
+let state='ready',ball=null,particles=[],popups=[],score=0,mult=1,balls=3,bank=0,launchCharge=0,left=false,right=false,last=0,shake=0,gameOverTimer=null,frameCount=0;
+let best=parseInt(localStorage.getItem('neon-pinball-best')||'0',10);startBest.textContent=best;
+const bumpers=[{x:145,y:245,r:31,c:'#ff3e73',v:150},{x:335,y:245,r:31,c:'#35a7ff',v:150},{x:240,y:355,r:36,c:'#ffe14d',v:250}],targets=[{x:100,y:158,w:55,h:15,lit:false},{x:212,y:125,w:56,h:15,lit:false},{x:325,y:158,w:55,h:15,lit:false}];
+let audio=null;function sound(f,d=.05,type='sine',v=.03){try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=f;o.type=type;g.gain.setValueAtTime(v,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);o.connect(g).connect(audio.destination);o.start();o.stop(audio.currentTime+d)}catch(e){}}
+function resize(){const s=Math.min(innerWidth/GW,innerHeight/GH);canvas.style.width=Math.floor(GW*s)+'px';canvas.style.height=Math.floor(GH*s)+'px'}addEventListener('resize',resize);resize();
+function setOverlay(name){start.classList.toggle('active',name==='start');over.classList.toggle('active',name==='gameover')}
+function reset(){clearTimeout(gameOverTimer);score=0;mult=1;balls=3;bank=0;launchCharge=0;left=right=false;particles=[];popups=[];targets.forEach(t=>t.lit=false);state='playing';newBall();setOverlay(null)}
+function newBall(){ball={x:430,y:610,vx:0,vy:0,r:9,served:false,trail:[]};launchCharge=0}
+function launch(){if(state!=='playing'||!ball||ball.served)return;ball.served=true;ball.vx=-75-Math.random()*35;ball.vy=-(620+launchCharge*90);launchCharge=0;sound(180,.1,'sawtooth',.04)}
+function addScore(n,x,y,c='#fff'){const p=Math.round(n*mult);score+=p;popups.push({text:'+'+p,x,y,life:1,c})}
+function burst(x,y,c,n=12){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=40+Math.random()*180;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,c})}}
+function circle(x,y,r,v=1.12){const dx=ball.x-x,dy=ball.y-y,d=Math.hypot(dx,dy)||1,min=ball.r+r;if(d<min){const nx=dx/d,ny=dy/d;ball.x=x+nx*min;ball.y=y+ny*min;const dot=ball.vx*nx+ball.vy*ny;if(dot<0){ball.vx-=2*dot*nx;ball.vy-=2*dot*ny;ball.vx*=v;ball.vy*=v}return true}return false}
+function segment(ax,ay,bx,by,kick){const vx=bx-ax,vy=by-ay,l2=vx*vx+vy*vy,t=Math.max(0,Math.min(1,((ball.x-ax)*vx+(ball.y-ay)*vy)/l2)),x=ax+vx*t,y=ay+vy*t,dx=ball.x-x,dy=ball.y-y,d=Math.hypot(dx,dy)||1,min=ball.r+8;if(d<min){const nx=dx/d,ny=dy/d;ball.x=x+nx*min;ball.y=y+ny*min;const dot=ball.vx*nx+ball.vy*ny;if(dot<0){ball.vx-=2*dot*nx;ball.vy-=2*dot*ny}ball.vy-=kick;ball.vx+=(ball.x<240?-1:1)*kick*.18;return true}return false}
+function flipper(side,active){const pivot=side==='l'?{x:165,y:610}:{x:315,y:610},base=side==='l'?-0.18:Math.PI+.18,up=side==='l'?-0.75:Math.PI+.75,a=active?up:base,len=90;return{ax:pivot.x,ay:pivot.y,bx:pivot.x+Math.cos(a)*len,by:pivot.y+Math.sin(a)*len}}
+function drain(){balls--;mult=Math.max(1,mult-.5);if(balls<=0){state='dead';const isNew=score>best;if(isNew){best=score;localStorage.setItem('neon-pinball-best',best)}startBest.textContent=overBest.textContent=best;result.innerHTML=`SCORE <b>${score}</b><br>MAX MULTIPLIER ${mult.toFixed(1)}x`;record.textContent=isNew?'★ NEW HIGH SCORE ★':'';gameOverTimer=setTimeout(()=>{if(state==='dead')setOverlay('gameover')},600)}else setTimeout(()=>{if(state==='playing')newBall()},550)}
+function update(dt){if(state!=='playing'||!ball)return;if(!ball.served){launchCharge=(launchCharge+dt*1.35)%1;return}ball.vy+=620*dt;ball.vx*=Math.pow(.997,dt*60);ball.vy*=Math.pow(.999,dt*60);const steps=3;for(let s=0;s<steps;s++){ball.x+=ball.vx*dt/steps;ball.y+=ball.vy*dt/steps;if(ball.x<24+ball.r){ball.x=24+ball.r;ball.vx=Math.abs(ball.vx)*.88;sound(190,.025)}if(ball.x>456-ball.r){ball.x=456-ball.r;ball.vx=-Math.abs(ball.vx)*.88;sound(190,.025)}if(ball.y<76+ball.r){ball.y=76+ball.r;ball.vy=Math.abs(ball.vy)*.9}if(ball.x>402&&ball.y>520){ball.x=Math.min(ball.x,447);if(ball.x<412){ball.x=412;ball.vx=Math.abs(ball.vx)}}for(const b of bumpers)if(circle(b.x,b.y,b.r,1.18)){addScore(b.v,b.x,b.y,b.c);burst(b.x,b.y,b.c,14);sound(300+b.x,.06,'square');shake=4}for(const t of targets){if(!t.lit&&ball.x+ball.r>t.x&&ball.x-ball.r<t.x+t.w&&ball.y+ball.r>t.y&&ball.y-ball.r<t.y+t.h){t.lit=true;ball.vy=Math.abs(ball.vy)+120;addScore(500,t.x+t.w/2,t.y,'#00ff88');sound(720,.08,'square');if(targets.every(q=>q.lit)){bank++;mult=Math.min(8,mult+1);addScore(1500,240,205,'#ffe14d');burst(240,180,'#00ff88',35);targets.forEach(q=>q.lit=false)}}}const lf=flipper('l',left),rf=flipper('r',right);if(segment(lf.ax,lf.ay,lf.bx,lf.by,left?350:55)){sound(250,.04,'square');if(left)shake=2}if(segment(rf.ax,rf.ay,rf.bx,rf.by,right?350:55)){sound(270,.04,'square');if(right)shake=2}circle(80,470,18,1.05);circle(400,470,18,1.05)}ball.trail.push({x:ball.x,y:ball.y});if(ball.trail.length>14)ball.trail.shift();if(ball.y>GH+30)drain();for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=150*dt;p.life-=dt*2;if(p.life<=0)particles.splice(i,1)}for(let i=popups.length-1;i>=0;i--){popups[i].y-=30*dt;popups[i].life-=dt;if(popups[i].life<=0)popups.splice(i,1)}shake*=.84}
+function path(){ctx.strokeStyle='#00ff8866';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(24,640);ctx.lineTo(24,110);ctx.quadraticCurveTo(24,76,58,76);ctx.lineTo(422,76);ctx.quadraticCurveTo(456,76,456,110);ctx.lineTo(456,640);ctx.stroke();ctx.strokeStyle='#35a7ff44';ctx.beginPath();ctx.moveTo(405,640);ctx.lineTo(405,120);ctx.stroke()}
+function drawFlipper(f,c){ctx.strokeStyle=c;ctx.shadowColor=c;ctx.shadowBlur=14;ctx.lineWidth=16;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(f.ax,f.ay);ctx.lineTo(f.bx,f.by);ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(f.ax,f.ay,6,0,Math.PI*2);ctx.fill()}
+function draw(){ctx.save();if(shake)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);const g=ctx.createLinearGradient(0,0,0,GH);g.addColorStop(0,'#070817');g.addColorStop(1,'#14051b');ctx.fillStyle=g;ctx.fillRect(-8,-8,GW+16,GH+16);ctx.strokeStyle='#ffffff08';for(let y=90;y<680;y+=30){ctx.beginPath();ctx.moveTo(25,y);ctx.lineTo(455,y);ctx.stroke()}path();ctx.fillStyle='#00ff88';ctx.font='bold 18px Courier New';ctx.textAlign='left';ctx.fillText(String(score).padStart(8,'0'),25,35);ctx.textAlign='center';ctx.fillStyle='#ffe14d';ctx.fillText(mult.toFixed(1)+'x',240,35);ctx.textAlign='right';ctx.fillStyle='#aaa';ctx.fillText('BALL '+balls,455,35);for(const t of targets){ctx.shadowColor=t.lit?'#00ff88':'#555';ctx.shadowBlur=t.lit?15:0;ctx.fillStyle=t.lit?'#00ff88':'#252530';ctx.fillRect(t.x,t.y,t.w,t.h);ctx.strokeStyle='#777';ctx.strokeRect(t.x,t.y,t.w,t.h)}ctx.shadowBlur=0;for(const b of bumpers){ctx.shadowColor=b.c;ctx.shadowBlur=20;ctx.fillStyle=b.c+'44';ctx.beginPath();ctx.arc(b.x,b.y,b.r+8,0,Math.PI*2);ctx.fill();ctx.fillStyle=b.c;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#090912';ctx.beginPath();ctx.arc(b.x,b.y,b.r-10,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 12px Courier New';ctx.textAlign='center';ctx.fillText(b.v,b.x,b.y+4)}ctx.shadowBlur=0;for(const p of [{x:80,y:470},{x:400,y:470}]){ctx.fillStyle='#9a5cff';ctx.beginPath();ctx.arc(p.x,p.y,18,0,Math.PI*2);ctx.fill()}drawFlipper(flipper('l',left),'#ff3e73');drawFlipper(flipper('r',right),'#35a7ff');if(ball){for(let i=0;i<ball.trail.length;i++){const q=ball.trail[i];ctx.globalAlpha=i/ball.trail.length*.35;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(q.x,q.y,3+i/5,0,Math.PI*2);ctx.fill()}ctx.globalAlpha=1;ctx.shadowColor='#fff';ctx.shadowBlur=18;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;if(!ball.served){ctx.fillStyle='#333';ctx.fillRect(414,650,32,9);ctx.fillStyle='#00ff88';ctx.fillRect(414,650,32*launchCharge,9);ctx.fillStyle='#aaa';ctx.font='10px Courier New';ctx.fillText('TAP / SPACE TO LAUNCH',360,680)}}for(const p of particles){ctx.globalAlpha=p.life;ctx.fillStyle=p.c;ctx.fillRect(p.x-2,p.y-2,4,4)}ctx.globalAlpha=1;for(const p of popups){ctx.globalAlpha=p.life;ctx.fillStyle=p.c;ctx.font='bold 14px Courier New';ctx.textAlign='center';ctx.fillText(p.text,p.x,p.y)}ctx.globalAlpha=1;ctx.fillStyle='#777';ctx.font='11px Courier New';ctx.textAlign='center';ctx.fillText('REACTOR BANK '+bank,240,705);ctx.restore()}
+function loop(t){frameCount++;const dt=Math.min(.033,(t-last)/1000||0);last=t;update(dt);draw();requestAnimationFrame(loop)}
+function press(side,on){if(side==='l')left=on;else right=on;if(on)sound(side==='l'?120:145,.025,'square',.018)}
+addEventListener('keydown',e=>{if(['ArrowLeft','KeyZ','ArrowRight','Slash','Space','Enter'].includes(e.code))e.preventDefault();if(e.code==='ArrowLeft'||e.code==='KeyZ')press('l',true);if(e.code==='ArrowRight'||e.code==='Slash')press('r',true);if((e.code==='Space'||e.code==='Enter')){if(state==='playing')launch();else reset()}});addEventListener('keyup',e=>{if(e.code==='ArrowLeft'||e.code==='KeyZ')press('l',false);if(e.code==='ArrowRight'||e.code==='Slash')press('r',false)});canvas.addEventListener('pointerdown',e=>{e.preventDefault();if(state!=='playing')return;const r=canvas.getBoundingClientRect(),x=(e.clientX-r.left)*GW/r.width;if(!ball.served&&x>350){launch();return}press(x<GW/2?'l':'r',true)});canvas.addEventListener('pointerup',()=>{press('l',false);press('r',false)});canvas.addEventListener('pointercancel',()=>{press('l',false);press('r',false)});document.getElementById('startBtn').onclick=reset;document.getElementById('retryBtn').onclick=reset;setOverlay('start');requestAnimationFrame(loop);
+})();
+</script></body></html>
