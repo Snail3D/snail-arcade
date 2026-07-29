@@ -1,313 +1,1056 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>CARD COMBAT</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; background: #0a0a0f; }
-    body { display: flex; justify-content: center; align-items: center; font-family: 'Courier New', monospace; }
-    canvas { display: block; touch-action: none; }
-    .overlay {
-      position: fixed; inset: 0; background: rgba(10,10,15,0.95);
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      z-index: 10; font-family: 'Courier New', monospace;
-    }
-    .overlay h1 { color: #00ff88; font-size: 2.5em; text-shadow: 0 0 20px rgba(0,255,136,0.5); margin-bottom: 10px; }
-    .overlay p { color: #888; font-size: 1em; margin: 5px 0; }
-    .overlay .hs { color: #00ff88; font-size: 1.2em; margin-bottom: 20px; }
-    .btn { padding: 16px 40px; font-size: 1.3em; font-family: 'Courier New', monospace; background: #00ff88; color: #0a0a0a; border: none; border-radius: 8px; cursor: pointer; margin-top: 20px; font-weight: bold; }
-    .hidden { display: none !important; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Card Combat — Snail Arcade</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+  body { display: flex; flex-direction: column; }
+  #wrap {
+    position: relative; width: 100vw; height: 100vh; height: 100dvh;
+    background: radial-gradient(ellipse at center top, #1a1530 0%, #0a0a0f 70%);
+    overflow: hidden;
+  }
+  #hud {
+    position: absolute; top: 8px; left: 0; right: 0;
+    display: flex; justify-content: space-between;
+    padding: 0 12px; z-index: 5; pointer-events: none;
+  }
+  .hud-block {
+    background: rgba(0,0,0,0.7); border: 2px solid #00ff88;
+    border-radius: 8px; padding: 6px 12px;
+    color: #fff; font-size: 13px;
+  }
+  .hud-block .v { color: #ffeb3b; font-size: 16px; font-weight: bold; }
+  .hud-block.right { border-color: #ff5252; }
+  .hud-block.right .v { color: #ff5252; }
+  .hud-block.middle { border-color: #b388ff; flex: 1; text-align: center; margin: 0 8px; }
+  .hud-block.middle .v { color: #b388ff; }
+  #enemy-area {
+    position: absolute; top: 60px; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 12px;
+  }
+  #enemy-card {
+    background: linear-gradient(135deg, #2a1530 0%, #1a0a20 100%);
+    border: 3px solid #ff5252; border-radius: 12px;
+    padding: 12px 20px; max-width: 320px;
+    text-align: center; box-shadow: 0 0 24px rgba(255, 82, 82, 0.4);
+  }
+  #enemy-card.boss { border-color: #b388ff; box-shadow: 0 0 30px rgba(179,136,255,0.6); }
+  #enemy-name { color: #fff; font-size: 18px; font-weight: bold; margin-bottom: 4px; }
+  #enemy-intent {
+    color: #ffeb3b; font-size: 12px; margin-top: 6px;
+    background: rgba(0,0,0,0.4); padding: 4px 8px; border-radius: 4px; display: inline-block;
+  }
+  #enemy-status-bar {
+    margin-top: 8px; min-height: 18px;
+  }
+  .status-icon {
+    display: inline-block; background: #444; color: #fff;
+    padding: 2px 6px; border-radius: 4px; margin: 0 2px;
+    font-size: 11px;
+  }
+  .status-icon.weak { background: #ff5252; }
+  .status-icon.strong { background: #ff9800; }
+  .status-icon.poison { background: #00ff88; color: #000; }
+  .status-icon.shield { background: #00d4ff; color: #000; }
+  #player-area {
+    position: absolute; bottom: 200px; left: 0; right: 0;
+    text-align: center;
+  }
+  #player-bar {
+    display: inline-block; background: rgba(0,0,0,0.7);
+    border: 2px solid #00ff88; border-radius: 8px;
+    padding: 6px 16px; color: #fff; font-size: 14px;
+    min-width: 240px;
+  }
+  .hp-bar {
+    margin-top: 6px; height: 8px; background: #333;
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .hp-fill {
+    height: 100%; background: linear-gradient(90deg, #ff5252, #ff7e7e);
+    transition: width 0.3s ease;
+  }
+  .block-bar {
+    position: absolute; top: 0; left: 0; height: 100%;
+    background: linear-gradient(90deg, #00d4ff, #4dd0ff);
+    transition: width 0.3s ease;
+  }
+  #hand-area {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 200px; padding: 10px;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.7) 30%);
+    display: flex; justify-content: center; align-items: center;
+    gap: 6px; flex-wrap: wrap;
+    overflow-y: auto;
+  }
+  .card {
+    width: 110px; height: 150px;
+    background: linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%);
+    border: 2px solid #555; border-radius: 8px;
+    color: #fff; padding: 8px;
+    display: flex; flex-direction: column;
+    cursor: pointer; position: relative;
+    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 6px 18px rgba(0, 255, 136, 0.4);
+    border-color: #00ff88;
+  }
+  .card.played { transform: translateY(20px) scale(0.8); opacity: 0.3; pointer-events: none; }
+  .card.unplayable { opacity: 0.4; filter: grayscale(0.7); cursor: not-allowed; }
+  .card.attack { border-color: #ff5252; }
+  .card.block { border-color: #00d4ff; }
+  .card.heal { border-color: #00ff88; }
+  .card.power { border-color: #b388ff; }
+  .card.special { border-color: #ff9800; }
+  .card-name { font-size: 12px; font-weight: bold; margin-bottom: 2px; }
+  .card-cost {
+    position: absolute; top: -6px; left: -6px;
+    width: 22px; height: 22px;
+    background: #ffd700; color: #000;
+    border-radius: 50%; font-weight: bold; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #fff;
+  }
+  .card-desc { font-size: 10px; color: #aaa; line-height: 1.2; margin-top: 4px; flex: 1; }
+  .card-value {
+    font-size: 22px; font-weight: bold; text-align: center;
+    color: #ffeb3b; margin: 6px 0;
+  }
+  .card-type-icon {
+    position: absolute; bottom: 4px; right: 4px;
+    font-size: 14px; opacity: 0.6;
+  }
+  #action-bar {
+    position: absolute; bottom: 210px; right: 12px;
+    display: flex; flex-direction: column; gap: 6px; z-index: 6;
+  }
+  .abtn {
+    padding: 8px 14px; background: #444; color: #fff;
+    border: 2px solid #00ff88; border-radius: 8px;
+    font-family: inherit; font-size: 12px; font-weight: bold;
+    cursor: pointer;
+  }
+  .abtn:hover { background: #00ff88; color: #000; }
+  .abtn.end { border-color: #ff5252; }
+  .abtn.end:hover { background: #ff5252; }
+  #relic-bar {
+    position: absolute; top: 60px; left: 8px;
+    display: flex; flex-direction: column; gap: 4px; z-index: 4;
+  }
+  .relic {
+    background: rgba(0,0,0,0.7); border: 2px solid #ffd700;
+    border-radius: 8px; padding: 4px 8px; color: #ffd700;
+    font-size: 11px; max-width: 130px;
+  }
+  .overlay {
+    position: absolute; inset: 0; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10; background: rgba(0,0,0,0.85); padding: 20px;
+  }
+  .overlay.active { display: flex; }
+  .panel {
+    background: #0a0a14; border: 3px solid #00ff88; border-radius: 16px;
+    padding: 24px; color: #fff; max-width: 480px;
+    max-height: 90vh; overflow-y: auto; box-shadow: 0 0 40px rgba(0,255,136,0.4);
+  }
+  .panel h1 { color: #00ff88; font-size: 28px; margin-bottom: 10px; text-align: center; }
+  .panel h2 { color: #ff5252; font-size: 22px; margin-bottom: 8px; text-align: center; }
+  .panel p { font-size: 13px; color: #aaa; margin: 6px 0; line-height: 1.4; }
+  .panel .stat { color: #ffeb3b; font-weight: bold; }
+  .card-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; margin: 12px 0;
+  }
+  .reward-card {
+    cursor: pointer; transition: transform 0.15s;
+  }
+  .reward-card:hover { transform: scale(1.05); }
+  .reward-card .card { width: 100%; height: 130px; }
+  .reward-card .card-name { font-size: 10px; }
+  .reward-card .card-desc { font-size: 9px; }
+  .reward-card .card-value { font-size: 18px; }
+  .btn {
+    margin: 6px; padding: 12px 24px; font-size: 14px;
+    font-family: inherit; background: #00ff88; color: #0a0a0a;
+    border: none; border-radius: 8px; cursor: pointer; font-weight: bold;
+  }
+  .btn:hover { background: #00cc6a; }
+  .btn.alt { background: #444; color: #00ff88; }
+  .btn.small { padding: 8px 14px; font-size: 12px; }
+  #floors {
+    display: flex; justify-content: center; gap: 6px; margin: 8px 0;
+    font-size: 11px;
+  }
+  .floor-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #333; border: 1px solid #555;
+  }
+  .floor-dot.cleared { background: #00ff88; }
+  .floor-dot.boss { background: #b388ff; }
+  #map-select {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; margin: 12px 0;
+  }
+  .map-node {
+    background: #1a1a2e; border: 2px solid #444;
+    border-radius: 8px; padding: 16px; text-align: center;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .map-node:hover:not(.locked) { border-color: #00ff88; transform: translateY(-2px); }
+  .map-node.locked { opacity: 0.3; cursor: not-allowed; }
+  .map-node.boss { border-color: #b388ff; }
+  .map-node.elite { border-color: #ff9800; }
+  .map-node-icon { font-size: 24px; margin-bottom: 4px; }
+  .map-node-name { font-size: 12px; color: #aaa; }
+  .toast {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9); color: #fff;
+    padding: 10px 20px; border-radius: 8px; font-size: 18px;
+    z-index: 20; pointer-events: none;
+    border: 2px solid #00ff88;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(-3px, 2px); }
+    75% { transform: translate(3px, -2px); }
+  }
+  .shake { animation: shake 0.3s; }
+</style>
 </head>
 <body>
-  <canvas id="c"></canvas>
-  <div id="start" class="overlay">
-    <h1>CARD COMBAT</h1>
-    <p>Draw cards. Play abilities. Survive.</p>
-    <div class="hs" id="hs-start">🏆 Win Streak: 0</div>
-    <button class="btn" onclick="startGame()">▶ ADVENTURE</button>
+<div id="wrap">
+  <div id="hud">
+    <div class="hud-block">🃏 <span class="v" id="drawVal">10</span></div>
+    <div class="hud-block middle">⚡ <span class="v" id="energyVal">3</span> / <span id="energyMax">3</span></div>
+    <div class="hud-block right">HP <span class="v" id="hpVal">75</span>/<span id="hpMax">75</span></div>
   </div>
-  <div id="gameover" class="overlay hidden">
-    <h1>⚰️ DEFEATED</h1>
-    <p id="go-score">Enemies slain: 0</p>
-    <div class="hs" id="hs-go">🏆 Best: 0</div>
-    <button class="btn" onclick="startGame()">▶ TRY AGAIN</button>
+  <div id="enemy-area">
+    <div id="enemy-card">
+      <div id="enemy-name">Slime</div>
+      <div id="enemy-intent">⚔️ Attack 6</div>
+      <div id="enemy-status-bar"></div>
+      <div class="hp-bar" style="margin-top:8px; max-width: 280px;">
+        <div class="hp-fill" id="enemyHpFill" style="width:100%"></div>
+      </div>
+      <div style="font-size: 11px; color:#aaa; margin-top: 4px;">
+        <span id="enemyHpText">30 / 30</span>
+      </div>
+    </div>
   </div>
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-let enemies = [];
-    let W, H, playerHP, maxHP, playerBlock, enemy, deck, hand, discard, turn, phase, gameRunning, enemiesSlain, energy;
-enemy = null;
-    const CARD_POOL = [
-      {name:'Strike', type:'attack', cost:1, value:8, desc:'Deal 8 damage'},
-      {name:'Defend', type:'block', cost:1, value:5, desc:'Gain 5 block'},
-      {name:'Heal', type:'heal', cost:1, value:10, desc:'Heal 10 HP'},
-      {name:'PowerUp', type:'power', cost:2, value:15, desc:'Deal 15 damage'},
-      {name:'Barrier', type:'block', cost:2, value:12, desc:'Gain 12 block'},
-      {name:'Berserk', type:'attack', cost:2, value:20, desc:'Deal 20 damage'},
-      {name:'Meditate', type:'heal', cost:0, value:5, desc:'Heal 5 HP, cost 0'},
-      {name:'Fortify', type:'block', cost:0, value:3, desc:'Gain 3 block, cost 0'},
-      {name:'DoubleStrike', type:'attack', cost:3, value:35, desc:'Deal 35 damage'},
-      {name:'Revitalize', type:'heal', cost:3, value:25, desc:'Heal 25 HP'},
-      {name:'IronWall', type:'block', cost:3, value:20, desc:'Gain 20 block'},
-      {name:'ShadowBlade', type:'attack', cost:1, value:12, desc:'Deal 12 damage'},
-    ];
-    const ENEMY_TYPES = [
-      {name:'Goblin', hp:20, attack:5},
-      {name:'Skeleton', hp:35, attack:8},
-      {name:'Orc', hp:50, attack:12},
-      {name:'Dark Knight', hp:70, attack:18},
-      {name:'Dragon', hp:100, attack:25},
-    ];
+  <div id="player-area">
+    <div id="player-bar">
+      <div>🛡️ Player</div>
+      <div class="hp-bar" style="margin-top: 4px;">
+        <div class="block-bar" id="playerBlockBar" style="width:0"></div>
+        <div class="hp-fill" id="playerHpFill" style="width:100%"></div>
+      </div>
+      <div style="font-size: 11px; color:#aaa; margin-top: 2px;">
+        <span id="playerHpText">75 / 75</span> | Block <span id="playerBlock">0</span>
+      </div>
+    </div>
+  </div>
+  <div id="action-bar">
+    <button class="abtn end" id="endTurnBtn" onclick="endTurn()">END TURN ▶</button>
+  </div>
+  <div id="relic-bar"></div>
+  <div id="hand-area"></div>
+  <div class="overlay active" id="startOverlay">
+    <div class="panel">
+      <h1>🃏 CARD COMBAT</h1>
+      <p>Build your deck. Battle 8 floors of enemies. Defeat the Boss.</p>
+      <p style="margin-top:8px;">Each turn: play cards from your hand, then end your turn.
+      Enemies have intents (⚔️ attack, 🛡️ block, ✨ buff, 💀 special).</p>
+      <p style="margin-top:8px;">🎴 <span class="stat">25+ unique cards</span> · 8 enemy types · 3 bosses · 8 relics</p>
+      <div class="card-grid" id="starterCards"></div>
+      <p style="text-align:center; margin-top: 12px;">Choose your starting relic:</p>
+      <div id="relicSelect" style="display:flex; justify-content:center; flex-wrap:wrap; gap: 8px; margin-top: 8px;"></div>
+    </div>
+  </div>
+  <div class="overlay" id="mapOverlay">
+    <div class="panel">
+      <h2>🗺️ CHOOSE YOUR PATH</h2>
+      <p>Floor <span id="mapFloor">1</span> of 8</p>
+      <div id="floors"></div>
+      <div id="map-select"></div>
+    </div>
+  </div>
+  <div class="overlay" id="rewardOverlay">
+    <div class="panel">
+      <h2>🏆 VICTORY</h2>
+      <p id="rewardText">You defeated the enemy!</p>
+      <p>Choose a card to add to your deck:</p>
+      <div id="rewardCards" class="card-grid"></div>
+      <div style="text-align: center; margin-top: 8px;">
+        <button class="btn small alt" onclick="skipReward()">SKIP</button>
+      </div>
+    </div>
+  </div>
+  <div class="overlay" id="restOverlay">
+    <div class="panel">
+      <h2>🔥 REST SITE</h2>
+      <p>Take a moment to recover.</p>
+      <div style="display: flex; justify-content: center; gap: 8px; margin-top: 12px;">
+        <button class="btn" onclick="restHeal()">💚 Heal 30% HP</button>
+        <button class="btn alt" onclick="restUpgrade()">⬆️ Upgrade a Card</button>
+      </div>
+      <div id="upgradeChoices" style="margin-top: 12px;"></div>
+    </div>
+  </div>
+  <div class="overlay" id="relicOverlay">
+    <div class="panel">
+      <h2>✨ RELIC ACQUIRED</h2>
+      <p id="relicText"></p>
+      <div style="text-align: center; margin-top: 12px;">
+        <button class="btn" onclick="closeRelic()">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+  <div class="overlay" id="gameOverOverlay">
+    <div class="panel">
+      <h2>💀 DEFEATED</h2>
+      <p>You were slain by <span id="goEnemy" class="stat"></span></p>
+      <p>Floor reached: <span id="goFloor" class="stat">1</span></p>
+      <p>Final HP: <span id="goHp" class="stat">0</span></p>
+      <div id="goStats" style="margin-top: 12px; font-size: 12px; color: #888;"></div>
+      <div style="text-align:center; margin-top: 12px;">
+        <button class="btn" onclick="restartGame()">▶ NEW RUN</button>
+      </div>
+    </div>
+  </div>
+  <div class="overlay" id="winOverlay">
+    <div class="panel">
+      <h1>👑 ASCENDED</h1>
+      <p>You conquered all 8 floors and defeated the Boss!</p>
+      <p style="margin-top: 8px;">Final HP: <span id="winHp" class="stat"></span></p>
+      <p>Deck size: <span id="winDeck" class="stat"></span> cards</p>
+      <div style="text-align:center; margin-top: 16px;">
+        <button class="btn" onclick="restartGame()">▶ PLAY AGAIN</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const STARTER_DECK = ['Strike','Strike','Strike','Strike','Strike','Defend','Defend','Defend','Defend','Defend'];
 
-    function resize() {
-      W = Math.min(window.innerWidth, 480);
-      H = Math.min(window.innerHeight, 720);
-      canvas.width = W;
-      canvas.height = H;
+const CARD_DEFS = {
+  Strike:        {type:'attack', cost:1, value:6,  desc:'Deal 6 damage.'},
+  Defend:        {type:'block',  cost:1, value:5,  desc:'Gain 5 block.'},
+  Bash:          {type:'attack', cost:2, value:8,  desc:'Deal 8 dmg. Apply 2 Vulnerable.'},
+  Cleave:        {type:'attack', cost:1, value:8,  desc:'Deal 8 damage to ALL enemies.'},
+  IronWave:      {type:'attack', cost:1, value:5,  desc:'Gain 5 block. Deal 5 damage.'},
+  PommelStrike:  {type:'attack', cost:1, value:9,  desc:'Deal 9 damage. Draw 1.'},
+  SuckerPunch:   {type:'attack', cost:0, value:5,  desc:'Deal 5 damage. Apply 1 Weak.'},
+  QuickSlash:    {type:'attack', cost:0, value:5,  desc:'Deal 5 damage.'},
+  Headbutt:      {type:'attack', cost:1, value:9,  desc:'Deal 9 damage.'},
+  HeavyBlade:    {type:'attack', cost:2, value:14, desc:'Deal 14 damage. Strength affects more.'},
+  WildStrike:    {type:'attack', cost:1, value:12, desc:'Deal 12 dmg. Adds a Wound to discard.'},
+  Thunderclap:   {type:'attack', cost:1, value:4,  desc:'Deal 4 dmg to ALL. Apply 1 Weak to ALL.'},
+  TrueGrit:      {type:'block',  cost:1, value:8,  desc:'Gain 8 block. Exhaust a card.'},
+  Entrench:      {type:'block',  cost:2, value:0,  desc:'Double your current block.'},
+  Shockwave:     {type:'block',  cost:2, value:0,  desc:'Apply 3 Weak to ALL enemies.'},
+  Reaper:        {type:'special',cost:2, value:0,  desc:'Deal 4 dmg 4 times. Heal for unblocked dmg dealt.'},
+  HeelHook:      {type:'attack', cost:1, value:5,  desc:'Deal 5 dmg. Gain 8 block. Draw 1.'},
+  Bludgeon:      {type:'attack', cost:3, value:32, desc:'Deal 32 damage.'},
+  Feed:          {type:'attack', cost:1, value:10, desc:'Deal 10 dmg. Gain 2 max HP.'},
+  Immolate:      {type:'attack', cost:1, value:21, desc:'Deal 21 dmg to ALL. Add a Burn to your discard.'},
+  Barricade:     {type:'power',  cost:3, value:0,  desc:'Block is not lost at start of turn.'},
+  Combust:       {type:'power',  cost:1, value:0,  desc:'At end of turn, lose 1 HP, deal 5 dmg to ALL.'},
+  Corruption:    {type:'power',  cost:3, value:0,  desc:'Skills cost 0. Exhausts them when played.'},
+  FeelNoPain:    {type:'power',  cost:1, value:0,  desc:'Gain 3 block whenever you Exhaust a card.'},
+  FlameBarrier:  {type:'power',  cost:2, value:0,  desc:'Gain 12 block. When attacked, deal 4 dmg back.'},
+  Heal:          {type:'heal',   cost:1, value:8,  desc:'Heal 8 HP.'},
+  Rejuvenate:    {type:'heal',   cost:1, value:6,  desc:'Heal 6 HP. Draw 1.'},
+  Regen:         {type:'heal',   cost:1, value:0,  desc:'Heal 2 HP at start of each turn (3 turns).'},
+  Ritual:        {type:'power',  cost:1, value:0,  desc:'At start of each turn, gain 1 Strength.'},
+  Berserk:       {type:'power',  cost:2, value:0,  desc:'Gain 1 Energy. Lose 1 Energy per turn.'},
+  BattleTrance:  {type:'power',  cost:0, value:0,  desc:'Draw 3 cards. Cannot draw more this turn.'},
+  DoubleTap:     {type:'power',  cost:1, value:0,  desc:'Your next Attack this turn is played twice.'},
+  Offering:      {type:'special',cost:0, value:0,  desc:'Lose 6 HP. Draw 3 cards. Exhaust.'},
+  Exhume:        {type:'special',cost:1, value:0,  desc:'Put a card from discard into hand. Exhaust.'},
+  UpgradeAll:    {type:'special',cost:0, value:0,  desc:'Upgrade ALL cards in deck. Exhaust.'},
+};
+
+const RELIC_DEFS = {
+  BurningBlood:  {name:'Burning Blood', desc:'At the end of combat, heal 6 HP.', onCombatEnd: r => r.player.hp = Math.min(r.player.maxHp, r.player.hp + 6)},
+  FrozenCore:    {name:'Frozen Core',   desc:'At start of turn, draw 1 extra card.', onTurnStart: r => r.draw(1)},
+  Anchor:         {name:'Anchor',        desc:'Start each combat with 10 block.', onCombatStart: r => r.player.block += 10},
+  BagOfMarbles:   {name:'Bag of Marbles',desc:'Apply 1 Weak to enemy at combat start.', onCombatStart: r => { if (r.enemy) r.applyStatus(r.enemy, 'weak', 1); }},
+  VexingVajra:    {name:'Vexing Vajra',  desc:'At combat start, gain 1 Strength.', onCombatStart: r => r.applyStatus(r.player, 'strength', 1)},
+  PenNib:         {name:'Pen Nib',       desc:'Every 10th Attack deals double damage.', onAttack: (r, ctx) => { r.attackCount = (r.attackCount||0)+1; return r.attackCount % 10 === 0 ? {double:true} : null; }},
+  Kunai:          {name:'Kunai',         desc:'Every time you play 3 Attacks in a turn, gain 1 Strength.', onAttackPlayed: r => { r.attacksPlayed = (r.attacksPlayed||0)+1; if (r.attacksPlayed % 3 === 0) r.applyStatus(r.player, 'strength', 1); }},
+  StrangeDice:    {name:'Strange Dice',  desc:'First card each turn costs 0.', onTurnStart: r => r.firstFree = true},
+};
+
+const ENEMY_TIERS = {
+  Slime:        {hp:28, atk:5,  block:0, gold: 12, intent: ['attack','attack','attack'], desc: 'jiggles menacingly'},
+  JawWorm:      {hp:40, atk:7,  block:6, gold: 18, intent: ['attack','block','attack','attack'], desc: 'gnashes its teeth'},
+  Cultist:      {hp:38, atk:6,  block:0, gold: 20, intent: ['buff','attack','attack'], desc: 'chants dark prayers'},
+  SlaverBlue:   {hp:46, atk:8,  block:0, gold: 22, intent: ['attack','attack','stun'], desc: 'snaps its chain'},
+  LouseRed:     {hp:42, atk:9,  block:0, gold: 18, intent: ['attack','attack','weaken'], desc: 'a fat red louse'},
+  LouseGreen:   {hp:48, atk:7,  block:0, gold: 18, intent: ['attack','attack','strength'], desc: 'a fat green louse'},
+  ShelledParasite: {hp:78, atk:9, block:0, gold: 30, intent: ['attack','block','attack'], desc: 'protected by a hard shell'},
+  Snecko:       {hp:50, atk:12, block:0, gold: 25, intent: ['attack','attack','debuff'], desc: 'a long sneaky snecko'},
+  GremlinLeader:{hp:108, atk:9, block:0, gold: 50, intent: ['buff','attack','attack'], desc: 'encourages its kin'},
+  BookOfStabs:  {hp:88, atk:8, block:0, gold: 40, intent: ['special','attack','attack'], desc: 'flips rapidly'},
+  // elites
+  GremlinNob:   {hp:88, atk:14, block:0, gold: 80, intent: ['attack','buff','attack','attack'], desc: 'ANGRY GREMLIN'},
+  SentryBoss:   {hp:80, atk:6,  block:0, gold: 75, intent: ['special','special','special'], desc: 'two sentries'},
+  Lagavulin:    {hp:120,atk:18, block:8, gold: 90, intent: ['attack','block','debuff'], desc: 'a sleeping nightmare'},
+  // bosses
+  TheGuardian:  {hp:240,atk:14, block:0, gold: 200, intent: ['attack','buff','attack','stun'], desc: 'wakes up angry', boss:true},
+  Hexaghost:    {hp:230,atk:12, block:0, gold: 200, intent: ['special','attack','buff','attack'], desc: 'a six-faced horror', boss:true},
+  SlimeBoss:    {hp:300,atk:10, block:0, gold: 200, intent: ['attack','attack','split'], desc: 'a giant green slime', boss:true},
+};
+
+const RELIC_ORDER = ['BurningBlood','FrozenCore','Anchor','BagOfMarbles','VexingVajra','PenNib','Kunai','StrangeDice'];
+const STARTER_RELICS = ['BurningBlood','VexingVajra','FrozenCore'];
+
+let state = {};
+
+function newGame(relic) {
+  state = {
+    deck: STARTER_DECK.slice(),
+    relics: [RELIC_DEFS[relic]],
+    maxHp: 75, hp: 75,
+    block: 0,
+    floor: 1,
+    bossFloor: 8,
+    energy: 3, energyMax: 3,
+    hand: [], drawPile: [], discard: [],
+    enemy: null,
+    enemyBlock: 0,
+    enemyStatus: {},
+    playerStatus: {},
+    poisonTurnsLeft: 0,
+    inCombat: false,
+    encounterNum: 0,
+    deaths: 0,
+    damageDealt: 0,
+  };
+  state.firstFree = false;
+  state.attacksPlayed = 0;
+  state.attackCount = 0;
+  state.combatLog = [];
+  shuffleDeck();
+  showMap();
+}
+
+function shuffleDeck() {
+  for (let i = state.drawPile.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [state.drawPile[i], state.drawPile[j]] = [state.drawPile[j], state.drawPile[i]];
+  }
+}
+
+function reshuffle() {
+  state.drawPile = state.drawPile.concat(state.discard);
+  state.discard = [];
+  shuffleDeck();
+}
+
+function draw(n) {
+  for (let i = 0; i < n; i++) {
+    if (state.drawPile.length === 0) reshuffle();
+    if (state.drawPile.length === 0) break;
+    state.hand.push(state.drawPile.shift());
+  }
+  renderHand();
+}
+
+function getCardDef(name) {
+  const def = CARD_DEFS[name];
+  const upgrade = state.upgrades && state.upgrades[name];
+  if (def && upgrade) return upgrade;
+  return def;
+}
+
+function startCombat(enemyName) {
+  state.inCombat = true;
+  state.energy = state.energyMax;
+  state.attacksPlayed = 0;
+  state.attackCount = 0;
+  state.firstFree = false;
+  state.turnNum = 1;
+  state.upgrades = state.upgrades || {};
+  const tier = ENEMY_TIERS[enemyName];
+  state.enemy = {name: enemyName, hp: tier.hp, maxHp: tier.hp, atk: tier.atk, intent: tier.intent.slice(), intentIdx: 0, isBoss: tier.boss};
+  state.enemyStatus = {};
+  state.playerStatus = {strength: 0, weak: 0, vulnerable: 0};
+  state.enemyBlock = 0;
+  state.block = state.relics.some(r => r.name === 'Anchor') ? 10 : 0;
+  draw(5);
+  // relic: combat start
+  state.relics.forEach(r => r.onCombatStart && r.onCombatStart(state));
+  // relic: first free
+  state.firstFree = state.relics.some(r => r.name === 'Strange Dice');
+  document.getElementById('endTurnBtn').disabled = false;
+  updateHUD();
+  startTurn();
+}
+
+function startTurn() {
+  state.firstFree = state.firstFree || state.relics.some(r => r.name === 'Strange Dice');
+  state.attacksPlayed = 0;
+  // relic: turn start
+  state.relics.forEach(r => r.onTurnStart && r.onTurnStart(state));
+  // tick player status
+  if (state.playerStatus.weak > 0) state.playerStatus.weak--;
+  if (state.playerStatus.poison > 0) {
+    damagePlayer(state.playerStatus.poison);
+    state.playerStatus.poison--;
+  }
+  updateHUD();
+  renderHand();
+}
+
+function endTurn() {
+  // discard hand
+  const played = state.hand.filter(c => c.played);
+  state.discard.push(...state.hand.filter(c => !c.played));
+  state.hand = [];
+  state.block = 0; // lose block
+  document.getElementById('endTurnBtn').disabled = true;
+  // enemy turn
+  doEnemyTurn();
+}
+
+function doEnemyTurn() {
+  if (!state.enemy) return;
+  const tier = ENEMY_TIERS[state.enemy.name];
+  const intent = state.enemy.intent[state.enemy.intentIdx % state.enemy.intent.length];
+  state.enemy.intentIdx++;
+  state.enemy.statusIcon = intent;
+  // describe
+  if (intent === 'attack') {
+    const dmg = Math.max(0, state.enemy.atk + (state.enemyStatus.strength || 0) - 1);
+    dealDamageToPlayer(dmg);
+    toast(`${state.enemy.name} attacks for ${dmg}!`, '#ff5252');
+  } else if (intent === 'block') {
+    state.enemyBlock += tier.block;
+    toast(`${state.enemy.name} defends with ${tier.block} block.`, '#00d4ff');
+  } else if (intent === 'buff') {
+    state.enemyStatus.strength = (state.enemyStatus.strength || 0) + 2;
+    toast(`${state.enemy.name} gains 2 Strength!`, '#ff9800');
+  } else if (intent === 'weaken') {
+    applyStatus(state.player, 'weak', 2);
+    toast(`${state.enemy.name} weakens you!`, '#ff5252');
+  } else if (intent === 'debuff') {
+    applyStatus(state.player, 'vulnerable', 2);
+    toast(`${state.enemy.name} applies vulnerable!`, '#ff5252');
+  } else if (intent === 'stun') {
+    state.stunned = true;
+    toast(`${state.enemy.name} stuns you!`, '#ff9800');
+  } else if (intent === 'special') {
+    if (state.enemy.name === 'BookOfStabs') {
+      dealDamageToPlayer(6); dealDamageToPlayer(6);
+      toast(`${state.enemy.name} stabs twice!`, '#ff5252');
+    } else if (state.enemy.name === 'TheGuardian') {
+      state.enemyBlock += 12;
+      state.enemyStatus.modeShift = true;
+      toast(`${state.enemy.name} hardens!`, '#b388ff');
+    } else {
+      state.enemyStatus.strength = (state.enemyStatus.strength || 0) + 1;
     }
-    resize();
-    window.addEventListener('resize', resize);
+  } else if (intent === 'split') {
+    toast(`${state.enemy.name} splits into smaller slimes!`, '#00ff88');
+    state.enemy.atk += 2;
+    state.enemy.hp = Math.min(state.enemy.maxHp, state.enemy.hp + 30);
+  }
+  state.firstFree = false;
+  if (state.hp <= 0) {
+    playerDeath();
+    return;
+  }
+  // next turn
+  state.turnNum = (state.turnNum || 1) + 1;
+  state.energy = state.energyMax;
+  if (state.relics.some(r => r.name === 'Berserk')) state.energy = Math.max(0, state.energy - 1);
+  draw(5);
+  startTurn();
+}
 
-    function shuffle(arr) {
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+function dealDamageToPlayer(raw) {
+  if (raw <= 0) return;
+  const weakMod = state.playerStatus.weak > 0 ? 0.75 : 1;
+  let dmg = Math.floor(raw * weakMod);
+  // block absorbs
+  if (state.block > 0) {
+    const absorbed = Math.min(state.block, dmg);
+    state.block -= absorbed;
+    dmg -= absorbed;
+  }
+  state.hp -= dmg;
+  state.damageTaken = (state.damageTaken || 0) + dmg;
+  shakeEl();
+}
+
+function damagePlayer(raw) {
+  state.hp -= raw;
+  shakeEl();
+}
+
+function applyStatus(target, kind, stacks) {
+  if (target === state.player) target = state.playerStatus;
+  target[kind] = (target[kind] || 0) + stacks;
+}
+
+function shakeEl() {
+  document.getElementById('player-bar').classList.remove('shake');
+  setTimeout(() => document.getElementById('player-bar').classList.add('shake'), 10);
+  setTimeout(() => document.getElementById('player-bar').classList.remove('shake'), 310);
+}
+
+function playerDeath() {
+  document.getElementById('goEnemy').textContent = state.enemy.name;
+  document.getElementById('goFloor').textContent = state.floor;
+  document.getElementById('goHp').textContent = state.hp;
+  document.getElementById('goStats').innerHTML = `
+    Cards played: ${state.combatLog.filter(l => l.type === 'play').length}<br>
+    Damage dealt: ${state.damageDealt}<br>
+    Floor reached: ${state.floor}
+  `;
+  document.getElementById('gameOverOverlay').classList.add('active');
+}
+
+function playCard(idx) {
+  const card = state.hand[idx];
+  const def = getCardDef(card.name);
+  if (!def) return;
+  // cost
+  let cost = def.cost;
+  if (state.firstFree) { cost = 0; state.firstFree = false; }
+  if (state.energy < cost) return;
+  state.energy -= cost;
+  card.played = true;
+  // relic: on attack played
+  state.relics.forEach(r => r.onAttackPlayed && r.onAttackPlayed(state));
+
+  const STR = state.playerStatus.strength || 0;
+  const WEAK = state.playerStatus.weak > 0 ? 0.75 : 1;
+  const VULN = (state.enemyStatus.vulnerable || 0) > 0 ? 1.5 : 1;
+  const upgrade = state.upgrades && state.upgrades[card.name];
+
+  if (def.type === 'attack') {
+    const baseV = def.value + STR * (def.name === 'HeavyBlade' ? 3 : 1);
+    let dmg = Math.floor(baseV * WEAK * VULN);
+    // Pen Nib
+    let mod = null;
+    state.relics.forEach(r => r.onAttack && (mod = r.onAttack(state, mod)));
+    if (mod && mod.double) dmg *= 2;
+    // Double Tap
+    if (state.playerStatus.doubleTap > 0) {
+      state.playerStatus.doubleTap--;
+      applyDamage(dmg);
+    }
+    applyDamage(dmg);
+    toast(`${card.name}: ${dmg} dmg`, '#ff5252');
+    state.damageDealt += dmg;
+  } else if (def.type === 'block') {
+    let blockVal = def.value;
+    if (def.name === 'Entrench') blockVal = state.block;
+    state.block += blockVal;
+    toast(`${card.name}: +${blockVal} block`, '#00d4ff');
+  } else if (def.type === 'heal') {
+    const healVal = def.value;
+    state.hp = Math.min(state.maxHp, state.hp + healVal);
+    toast(`${card.name}: +${healVal} HP`, '#00ff88');
+    if (def.name === 'Regen') state.playerStatus.regen = (state.playerStatus.regen || 0) + 2;
+    if (def.name === 'Rejuvenate') draw(1);
+  } else if (def.type === 'power') {
+    if (def.name === 'Barricade') state.barricade = true;
+    if (def.name === 'Ritual') state.playerStatus.ritual = (state.playerStatus.ritual || 0) + 1;
+    if (def.name === 'Berserk') state.energy++;
+    if (def.name === 'BattleTrance') draw(3); state.battleTrance = true;
+    if (def.name === 'DoubleTap') state.playerStatus.doubleTap = (state.playerStatus.doubleTap || 0) + 1;
+    if (def.name === 'FlameBarrier') {
+      state.block += 12;
+      state.playerStatus.flameBarrier = true;
+    }
+    if (def.name === 'Combust') state.playerStatus.combust = true;
+    if (def.name === 'Corruption') state.playerStatus.corruption = true;
+    toast(`${card.name}: POWER`, '#b388ff');
+  } else if (def.type === 'special') {
+    if (def.name === 'Reaper') {
+      for (let i = 0; i < 4; i++) applyDamage(4);
+      toast(`Reaper strikes!`, '#b388ff');
+    } else if (def.name === 'HeelHook') {
+      applyDamage(5);
+      state.block += 8;
+      draw(1);
+    } else if (def.name === 'Feeding') {
+      // unused
+    } else if (def.name === 'Offering') {
+      state.hp -= 6;
+      draw(3);
+    } else if (def.name === 'Exhume') {
+      // pick from discard
+      const cards = state.discard;
+      if (cards.length > 0) {
+        const pick = cards.pop();
+        state.hand.push(pick);
       }
-      return arr;
+    } else if (def.name === 'IronWave') {
+      state.block += 5;
+      applyDamage(5);
     }
+    toast(`${card.name}: SPECIAL`, '#ff9800');
+  }
+  // Apply side effects
+  if (def.name === 'Bash' && !upgrade) applyStatus(state.enemy, 'vulnerable', 2);
+  if (def.name === 'Thunderclap') state.enemyStatus.weak = (state.enemyStatus.weak || 0) + 1;
+  if (def.name === 'SuckerPunch' && !state.playerStatus.weak && !upgrade) {
+    state.enemyStatus.weak = (state.enemyStatus.weak || 0) + 1;
+  }
+  if (def.name === 'WildStrike' && !upgrade) {
+    state.discard.push('Wound');
+  }
+  if (def.name === 'Immolate' && !upgrade) {
+    state.discard.push('Burn');
+  }
+  if (def.name === 'PommelStrike') draw(1);
+  if (def.name === 'HeelHook') draw(1); // already done above
+  if (def.name === 'Cleave') {
+    // already applied
+  }
 
-    function reset() {
-      playerHP = 80;
-      maxHP = 80;
-      playerBlock = 0;
-      energy = 3;
-      turn = 0;
-      phase = 'player';
-      enemiesSlain = 0;
-      deck = shuffle([
-        CARD_POOL[0], CARD_POOL[0], CARD_POOL[0],
-        CARD_POOL[1], CARD_POOL[1],
-        CARD_POOL[2],
-        CARD_POOL[3],
-        CARD_POOL[6],
-        CARD_POOL[7],
-      ]);
-      hand = [];
-      discard = [];
-      enemy = generateEnemy(0);
-      gameRunning = true;
-      document.getElementById('start').classList.add('hidden');
-      document.getElementById('gameover').classList.add('hidden');
-      drawCards(3);
-    }
+  // special upgrades
+  if (upgrade && card.name === 'Bash') applyStatus(state.enemy, 'vulnerable', 3);
 
-    function startGame() { reset(); }
+  state.combatLog.push({type:'play', card: card.name});
+  // discard (or exhaust)
+  state.discard.push(state.hand.splice(idx, 1)[0]);
+  if (state.hp <= 0) { playerDeath(); return; }
+  updateHUD();
+  renderHand();
+  if (state.enemy.hp <= 0) {
+    setTimeout(() => victoryReward(), 600);
+  }
+}
 
-    function generateEnemy(level) {
-      const idx = Math.min(level, ENEMY_TYPES.length - 1);
-      const t = ENEMY_TYPES[idx];
-      return {name: t.name, hp: t.hp + level * 10, maxHP: t.hp + level * 10, attack: t.attack + level * 3};
-    }
+function applyDamage(raw) {
+  if (!state.enemy) return;
+  if (state.enemyBlock > 0) {
+    const absorbed = Math.min(state.enemyBlock, raw);
+    state.enemyBlock -= absorbed;
+    raw -= absorbed;
+  }
+  state.enemy.hp = Math.max(0, state.enemy.hp - raw);
+  updateHUD();
+}
 
-    function drawCards(n) {
-      for (let i = 0; i < n; i++) {
-        if (deck.length === 0) {
-          deck = shuffle(discard);
-          discard = [];
-        }
-        if (deck.length > 0) {
-          hand.push(deck.pop());
-        }
-      }
-    }
-
-    function playCard(idx) {
-      if (phase !== 'player') return;
-      if (idx >= hand.length) return;
-      const card = hand[idx];
-      if (energy < card.cost) return;
-
-      energy -= card.cost;
-      switch (card.type) {
-        case 'attack': enemy.hp -= card.value; break;
-        case 'block': playerBlock += card.value; break;
-        case 'heal': playerHP = Math.min(maxHP, playerHP + card.value); break;
-        case 'power': enemy.hp -= card.value; break;
-      }
-      discard.push(card);
-      hand.splice(idx, 1);
-
-      if (enemy.hp <= 0) {
-        victory();
-      }
-    }
-
-    function victory() {
-      enemiesSlain++;
-      // Add a new card to deck
-      const newCard = CARD_POOL[Math.floor(Math.random() * CARD_POOL.length)];
-      deck.push(newCard);
-      // Next enemy
-      enemy = generateEnemy(enemiesSlain);
-      turn = 0;
-      energy = 3;
-      hand = [];
-      discard = [];
-      deck = shuffle(deck);
-      drawCards(3);
-      phase = 'player';
-    }
-
-    function enemyTurn() {
-      phase = 'enemy';
-      const dmg = Math.max(0, enemy.attack - playerBlock);
-      playerHP -= dmg;
-      playerBlock = Math.max(0, playerBlock - enemy.attack);
-
-      if (playerHP <= 0) { gameOver(); return; }
-
-      turn++;
-      energy = Math.min(3, energy + 1);
-      hand = [];
-      drawCards(3);
-      phase = 'player';
-    }
-
-    function draw() {
-  if (!enemy) return;
-      ctx.fillStyle = '#0a0a0f';
-      ctx.fillRect(0, 0, W, H);
-
-      // Enemy
-      const ey = 40;
-      ctx.fillStyle = '#ff4466';
-      ctx.font = '18px Courier New';
-      ctx.textAlign = 'center';
-      ctx.fillText(enemy.name, W/2, ey);
-      ctx.fillStyle = '#333';
-      ctx.fillRect(W/2 - 60, ey + 10, 120, 8);
-      ctx.fillStyle = '#ff4466';
-      ctx.fillRect(W/2 - 60, ey + 10, 120 * (enemy.hp / enemy.maxHP), 8);
-      ctx.fillStyle = '#888';
-      ctx.font = '12px Courier New';
-      ctx.fillText('❤️ ' + enemy.hp + '/' + enemy.maxHP, W/2, ey + 30);
-
-      // Player info
-      const py = H - 100;
-      ctx.fillStyle = '#00ff88';
-      ctx.font = '14px Courier New';
-      ctx.textAlign = 'left';
-      ctx.fillText('❤️ ' + playerHP + '/' + maxHP + '  🛡️ ' + playerBlock + '  ⚡ ' + energy, 10, py);
-
-      // Hand cards
-      const cw = W / 4, ch = 70, cy = py - 90;
-      for (let i = 0; i < hand.length && i < 4; i++) {
-        const cx = 10 + i * (cw + 5);
-        const card = hand[i];
-        // Card back
-        ctx.fillStyle = energy >= card.cost ? '#1a1a1a' : '#0d0d0d';
-        ctx.fillRect(cx, cy, cw, ch);
-        ctx.strokeStyle = energy >= card.cost ? '#00ff88' : '#333';
-        ctx.strokeRect(cx, cy, cw, ch);
-
-        ctx.fillStyle = energy >= card.cost ? '#fff' : '#444';
-        ctx.font = '11px Courier New';
-        ctx.textAlign = 'center';
-        ctx.fillText(card.name, cx + cw/2, cy + 16);
-        ctx.fillStyle = '#888';
-        ctx.font = '9px Courier New';
-        ctx.fillText(card.desc, cx + cw/2, cy + 35);
-        ctx.fillStyle = '#ff8844';
-        ctx.font = '10px Courier New';
-        ctx.fillText('⚡' + card.cost, cx + cw/2, cy + 55);
-      }
-
-      // End turn button
-      ctx.fillStyle = '#333';
-      ctx.fillRect(W/2 - 50, py + 10, 100, 30);
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px Courier New';
-      ctx.textAlign = 'center';
-      ctx.fillText('END TURN', W/2, py + 30);
-
-      // Deck count
-      ctx.fillStyle = '#666';
-      ctx.font = '10px Courier New';
-      ctx.textAlign = 'right';
-      ctx.fillText('Deck: ' + deck.length + ' | Discard: ' + discard.length, W - 10, H - 10);
-    }
-
-    function gameOver() {
-      gameRunning = false;
-      const hs = localStorage.getItem('cc_highscore') || 0;
-      if (enemiesSlain > parseInt(hs)) {
-        localStorage.setItem('cc_highscore', enemiesSlain);
-        document.getElementById('hs-go').textContent = '🏆 New Record: ' + enemiesSlain;
+function victoryReward() {
+  state.inCombat = false;
+  // relic: combat end
+  state.relics.forEach(r => r.onCombatEnd && r.onCombatEnd(state));
+  // pick reward card
+  const pool = Object.keys(CARD_DEFS);
+  const picks = [];
+  for (let i = 0; i < 3; i++) picks.push(pool[Math.floor(Math.random() * pool.length)]);
+  const container = document.getElementById('rewardCards');
+  container.innerHTML = '';
+  picks.forEach(name => {
+    const def = CARD_DEFS[name];
+    const div = document.createElement('div');
+    div.className = 'reward-card';
+    div.innerHTML = cardHtml(name, def);
+    div.onclick = () => {
+      state.deck.push(name);
+      document.getElementById('rewardOverlay').classList.remove('active');
+      if (state.floor >= state.bossFloor) {
+        showWin();
       } else {
-        document.getElementById('hs-go').textContent = '🏆 Best: ' + hs;
+        showMap();
       }
-      document.getElementById('go-score').textContent = 'Enemies slain: ' + enemiesSlain;
-      document.getElementById('gameover').classList.remove('hidden');
+    };
+    container.appendChild(div);
+  });
+  document.getElementById('rewardText').textContent = `You defeated ${state.enemy ? state.enemy.name : 'the enemy'}!`;
+  document.getElementById('rewardOverlay').classList.add('active');
+}
+
+function skipReward() {
+  document.getElementById('rewardOverlay').classList.remove('active');
+  if (state.floor >= state.bossFloor) showWin();
+  else showMap();
+}
+
+function cardHtml(name, def) {
+  return `
+    <div class="card ${def.type}" style="margin: 0 auto;">
+      <div class="card-cost">${def.cost}</div>
+      <div class="card-name">${name}</div>
+      <div class="card-value">${def.value > 0 ? def.value : '⛨'}</div>
+      <div class="card-desc">${def.desc}</div>
+      <div class="card-type-icon">${def.type === 'attack' ? '⚔️' : def.type === 'block' ? '🛡️' : def.type === 'heal' ? '💚' : def.type === 'power' ? '✨' : '★'}</div>
+    </div>
+  `;
+}
+
+function renderHand() {
+  const hand = document.getElementById('hand-area');
+  hand.innerHTML = '';
+  state.hand.forEach((c, i) => {
+    const def = getCardDef(c.name);
+    const div = document.createElement('div');
+    div.className = `card ${def.type}`;
+    if (c.played) div.classList.add('played');
+    if (state.firstFree && !c.played) div.classList.add('firstFree');
+    else if (state.energy < def.cost && !c.played) div.classList.add('unplayable');
+    let displayCost = def.cost;
+    if (state.firstFree) displayCost = 0;
+    div.innerHTML = `
+      <div class="card-cost" style="${state.firstFree ? 'background:#ffeb3b;' : ''}">${displayCost}</div>
+      <div class="card-name">${c.name}</div>
+      <div class="card-value">${def.value > 0 ? def.value : (def.name === 'Entrench' ? '🔒' : '⚡')}</div>
+      <div class="card-desc">${def.desc}</div>
+      <div class="card-type-icon">${def.type === 'attack' ? '⚔️' : def.type === 'block' ? '🛡️' : def.type === 'heal' ? '💚' : def.type === 'power' ? '✨' : '★'}</div>
+    `;
+    div.onclick = () => playCard(i);
+    hand.appendChild(div);
+  });
+}
+
+function updateHUD() {
+  document.getElementById('energyVal').textContent = state.energy;
+  document.getElementById('energyMax').textContent = state.energyMax;
+  document.getElementById('hpVal').textContent = state.hp;
+  document.getElementById('hpMax').textContent = state.maxHp;
+  document.getElementById('playerHpFill').style.width = `${Math.max(0,state.hp/state.maxHp*100)}%`;
+  document.getElementById('playerHpText').textContent = `${state.hp} / ${state.maxHp}`;
+  document.getElementById('playerBlockBar').style.width = `${Math.min(100, state.block/40*100)}%`;
+  document.getElementById('playerBlock').textContent = state.block;
+  // status
+  const sb = document.getElementById('player-status-bar');
+  if (!sb) return;
+  sb.innerHTML = '';
+  Object.entries(state.playerStatus).forEach(([k,v]) => {
+    if (v && v > 0 && ['strength','weak','vulnerable','poison','doubleTap','regen'].includes(k)) {
+      const icon = document.createElement('span');
+      icon.className = `status-icon ${k === 'strength' ? 'strong' : k === 'weak' ? 'weak' : k === 'poison' ? 'poison' : 'shield'}`;
+      icon.textContent = `${k.toUpperCase().slice(0,4)} ${v}`;
+      sb.appendChild(icon);
     }
-
-    // Touch
-    canvas.addEventListener('click', (e) => {
-      if (!gameRunning) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      // End turn button
-      const py = H - 100;
-      if (y > py + 10 && y < py + 40 && x > W/2 - 50 && x < W/2 + 50 && phase === 'player') {
-        enemyTurn();
-        return;
-      }
-
-      // Hand cards
-      const cy = py - 90, cw = W / 4, ch = 70;
-      for (let i = 0; i < hand.length && i < 4; i++) {
-        const cx = 10 + i * (cw + 5);
-        if (x > cx && x < cx + cw && y > cy && y < cy + ch) {
-          playCard(i);
-          return;
-        }
+  });
+  // enemy
+  if (state.enemy) {
+    document.getElementById('enemy-name').textContent = state.enemy.name;
+    const intent = state.enemy.intent[state.enemy.intentIdx % state.enemy.intent.length];
+    const iconMap = {attack:'⚔️', block:'🛡️', buff:'✨', special:'★', weaken:'💢', debuff:'☠️', stun:'⚡', split:'🌱'};
+    document.getElementById('enemy-intent').textContent = `${iconMap[intent] || '?'} ${intent.toUpperCase()} ${intent === 'attack' ? state.enemy.atk : ''}`;
+    document.getElementById('enemyHpText').textContent = `${state.enemy.hp} / ${state.enemy.maxHp}`;
+    document.getElementById('enemyHpFill').style.width = `${Math.max(0, state.enemy.hp / state.enemy.maxHp * 100)}%`;
+    if (state.enemy.isBoss) document.getElementById('enemy-card').classList.add('boss');
+    else document.getElementById('enemy-card').classList.remove('boss');
+    const esb = document.getElementById('enemy-status-bar');
+    esb.innerHTML = '';
+    Object.entries(state.enemyStatus).forEach(([k,v]) => {
+      if (v && v > 0) {
+        const icon = document.createElement('span');
+        icon.className = 'status-icon';
+        icon.textContent = `${k.toUpperCase().slice(0,4)} ${v}`;
+        esb.appendChild(icon);
       }
     });
-    canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      if (!gameRunning) return;
-      const rect = canvas.getBoundingClientRect();
-      const t = e.touches[0];
-      const x = t.clientX - rect.left;
-      const y = t.clientY - rect.top;
-      const py = H - 100;
-      if (y > py + 10 && y < py + 40 && x > W/2 - 50 && x < W/2 + 50 && phase === 'player') {
-        enemyTurn();
-        return;
-      }
-      const cy = py - 90, cw = W / 4, ch = 70;
-      for (let i = 0; i < hand.length && i < 4; i++) {
-        const cx = 10 + i * (cw + 5);
-        if (x > cx && x < cx + cw && y > cy && y < cy + ch) {
-          playCard(i);
-          return;
-        }
-      }
-    });
+  }
+  // relics
+  const rb = document.getElementById('relic-bar');
+  rb.innerHTML = '';
+  state.relics.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'relic';
+    div.textContent = `✨ ${r.name}`;
+    rb.appendChild(div);
+  });
+}
 
-    function loop() {
-      draw();
-      requestAnimationFrame(loop);
+function showMap() {
+  const overlay = document.getElementById('mapOverlay');
+  overlay.classList.add('active');
+  document.getElementById('mapFloor').textContent = state.floor;
+  const isBoss = state.floor === state.bossFloor;
+  const isElite = state.floor % 3 === 0;
+  // floor dots
+  const floors = document.getElementById('floors');
+  floors.innerHTML = '';
+  for (let i = 1; i <= 8; i++) {
+    const d = document.createElement('div');
+    d.className = 'floor-dot';
+    if (i < state.floor) d.classList.add('cleared');
+    if (i === state.bossFloor) d.classList.add('boss');
+    floors.appendChild(d);
+  }
+  // nodes
+  const nodes = document.getElementById('map-select');
+  nodes.innerHTML = '';
+  const choices = ['fight','fight','rest'];
+  if (isElite) choices.push('elite');
+  if (isBoss) choices.length = 0;
+  choices.forEach(t => {
+    const node = document.createElement('div');
+    const types = {fight:['⚔️','Combat'], elite:['💀','Elite'], rest:['🔥','Rest']};
+    node.className = `map-node ${t === 'elite' ? 'elite' : ''} ${t === 'boss' ? 'boss' : ''}`;
+    node.innerHTML = `<div class="map-node-icon">${types[t][0]}</div><div class="map-node-name">${types[t][1]}</div>`;
+    node.onclick = () => {
+      overlay.classList.remove('active');
+      if (t === 'fight') startRandomFight();
+      else if (t === 'elite') startEliteFight();
+      else if (t === 'rest') showRest();
+      else if (t === 'boss') startBossFight();
+    };
+    nodes.appendChild(node);
+  });
+  if (isBoss) {
+    const node = document.createElement('div');
+    node.className = 'map-node boss';
+    node.innerHTML = `<div class="map-node-icon">👑</div><div class="map-node-name">BOSS</div>`;
+    node.onclick = () => { overlay.classList.remove('active'); startBossFight(); };
+    nodes.innerHTML = '';
+    nodes.appendChild(node);
+  }
+}
+
+function startRandomFight() {
+  const tier = state.floor;
+  const opts = tier < 4 ? ['Slime','JawWorm','Cultist'] : tier < 7 ? ['SlaverBlue','LouseRed','LouseGreen','Snecko'] : ['ShelledParasite','BookOfStabs','SlaverBlue'];
+  const enemy = opts[Math.floor(Math.random() * opts.length)];
+  state.floor++;
+  startCombat(enemy);
+}
+
+function startEliteFight() {
+  const opts = ['GremlinNob','SentryBoss','Lagavulin'];
+  const enemy = opts[Math.floor(Math.random() * opts.length)];
+  state.floor++;
+  startCombat(enemy);
+}
+
+function startBossFight() {
+  const bosses = ['TheGuardian','Hexaghost','SlimeBoss'];
+  const enemy = bosses[Math.floor(Math.random() * bosses.length)];
+  state.floor++;
+  startCombat(enemy);
+}
+
+function showRest() {
+  document.getElementById('restOverlay').classList.add('active');
+}
+
+function restHeal() {
+  const heal = Math.floor(state.maxHp * 0.3);
+  state.hp = Math.min(state.maxHp, state.hp + heal);
+  document.getElementById('restOverlay').classList.remove('active');
+  showMap();
+}
+
+function restUpgrade() {
+  const choices = document.getElementById('upgradeChoices');
+  choices.innerHTML = '';
+  state.upgrades = state.upgrades || {};
+  const sample = [];
+  const seen = new Set();
+  while (sample.length < 3 && seen.size < state.deck.length) {
+    const c = state.deck[Math.floor(Math.random() * state.deck.length)];
+    if (!seen.has(c)) {
+      seen.add(c);
+      sample.push(c);
     }
+  }
+  sample.forEach(name => {
+    const def = CARD_DEFS[name];
+    const div = document.createElement('div');
+    div.className = 'reward-card';
+    let uval = def.value + 3;
+    div.innerHTML = `
+      <div class="card ${def.type}">
+        <div class="card-cost">${def.cost}</div>
+        <div class="card-name">${name} +</div>
+        <div class="card-value">${uval}</div>
+        <div class="card-desc">UPGRADED ${def.desc}</div>
+      </div>`;
+    div.onclick = () => {
+      state.upgrades[name] = {type:def.type, cost:def.cost, value: uval, desc:`UPGRADED ${def.desc}`};
+      document.getElementById('restOverlay').classList.remove('active');
+      showMap();
+    };
+    choices.appendChild(div);
+  });
+}
 
-    const saved = localStorage.getItem('cc_highscore') || 0;
-    document.getElementById('hs-start').textContent = '🏆 Win Streak: ' + saved;
-    loop();
-  </script>
+function showWin() {
+  document.getElementById('winHp').textContent = state.hp;
+  document.getElementById('winDeck').textContent = state.deck.length;
+  document.getElementById('winOverlay').classList.add('active');
+}
+
+function restartGame() {
+  document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
+  showStart();
+}
+
+function showStart() {
+  // show starter card preview
+  const sg = document.getElementById('starterCards');
+  sg.innerHTML = '';
+  ['Strike','Defend'].forEach(name => {
+    const def = CARD_DEFS[name];
+    const div = document.createElement('div');
+    div.className = 'reward-card';
+    div.innerHTML = cardHtml(name, def);
+    sg.appendChild(div);
+  });
+  // relic select
+  const rs = document.getElementById('relicSelect');
+  rs.innerHTML = '';
+  STARTER_RELICS.forEach(name => {
+    const def = RELIC_DEFS[name];
+    const btn = document.createElement('button');
+    btn.className = 'btn alt small';
+    btn.style.maxWidth = '120px';
+    btn.innerHTML = `<div>✨ ${name}</div><div style="font-size:10px; color:#aaa; margin-top: 4px;">${def.desc}</div>`;
+    btn.onclick = () => {
+      document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
+      newGame(name);
+    };
+    rs.appendChild(btn);
+  });
+  document.getElementById('startOverlay').classList.add('active');
+}
+
+function showRelic(name) {
+  document.getElementById('relicText').textContent = RELIC_DEFS[name].desc;
+  document.getElementById('relicOverlay').classList.add('active');
+}
+
+function closeRelic() {
+  document.getElementById('relicOverlay').classList.remove('active');
+}
+
+function toast(text, color) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = text;
+  if (color) t.style.borderColor = color;
+  document.getElementById('wrap').appendChild(t);
+  setTimeout(() => t.remove(), 1200);
+}
+
+showStart();
+</script>
 </body>
 </html>
