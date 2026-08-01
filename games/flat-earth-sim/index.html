@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flat Earth — Sun & Moon Simulator</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; overflow:hidden;
+    background:#05060c; color:#bff; font-family:'Courier New',monospace; touch-action:none; -webkit-user-select:none; user-select:none; }
+  #c { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .panel { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+    width:min(94vw,640px); background:rgba(8,10,22,0.88); border:1px solid #3af;
+    border-radius:10px; padding:10px 14px; color:#cfe8ff; z-index:10; box-shadow:0 0 18px rgba(80,160,255,.25); }
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .btn { background:#3af; color:#04121f; border:none; border-radius:6px; padding:8px 16px;
+    font-weight:bold; cursor:pointer; font-family:'Courier New',monospace; font-size:14px; }
+  .btn:hover { filter:brightness(1.2); }
+  input[type=range]{ flex:1; min-width:120px; accent-color:#3af; }
+  .lbl { font-size:12px; color:#9fd8ff; white-space:nowrap; }
+  .legend { position:fixed; top:14px; left:14px; background:rgba(8,10,22,.8); border:1px solid #3af;
+    border-radius:8px; padding:8px 12px; font-size:12px; color:#cfe8ff; z-index:10; line-height:1.6; }
+  .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+  .tip { position:fixed; top:14px; right:14px; background:rgba(8,10,22,.8); border:1px solid #3af;
+    border-radius:8px; padding:8px 12px; font-size:12px; color:#9fd8ff; z-index:10; }
+  @media (max-width:600px){ .legend{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="legend">
+  <div><span class="sw" style="background:#ffd34d"></span>Sun (analemma)</div>
+  <div><span class="sw" style="background:#b9b9d6"></span>Moon</div>
+  <div><span class="sw" style="background:#3af"></span>Ice wall rim</div>
+  <div style="color:#9fd8ff">Drag to orbit · scroll to zoom</div>
+</div>
+<div class="tip" id="dateTip">Day 0 — Jan 1</div>
+
+<div class="panel">
+  <div class="row">
+    <button class="btn" id="playBtn">▶ PLAY</button>
+    <input type="range" id="slider" min="0" max="365" step="1" value="0">
+    <span class="lbl" id="dayLbl">Jan 1</span>
+  </div>
+  <div class="row" style="margin-top:8px; justify-content:space-between;">
+    <span class="lbl">Sun r: <b id="sunR">210</b></span>
+    <span class="lbl">Decl: <b id="decl">0°</b></span>
+    <span class="lbl">EoT: <b id="eot">0m</b></span>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+const c=document.getElementById('c'), ctx=c.getContext('2d');
+const W=c.width=innerWidth, H=c.height=innerHeight;
+addEventListener('resize',()=>{c.width=innerWidth;c.height=innerHeight;});
+const ORIGIN={x:0,y:0,z:0};
+const EARTH_R=300, SUN_ALT=235, MOON_ALT=100;
+
+// ---- camera ----
+let cam={dist:880, az:0.62, el:0.52};
+function camPos(){
+  const ce=Math.cos(cam.el);
+  return {x:cam.dist*ce*Math.cos(cam.az), y:cam.dist*Math.sin(cam.el), z:cam.dist*ce*Math.sin(cam.az)};
+}
+function sub(a,b){return {x:a.x-b.x,y:a.y-b.y,z:a.z-b.z};}
+function norm(v){const m=Math.hypot(v.x,v.y,v.z)||1;return {x:v.x/m,y:v.y/m,z:v.z/m};}
+function cross(a,b){return {x:a.y*b.z-a.z*b.y, y:a.z*b.x-a.x*b.z, z:a.x*b.y-a.y*b.x};}
+function dot(a,b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+const F=420;
+function project(p){
+  const e=camPos();
+  const fwd=norm(sub(ORIGIN,e));
+  const right=norm(cross(fwd,{x:0,y:1,z:0}));
+  const up2=norm(cross(right,fwd));
+  const rel=sub(p,e);
+  const lx=dot(rel,right), ly=dot(rel,up2), lz=dot(rel,fwd);
+  if(lz<=0.5) return null;
+  const s=F/lz;
+  return {x:W/2+lx*s, y:H/2-ly*s, s};
+}
+
+// ---- date / time ----
+let day=0, playing=false, az=0;
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function monthOf(d){const m=Math.floor(d/30.42)%12;return MONTHS[m];}
+
+// ---- sun & moon (flat-earth model) ----
+function sunRadius(d){ // seasonal: max over N summer (solstice ~d172)
+  return 210 + 60*Math.cos(2*Math.PI*(d-172)/365);
+}
+function sunOmega(d){ // equation-of-time -> E/W analemma drift
+  return 1 + 0.05*Math.sin(2*Math.PI*d/365) + 0.04*Math.sin(4*Math.PI*d/365 + 1);
+}
+function declination(d){ return Math.sin(2*Math.PI*(d-172)/365); } // -1..1
+function equationOfTime(d){ // minutes
+  return (7.8*Math.sin(2*Math.PI*d/365) + 9.7*Math.sin(4*Math.PI*d/365 + 1));
+}
+
+// sun position in world space
+function sunPos(d, a){
+  const r=sunRadius(d);
+  return {x:r*Math.cos(a), y:SUN_ALT, z:r*Math.sin(a)};
+}
+function moonPos(d){
+  const a=2*Math.PI*d/28;
+  const r=150;
+  return {x:r*Math.cos(a), y:MOON_ALT, z:r*Math.sin(a)};
+}
+
+// ---- analemma (noon figure-8): declination + equation of time ----
+const ANAL=[];
+(function buildAnalemma(){
+  const meanR=210;
+  for(let d=0;d<=365;d+=1){
+    const decl=declination(d);
+    const eot=(equationOfTime(d)/60)*0.9; // normalize to radians-ish azimuth shift
+    const r=meanR+decl*60;               // radial = seasonal N/S
+    const a=eot*0.9;                      // azimuthal = equation of time
+    ANAL.push({x:r*Math.cos(a), y:SUN_ALT+8, z:r*Math.sin(a)});
+  }
+})();
+
+// ---- stars ----
+const STARS=[];
+for(let i=0;i<220;i++){
+  const th=Math.random()*Math.PI*2, ph=Math.acos(Math.random()*2-1), rr=1500;
+  STARS.push({x:rr*Math.sin(ph)*Math.cos(th), y:rr*Math.sin(ph)*Math.sin(th), z:rr*Math.cos(ph)});
+}
+
+// ---- input ----
+let dragging=false, px=0, py=0;
+c.addEventListener('mousedown',e=>{dragging=true;px=e.clientX;py=e.clientY;});
+window.addEventListener('mousemove',e=>{
+  if(!dragging) return;
+  cam.az -= (e.clientX-px)*0.005;
+  cam.el  = Math.min(1.5, Math.max(0.1, cam.el + (e.clientY-py)*0.005));
+  px=e.clientX; py=e.clientY;
+});
+window.addEventListener('mouseup',()=>dragging=false);
+c.addEventListener('wheel',e=>{e.preventDefault(); cam.dist=Math.max(420,Math.min(2000,cam.dist*(e.deltaY>0?1.12:0.9)));},{passive:false});
+// touch orbit
+let t=null;
+c.addEventListener('touchstart',e=>{t={x:e.touches[0].clientX,y:e.touches[0].clientY};},{passive:true});
+c.addEventListener('touchmove',e=>{e.preventDefault();const x=e.touches[0].clientX,y=e.touches[0].clientY;
+  if(t){cam.az-=(x-t.x)*0.006; cam.el=Math.min(1.5,Math.max(0.1,cam.el+(y-t.y)*0.006));} t={x,y};},{passive:false});
+c.addEventListener('touchend',()=>t=null);
+
+const playBtn=document.getElementById('playBtn'), slider=document.getElementById('slider'),
+      dayLbl=document.getElementById('dayLbl'), sunR=document.getElementById('sunR'),
+      decl=document.getElementById('decl'), eot=document.getElementById('eot'),
+      dateTip=document.getElementById('dateTip');
+playBtn.onclick=()=>{playing=!playing; playBtn.textContent=playing?'⏸ PAUSE':'▶ PLAY';};
+slider.oninput=()=>{day=+slider.value; az=sunAzForDay(day);};
+
+// for scrubbing, reset sun azimuth to a noon reference
+function sunAzForDay(d){ return 0; }
+
+function syncHUD(){
+  dayLbl.textContent = monthOf(day)+' '+ (Math.floor(day%30.42)+1);
+  dateTip.textContent = 'Day '+day+' — '+monthOf(day);
+  sunR.textContent = Math.round(sunRadius(day));
+  decl.textContent = Math.round(declination(day)*23.4)+'°';
+  eot.textContent = Math.round(equationOfTime(day))+'m';
+}
+
+// ---- draw ----
+function glow(x,y,r,color){
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,color); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+}
+
+function drawDisk(){
+  // base disk
+  const baseP=project({x:0,y:0,z:0});
+  const rimP=project({x:EARTH_R,y:0,z:0});
+  if(!baseP||!rimP) return;
+  const R=rimP.x-baseP.x; // approx screen radius from center
+  const g=ctx.createRadialGradient(baseP.x,baseP.y,0,baseP.x,baseP.y,R);
+  g.addColorStop(0,'#1a3f5a'); g.addColorStop(0.55,'#2c6f8f'); g.addColorStop(0.9,'#3a8fae'); g.addColorStop(1,'#57c7e0');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(baseP.x,baseP.y,R,0,Math.PI*2); ctx.fill();
+
+  // latitude rings (azimuth-equidistant graticule)
+  ctx.strokeStyle='rgba(255,255,255,0.28)'; ctx.lineWidth=1;
+  for(let r=50;r<=EARTH_R;r+=50){ ring(r); }
+  // longitude spokes
+  for(let i=0;i<24;i++){ spoke(i*Math.PI/12); }
+
+  // ice wall rim
+  const rim=project({x:EARTH_R*1.02,y:0,z:0});
+  if(rim){ ctx.strokeStyle='#3af'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(baseP.x,baseP.y,R*1.02,0,Math.PI*2); ctx.stroke(); }
+
+  // north pole
+  const np=project({x:0,y:6,z:0});
+  if(np){ ctx.fillStyle='#eef7ff'; ctx.beginPath(); ctx.arc(np.x,np.y,4,0,Math.PI*2); ctx.fill(); }
+}
+
+function ring(r){
+  const pts=[];
+  for(let i=0;i<=60;i++){
+    const a=i/60*Math.PI*2;
+    const p=project({x:r*Math.cos(a), y:0, z:r*Math.sin(a)});
+    if(p) pts.push(p);
+  }
+  if(pts.length<2) return;
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  for(const p of pts.slice(1)) ctx.lineTo(p.x,p.y);
+  ctx.stroke();
+}
+function spoke(a){
+  const p0=project({x:0,y:0,z:0}), p1=project({x:EARTH_R*Math.cos(a),y:0,z:EARTH_R*Math.sin(a)});
+  if(p0&&p1){ ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(p1.x,p1.y); ctx.stroke(); }
+}
+
+function drawStars(){
+  for(const s of STARS){ const p=project(s); if(p){ ctx.globalAlpha=0.7; ctx.fillStyle='#cfe8ff';
+    ctx.fillRect(p.x,p.y,1.6,1.6);} }
+  ctx.globalAlpha=1;
+}
+
+function drawAnalemma(){
+  // full-year figure-8
+  let pts=[];
+  for(const a of ANAL){ const p=project(a); if(p) pts.push(p); }
+  if(pts.length>1){ ctx.strokeStyle='rgba(255,211,77,0.5)'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+    for(const p of pts.slice(1)) ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+    // noon markers
+    for(const a of ANAL){ const p=project(a); if(p){ ctx.fillStyle='rgba(255,211,77,0.35)'; ctx.fillRect(p.x,p.y,2,2);} }
+  }
+}
+
+function drawBody(pos, color, glowR, coreR){
+  const p=project(pos);
+  if(!p) return;
+  glow(p.x,p.y,glowR,color);
+  ctx.fillStyle=color; ctx.beginPath(); ctx.arc(p.x,p.y,coreR,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=1; ctx.stroke();
+}
+
+// ---- main loop ----
+let last=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  const dt=Math.min(0.05,(t-last)/1000||0.016); last=t;
+  if(playing){ day=(day+dt*8)%365; slider.value=day; }
+  az += sunOmega(day)*dt*2*Math.PI; // sun completes ~1 orbit/day
+
+  // background
+  ctx.fillStyle='#05060c'; ctx.fillRect(0,0,W,H);
+  drawStars();
+  drawDisk();
+
+  // sun daily orbit ring
+  const sr=sunRadius(day);
+  const orbit=[]; for(let i=0;i<=60;i++){ const a=i/60*2*Math.PI;
+    const p=project({x:sr*Math.cos(a),y:SUN_ALT,z:sr*Math.sin(a)}); if(p) orbit.push(p); }
+  if(orbit.length>1){ ctx.strokeStyle='rgba(255,211,77,0.25)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(orbit[0].x,orbit[0].y); for(const p of orbit.slice(1)) ctx.lineTo(p.x,p.y); ctx.stroke(); }
+
+  drawAnalemma();
+
+  // sun + moon
+  drawBody(sunPos(day,az), '#ffd34d', 46, 13);
+  drawBody(moonPos(day), '#b9b9d6', 26, 9);
+
+  // current-day noon marker on analemma
+  const noon={x:210+declination(day)*60, y:SUN_ALT+8, z:(equationOfTime(day)/60)*0.9*60};
+  const np=project(noon);
+  if(np){ ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.arc(np.x,np.y,5,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fillRect(np.x-1,np.y-1,2,2); }
+
+  syncHUD();
+}
+requestAnimationFrame(loop);
+
+// expose
+window._fe={day:()=>day, playing:()=>playing, sunR:()=>Math.round(sunRadius(day)), analN:ANAL.length};
+})();
+</script>
+</body>
+</html>
