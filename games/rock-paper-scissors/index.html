@@ -155,7 +155,7 @@ function makePaperGrid(sign, grid, w, h){
 function makePaper(){ return makePaperGrid(1, 14, 1.55, 1.05); }
 function makePaperHalf(sign){ return makePaperGrid(sign, 9, 1.55, 1.05); }
 
-function makeScissorsHalf(){
+function makeScissorsHalf(zoff){
   const verts=[], faces=[], cols=[];
   function box(cx,cy,cz,sx,sy,sz,col){
     const b=makeBox(cx,cy,cz,sx,sy,sz,col), o=verts.length;
@@ -164,15 +164,15 @@ function makeScissorsHalf(){
     b.cols.forEach(c=>cols.push(c));
   }
   const blade=[0.82,0.86,0.92], red=[0.95,0.28,0.28], screw=[0.5,0.5,0.55];
-  box(0.85,0,0,   0.6,0.05,0.02, blade);
+  // one blade pointing +x (tip forward), one handle ring behind at -x, pivot screw
+  box(0.85,0,zoff,   0.6,0.05,0.02, blade);              // blade x 0.25..1.45
   for(let i=0;i<14;i++){
     const a=i/14*Math.PI*2;
-    box(0.3+Math.cos(a)*0.16, Math.sin(a)*0.16, 0, 0.035,0.035,0.035, red);
+    box(-0.28+Math.cos(a)*0.16, Math.sin(a)*0.16, zoff, 0.035,0.035,0.035, red); // handle ring
   }
   box(0,0,0.02, 0.07,0.07,0.07, screw);
   return { verts, faces, cols };
 }
-function mirrorMesh(m){ return { verts: m.verts.map(v=>[-v[0],v[1],v[2]]), faces: m.faces, cols: m.cols }; }
 
 /* ============ WEAPON OBJECTS ============ */
 function makeWeapon(type){
@@ -180,7 +180,8 @@ function makeWeapon(type){
   if(type==='rock')      o.parts = [ { mesh: makeRock(), rz:0 } ];
   else if(type==='paper') o.parts = [ { mesh: makePaper(), rz:0 } ];
   else {
-    o.parts = [ { mesh: makeScissorsHalf(), rz:0.3 }, { mesh: mirrorMesh(makeScissorsHalf()), rz:-0.3 } ];
+    // two blades BOTH pointing +x, offset in z so they cross at the pivot (real scissors)
+    o.parts = [ { mesh: makeScissorsHalf(0), rz:0.32 }, { mesh: makeScissorsHalf(0.05), rz:-0.32 } ];
   }
   return o;
 }
@@ -218,22 +219,37 @@ const sel = TYPES.map((ty,i)=>{
   return w;
 });
 
-/* ============ AUDIO ============ */
-let actx=null;
-function beep(freq,dur,type,gain){
+/* ============ AUDIO (soft, enveloped) ============ */
+let actx=null, master=null;
+function ensureAudio(){
+  if(!actx){
+    actx = new (window.AudioContext||window.webkitAudioContext)();
+    master = actx.createGain();
+    master.gain.value = 0.5;
+    master.connect(actx.destination);
+  }
+}
+function tone(freq, dur, type, vol, slide){
   try{
-    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    ensureAudio();
     const o=actx.createOscillator(), g=actx.createGain();
-    o.type=type||'square'; o.frequency.value=freq;
-    g.gain.value=gain||0.08;
-    o.connect(g); g.connect(actx.destination);
-    o.start(); o.stop(actx.currentTime+dur);
+    o.type=type||'sine';
+    o.frequency.setValueAtTime(freq, actx.currentTime);
+    if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq+slide), actx.currentTime+dur);
+    g.gain.setValueAtTime(0.0001, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(vol||0.06, actx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+    o.connect(g); g.connect(master);
+    o.start(); o.stop(actx.currentTime+dur+0.05);
   }catch(e){}
 }
-function boom(){ beep(80,0.4,'sawtooth',0.2); beep(48,0.6,'triangle',0.25); }
-function fanfare(){ [330,415,494,660,880].forEach((f,i)=>setTimeout(()=>beep(f,0.55,'triangle',0.09), i*70)); }
-function tapSnd(){ beep(520,0.07,'square',0.06); }
-function snipSnd(){ beep(1200,0.05,'square',0.06); beep(950,0.05,'square',0.05); }
+function boom(){ tone(150,0.55,'sine',0.15,-100); tone(70,0.8,'sine',0.12,-25); }
+function whoosh(){ tone(180,0.45,'triangle',0.06,120); }
+function fanfare(){ [330,415,494,660].forEach((f,i)=>setTimeout(()=>tone(f,0.5,'sine',0.06), i*70)); }
+function matchFanfare(){ [392,523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.6,'sine',0.07), i*80)); }
+function loseSnd(){ [330,262,196].forEach((f,i)=>setTimeout(()=>tone(f,0.55,'sine',0.05), i*90)); }
+function tapSnd(){ tone(620,0.08,'sine',0.05,40); }
+function snipSnd(){ tone(1500,0.07,'triangle',0.05); tone(1050,0.07,'triangle',0.04); }
 
 /* ============ FX ============ */
 function spawnParticles(p,n,spread,up){
@@ -247,9 +263,9 @@ function spawnParticles(p,n,spread,up){
   }
 }
 function spawnConfetti(){
-  for(let i=0;i<70;i++) confetti.push({
+  for(let i=0;i<50;i++) confetti.push({
     x:Math.random()*W, y:-20-Math.random()*H*0.4, vy:2+Math.random()*4,
-    r:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.3, size:6+Math.random()*8,
+    r:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.3, size:6+Math.random()*8, life:0,
     col:['#00ff88','#ff0','#f0f','#0ff','#ff6b6b','#ffd93d','#4f77ff'][Math.floor(Math.random()*7)]
   });
 }
@@ -278,7 +294,7 @@ function startBattle(ty){
   msg.innerHTML = `VS <b style="color:${COLORS[ty]}">${NAMES[ty]}</b> vs <b style="color:${COLORS[botType]}">${NAMES[botType]}</b><small>revealing…</small>`;
 }
 
-function charge(){ state='charge'; phase=0; beep(140,0.3,'sawtooth',0.05); }
+function charge(){ state='charge'; phase=0; whoosh(); }
 
 function impactNow(){
   state='impact'; phase=0;
@@ -320,9 +336,10 @@ function resolveRound(){
       const youWon = youWins>=3;
       if(youWon){
         msg.innerHTML = `🏆 YOU WIN THE MATCH!<small>best of 5 — first to 3</small>`;
-        fanfare();
+        matchFanfare();
       } else {
         msg.innerHTML = `💀 BOT WINS THE MATCH<small>best of 5 — first to 3</small>`;
+        loseSnd();
       }
       setTimeout(()=>{ youWins=0; botWins=0; updateDots(); toSelect(); }, 3200);
     } else {
@@ -367,7 +384,8 @@ function frame(now){
   ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
 
   // confetti screen-space
-  confetti.forEach(c=>{ c.y+=c.vy; c.x+=Math.sin(time*6+c.r)*1.2; c.r+=c.vr; if(c.y>H+20){c.y=-20;c.x=Math.random()*W;} });
+  confetti.forEach(c=>{ c.y+=c.vy; c.x+=Math.sin(time*6+c.r)*1.2; c.r+=c.vr; c.life+=dt; });
+  confetti = confetti.filter(c=> c.y<H+30 && c.life<4.5);
   confetti.forEach(c=>{ ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.r); ctx.fillStyle=c.col; ctx.fillRect(-c.size/2,-c.size/4,c.size,c.size/2); ctx.restore(); });
 
   requestAnimationFrame(frame);
