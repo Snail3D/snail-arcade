@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Snail Wings</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0a0a0a; color: #00ff88;
+    font-family: 'Courier New', monospace;
+    overflow: hidden; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  #wrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #0a0a0a;
+    border: 1px solid #00ff88;
+    touch-action: none;
+  }
+  .screen {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 460px);
+    background: rgba(10,10,10,0.92);
+    border: 2px solid #00ff88;
+    border-radius: 12px;
+    padding: 22px 26px;
+    text-align: center;
+    display: none;
+    box-shadow: 0 0 30px rgba(0,255,136,0.25);
+    z-index: 10;
+  }
+  .screen.active { display: block; }
+  h1 { font-size: 30px; margin: 0 0 6px 0; letter-spacing: 2px; }
+  .sub { color: #7ae0b0; font-size: 14px; margin-bottom: 16px; }
+  .btn {
+    display: inline-block; margin-top: 14px; padding: 12px 28px;
+    background: #00ff88; color: #062b18; font-weight: bold;
+    border: none; border-radius: 8px; font-size: 18px; cursor: pointer;
+    font-family: 'Courier New', monospace;
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .best { color: #9dffcb; margin-top: 12px; font-size: 15px; }
+  .tut { color: #6fae92; font-size: 13px; line-height: 1.6; margin-top: 10px; }
+  .score-line { color: #00ff88; font-size: 20px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+
+<div id="start" class="screen active">
+  <h1>🐌 SNAIL WINGS</h1>
+  <div class="sub">3D garden flight · Sheldon takes to the sky</div>
+  <button class="btn" id="startBtn">▶ FLY</button>
+  <div class="best" id="bestStart">BEST: 0</div>
+  <div class="tut">TAP / CLICK / SPACE to flap.<br>Weave through the garden gates — don't kiss the thorns or the dirt!</div>
+</div>
+
+<div id="gameover" class="screen">
+  <h1>💀 CRASHED</h1>
+  <div class="score-line" id="scoreFinal">SCORE: 0</div>
+  <div class="best" id="bestFinal">BEST: 0</div>
+  <button class="btn" id="restartBtn">↻ RE-FLY</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Setup ----------
+  const GAME_W = 480, GAME_H = 720;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const startScreen = document.getElementById('start');
+  const overScreen = document.getElementById('gameover');
+  const bestStartEl = document.getElementById('bestStart');
+  const bestFinalEl = document.getElementById('bestFinal');
+  const scoreFinalEl = document.getElementById('scoreFinal');
+
+  function resize(){
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const scale = Math.min(vw / GAME_W, vh / GAME_H);
+    canvas.width = GAME_W; canvas.height = GAME_H;
+    canvas.style.width = (GAME_W * scale) + 'px';
+    canvas.style.height = (GAME_H * scale) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- State ----------
+  let state = 'ready';      // ready | playing | dead
+  const FOCAL = 60;         // perspective focal length
+  let score = 0, best = 0;
+
+  // Best score from localStorage
+  try { best = parseInt(localStorage.getItem('snailwings-best') || '0', 10); } catch(e){}
+  function syncBestUI(){
+    bestStartEl.textContent = 'BEST: ' + best;
+    bestFinalEl.textContent = 'BEST: ' + best;
+  }
+  syncBestUI();
+
+  // ---------- Snail (world at camera plane, z=0) ----------
+  const SNAIL_X = GAME_W * 0.42;   // fixed horizontal lane
+  let snail = { y: GAME_H * 0.45, vy: 0, rot: 0, flapT: 0 };
+
+  const GRAVITY = 0.62;     // per-frame
+  const FLAP_VY = -8.4;
+  const MAX_FALL = 9.5;
+
+  // ---------- Obstacles: gates that fly toward camera ----------
+  const FAR_Z = 100;
+  const GATE_SPEED = 1.15;   // z units per frame
+  const GATE_GAP = 168;
+  const GATE_W = 58;         // world-unit half-width of gate posts
+  const THORN_R = 11;        // thorn ball radius (world units)
+  let gates = [];
+  let zAcc = 0;              // track distance for spacing
+
+  function makeGate(){
+    const minY = 120, maxY = GAME_H - 120;
+    const gapY = Math.random() * (maxY - minY) + minY;
+    return {
+      z: FAR_Z + zAcc, gapY, passed: false,
+      wobble: Math.random() * Math.PI * 2
+    };
+  }
+
+  // ---------- Parallax background ----------
+  const stars = [], leaves = [], clouds = [];
+  for (let i=0;i<60;i++) stars.push({x: Math.random()*GAME_W, y: Math.random()*GAME_H*0.7, s: Math.random()*2+1});
+  for (let i=0;i<14;i++) leaves.push({x: Math.random()*GAME_W, y: Math.random()*GAME_H, s: Math.random()*3+2, sp: Math.random()*1.5+0.4});
+  for (let i=0;i<5;i++) clouds.push({x: Math.random()*GAME_W, y: 40+Math.random()*220, s: Math.random()*0.6+0.5, sp: Math.random()*0.3+0.15});
+
+  // ---------- Input ----------
+  function flap(){
+    if (state === 'ready') startGame();
+    else if (state === 'playing') {
+      snail.vy = FLAP_VY;
+      snail.flapT = 0.25;
+    }
+  }
+  const downHandler = function(e){ e.preventDefault(); flap(); };
+  canvas.addEventListener('touchstart', downHandler, {passive:false});
+  canvas.addEventListener('mousedown', downHandler, {passive:false});
+  window.addEventListener('keydown', function(e){
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); flap(); }
+  });
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn').addEventListener('click', function(){ reset(); startGame(); });
+
+  // ---------- Game control ----------
+  function setOverlay(name){
+    startScreen.classList.toggle('active', name === 'start');
+    overScreen.classList.toggle('active', name === 'over');
+  }
+
+  function reset(){
+    score = 0;
+    gates = [];
+    zAcc = 0;
+    for (let i=0;i<4;i++){ gates.push(makeGate()); zAcc += 140; }
+    snail.y = GAME_H * 0.45;
+    snail.vy = 0; snail.rot = 0; snail.flapT = 0;
+  }
+
+  function startGame(){
+    reset();
+    state = 'playing';
+    setOverlay(null);
+  }
+
+  function die(){
+    state = 'dead';
+    if (score > best){
+      best = score;
+      try { localStorage.setItem('snailwings-best', String(best)); } catch(e){}
+    }
+    syncBestUI();
+    scoreFinalEl.textContent = 'SCORE: ' + score;
+    setOverlay('over');
+  }
+
+  // ---------- Update ----------
+  function update(){
+    // snail physics
+    snail.vy += GRAVITY;
+    if (snail.vy > MAX_FALL) snail.vy = MAX_FALL;
+    snail.y += snail.vy;
+    if (snail.flapT > 0) snail.flapT -= 0.016;
+
+    // ceiling clamp
+    if (snail.y < 70){ snail.y = 70; snail.vy = Math.max(snail.vy, 0); }
+
+    // gates move toward camera
+    for (let i=0;i<gates.length;i++){
+      const g = gates[i];
+      g.z -= GATE_SPEED;
+      g.wobble += 0.02;
+
+      // score when gate passes camera plane
+      if (!g.passed && g.z <= 0){
+        g.passed = true;
+        score++;
+        // spawn a new gate far ahead to keep density
+        gates.push(makeGate());
+        zAcc += 130;
+      }
+    }
+
+    // snail rotation by velocity (flappy nose-up feel)
+    snail.rot += (snail.vy * 0.004 - snail.rot) * 0.18;
+
+    // collision: check the gate nearest the camera
+    const nearGate = gates.filter(g => g.z > 0).sort((a,b)=>a.z-b.z)[0];
+    if (nearGate && nearGate.z < 9){
+      // project gate world y to screen; snail screen y is snail.y
+      // gap spans [gapY - GATE_GAP/2 , gapY + GATE_GAP/2] but scaled by perspective
+      const sc = FOCAL / (FOCAL + nearGate.z);   // ~1 at z=0
+      const gapTop = (nearGate.gapY - GATE_GAP/2) * sc;
+      const gapBot = (nearGate.gapY + GATE_GAP/2) * sc;
+      // thorn balls at top/bottom posts
+      const topPostY = (nearGate.gapY - GATE_GAP/2) * sc;
+      const botPostY = (nearGate.gapY + GATE_GAP/2) * sc;
+      const thornSc = FOCAL / (FOCAL + nearGate.z);
+
+      // snail collision radius ~ 20 screen px
+      if (snail.y < gapTop + 16 || snail.y > gapBot - 16){
+        // check thorns specifically for a cleaner hit
+        const hitTop = Math.abs(snail.y - (topPostY - GATE_GAP/2 - 6)) < 22;
+        const hitBot = Math.abs(snail.y - (botPostY + GATE_GAP/2 + 6)) < 22;
+        // also treat gap-wall collision
+        if (snail.y < gapTop || snail.y > gapBot){
+          die(); return;
+        }
+      }
+    }
+
+    // ground collision
+    const groundY = GAME_H - 46;
+    if (snail.y > groundY){
+      snail.y = groundY;
+      die(); return;
+    }
+  }
+
+  // ---------- Draw helpers ----------
+  function projY(worldY, z){ return worldY * (FOCAL / (FOCAL + z)); }
+  function projScale(z){ return FOCAL / (FOCAL + z); }
+
+  function drawBackground(){
+    // sky gradient
+    const sky = ctx.createLinearGradient(0,0,0,GAME_H*0.8);
+    sky.addColorStop(0,'#08141f'); sky.addColorStop(0.6,'#0a2a1f'); sky.addColorStop(1,'#0a0a0a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0,0,GAME_W,GAME_H);
+
+    // stars
+    ctx.fillStyle = '#9fe7c4';
+    for (const s of stars){ ctx.globalAlpha = 0.25 + Math.random()*0; ctx.globalAlpha = 0.3; ctx.fillRect(s.x,s.y,s.s,s.s); }
+    ctx.globalAlpha = 1;
+
+    // clouds
+    for (const c of clouds){
+      c.x -= c.sp; if (c.x < -80) c.x = GAME_W + 80;
+      ctx.globalAlpha = 0.10;
+      ctx.fillStyle = '#c8ffe9';
+      for (let i=0;i<3;i++){
+        ctx.beginPath();
+        ctx.arc(c.x + i*26, c.y, 26*c.s, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // distant leaves (parallax layer)
+    ctx.strokeStyle = '#1f7a4d'; ctx.lineWidth = 2;
+    for (const l of leaves){
+      l.x -= l.sp; if (l.x < -20) l.x = GAME_W + 20;
+      ctx.beginPath();
+      ctx.moveTo(l.x, l.y);
+      ctx.lineTo(l.x + l.s, l.y - 10);
+      ctx.stroke();
+    }
+
+    // ground
+    const gy = GAME_H - 46;
+    const grd = ctx.createLinearGradient(0, gy, 0, GAME_H);
+    grd.addColorStop(0,'#123c24'); grd.addColorStop(1,'#07130c');
+    ctx.fillStyle = grd; ctx.fillRect(0, gy, GAME_W, GAME_H - gy);
+    ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(GAME_W, gy); ctx.stroke();
+  }
+
+  function drawGate(g){
+    const sc = projScale(g.z);
+    if (sc < 0.02) return;   // too far, skip
+    const gapY = g.gapY * sc;
+    const gapTop = g.gapY - GATE_GAP/2;
+    const gapBot = g.gapY + GATE_GAP/2;
+    const topY = gapTop * sc;
+    const botY = gapBot * sc;
+    const halfW = GATE_W * sc;
+
+    const x = SNAIL_X;
+
+    // posts (vines)
+    ctx.fillStyle = '#1f6e44';
+    ctx.fillRect(x - halfW, 0, halfW*2, topY);
+    ctx.fillRect(x - halfW, botY, halfW*2, GAME_H - botY);
+
+    // vine texture
+    ctx.strokeStyle = '#2f9c5a'; ctx.lineWidth = 1;
+    for (let yy = topY - 20; yy > 10; yy -= 14){
+      ctx.beginPath();
+      ctx.moveTo(x - halfW + 4, yy);
+      ctx.lineTo(x + halfW - 4, yy + 6);
+      ctx.stroke();
+    }
+    for (let yy = botY + 14; yy < GAME_H; yy += 14){
+      ctx.beginPath();
+      ctx.moveTo(x - halfW + 4, yy);
+      ctx.lineTo(x + halfW - 4, yy + 6);
+      ctx.stroke();
+    }
+
+    // thorn balls at the gap edges (the dangerous part)
+    const thornSc = sc;
+    ctx.fillStyle = '#c9f04c';
+    ctx.beginPath(); ctx.arc(x, topY, THORN_R*thornSc, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, botY, THORN_R*thornSc, 0, Math.PI*2); ctx.fill();
+    // spikes on thorns
+    ctx.strokeStyle = '#7fb02a'; ctx.lineWidth = 1.5;
+    for (let i=0;i<5;i++){
+      const a = i * Math.PI*2/5 + g.wobble;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a)*THORN_R*thornSc, topY + Math.sin(a)*THORN_R*thornSc);
+      ctx.lineTo(x + Math.cos(a+0.3)*(THORN_R+5)*thornSc, topY + Math.sin(a+0.3)*(THORN_R+5)*thornSc);
+      ctx.stroke();
+    }
+  }
+
+  function drawSnail(){
+    const x = SNAIL_X, y = snail.y;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(snail.rot);
+
+    // body
+    ctx.fillStyle = '#e0e0e0';
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 20, 12, 0, 0, Math.PI*2); ctx.fill();
+
+    // head with antennae
+    ctx.fillStyle = '#f5f5f5';
+    ctx.beginPath();
+    ctx.arc(20, 2, 10, 0, Math.PI*2); ctx.fill();
+
+    // eyes
+    ctx.fillStyle = '#062b18';
+    ctx.beginPath(); ctx.arc(24, -2, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(16, -2, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath(); ctx.arc(24, -4, 1.4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(16, -4, 1.4, 0, Math.PI*2); ctx.fill();
+
+    // antennae
+    ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(18, -6); ctx.lineTo(24, -18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, -8); ctx.lineTo(4, -18); ctx.stroke();
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath(); ctx.arc(24, -20, 3.4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(4, -20, 3.4, 0, Math.PI*2); ctx.fill();
+
+    // shell (spiral)
+    ctx.fillStyle = '#3f8f5f';
+    ctx.beginPath();
+    ctx.arc(-16, 8, 18, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1f6e44'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i=0;i<4;i++){
+      const a = i * 1.2;
+      ctx.arc(-16, 8, 18 - i*4, a, a + 1.1);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#8fd6a8';
+    ctx.beginPath(); ctx.arc(-16, 8, 7, 0, Math.PI*2); ctx.fill();
+
+    // wings (flap!)
+    const wf = Math.sin(snail.flapT * 30) * 0.7 + 0.5;
+    ctx.fillStyle = 'rgba(0,255,136,0.85)';
+    ctx.beginPath();
+    ctx.ellipse(-6, -12, 10, 6, -0.5, 0, Math.PI*2 * wf);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(6, -12, 10, 6, 0.5, 0, Math.PI*2 * wf);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawHUD(){
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 26px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(score), GAME_W/2, 56);
+    // depth indicator
+    if (state === 'playing'){
+      const near = gates.filter(g=>g.z>0).sort((a,b)=>a.z-b.z)[0];
+      if (near){
+        ctx.font = '12px "Courier New", monospace';
+        ctx.fillStyle = '#9dffcb';
+        ctx.fillText('GATE ' + (near.z).toFixed(0) + 'm', GAME_W/2, 84);
+      }
+    }
+  }
+
+  // ---------- Main loop (single RAF) ----------
+  let last = 0;
+  function loop(t){
+    requestAnimationFrame(loop);
+    if (state === 'playing') update();
+    drawBackground();
+    // draw gates sorted by depth (far first)
+    const sorted = gates.slice().sort((a,b)=>b.z-a.z);
+    for (const g of sorted) drawGate(g);
+    drawSnail();
+    drawHUD();
+    last = t;
+  }
+  requestAnimationFrame(loop);
+
+  // expose for debugging
+  window._sw = { state: () => state, score: () => score, snail: () => snail.y, gates: () => gates.length };
+})();
+</script>
+</body>
+</html>
