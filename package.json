@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node verify-snail.js"
+    "test": "node verify-snail.js && node verify-flat-earth.js"
   },
   "repository": {
     "type": "git",

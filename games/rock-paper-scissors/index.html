@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rock Paper Scissors ✊✋✌️</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a0a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .game {
+    background: #141414;
+    border: 1px solid #252525;
+    border-radius: 16px;
+    padding: 32px 24px;
+    max-width: 420px;
+    width: 92%;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0,255,136,0.15);
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+    color: #00ff88;
+    text-shadow: 0 0 20px rgba(0,255,136,0.3);
+  }
+  .scoreboard { display: flex; justify-content: space-between; margin-bottom: 22px; }
+  .score-card {
+    background: rgba(0,0,0,0.35);
+    border-radius: 10px;
+    padding: 10px 14px;
+    flex: 1;
+    border: 1px solid #252525;
+  }
+  .score-card:first-child { margin-right: 8px; }
+  .score-card:last-child { margin-left: 8px; }
+  .score-card .label { font-size: .75rem; color: #666; letter-spacing: .12em; }
+  .score-card .num { font-size: 1.7rem; font-weight: 700; color: #00ff88; }
+  .arena {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 18px 0;
+    min-height: 110px;
+  }
+  .hand {
+    width: 84px;
+    height: 84px;
+    background: #1d1d1d;
+    border: 1px solid #333;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.8rem;
+    transition: transform .3s;
+  }
+  .vs { font-size: 1.1rem; font-weight: 700; color: #666; letter-spacing: .2em; }
+  .hand.shake { animation: shake .5s ease; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-8px) rotate(-8deg); }
+    75% { transform: translateX(8px) rotate(8deg); }
+  }
+  .hand.win { animation: winBounce .6s ease; border-color: #00ff88; box-shadow: 0 0 30px rgba(0,255,136,.8); }
+  @keyframes winBounce {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.25); }
+    100% { transform: scale(1); }
+  }
+  .hand.lose { opacity: .35; filter: grayscale(1); }
+  .message { font-size: 1rem; font-weight: 600; margin: 14px 0 8px; min-height: 24px; color: #00ff88; }
+  .choices { display: flex; justify-content: center; gap: 14px; margin-top: 10px; }
+  .choice {
+    background: #1d1d1d;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-size: 2.2rem;
+    cursor: pointer;
+    transition: transform .15s, border-color .2s, background .2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .choice:hover, .choice:active { transform: translateY(-4px) scale(1.1); border-color: #00ff88; background: #242424; }
+  .btn {
+    margin-top: 14px;
+    background: transparent;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: .9rem;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+  .btn:hover { border-color: #00ff88; }
+  .confetti { position: fixed; top: -20px; width: 10px; height: 10px; z-index: 100; }
+</style>
+</head>
+<body>
+<div class="game">
+  <h1>✊ ROCK ✋ PAPER ✌️ SCISSORS</h1>
+  <div class="scoreboard">
+    <div class="score-card"><div class="label">YOU</div><div class="num" id="youScore">0</div></div>
+    <div class="score-card"><div class="label">BOT</div><div class="num" id="botScore">0</div></div>
+  </div>
+  <div class="arena">
+    <div class="hand" id="youHand">❓</div>
+    <div class="vs">VS</div>
+    <div class="hand" id="botHand">❓</div>
+  </div>
+  <div class="message" id="message">Pick your move!</div>
+  <div class="choices">
+    <button class="choice" data-move="rock">✊</button>
+    <button class="choice" data-move="paper">✋</button>
+    <button class="choice" data-move="scissors">✌️</button>
+  </div>
+  <button class="btn" id="reset">RESET SCORES</button>
+</div>
+<script>
+  const emojis = { rock: '✊', paper: '✋', scissors: '✌️' };
+  const youHand = document.getElementById('youHand');
+  const botHand = document.getElementById('botHand');
+  const message = document.getElementById('message');
+  const youScore = document.getElementById('youScore');
+  const botScore = document.getElementById('botScore');
+  const resetBtn = document.getElementById('reset');
+  const choices = document.querySelectorAll('.choice');
+
+  let you = 0, bot = 0;
+
+  function confetti() {
+    const colors = ['#00ff88', '#ff0', '#f0f', '#0ff', '#ff6b6b', '#ffd93d', '#4f77ff'];
+    for (let i = 0; i < 40; i++) {
+      const c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = Math.random() * 100 + 'vw';
+      c.style.background = colors[Math.floor(Math.random() * colors.length)];
+      document.body.appendChild(c);
+      const dur = 1200 + Math.random() * 900;
+      const fall = c.animate([
+        { transform: 'translateY(0) rotate(0)', opacity: 1 },
+        { transform: 'translateY(' + (window.innerHeight + 40) + 'px) rotate(720deg)', opacity: .9 }
+      ], { duration: dur, easing: 'ease-in' });
+      fall.onfinish = () => c.remove();
+    }
+  }
+
+  function play(userMove) {
+    const botMoves = ['rock', 'paper', 'scissors'];
+    const botMove = botMoves[Math.floor(Math.random() * 3)];
+
+    youHand.textContent = emojis[userMove];
+    botHand.textContent = emojis[botMove];
+    youHand.classList.add('shake');
+    botHand.classList.add('shake');
+
+    setTimeout(() => {
+      youHand.classList.remove('shake');
+      botHand.classList.remove('shake');
+
+      let outcome;
+      if (userMove === botMove) {
+        outcome = 'draw';
+        message.textContent = '🤝 It\'s a tie!';
+      } else if (
+        (userMove === 'rock' && botMove === 'scissors') ||
+        (userMove === 'paper' && botMove === 'rock') ||
+        (userMove === 'scissors' && botMove === 'paper')
+      ) {
+        outcome = 'win';
+        you++; youScore.textContent = you;
+        message.textContent = '🎉 You win!';
+        youHand.classList.add('win');
+        botHand.classList.add('lose');
+        confetti();
+      } else {
+        outcome = 'lose';
+        bot++; botScore.textContent = bot;
+        message.textContent = '😅 Bot wins!';
+        botHand.classList.add('win');
+        youHand.classList.add('lose');
+      }
+
+      setTimeout(() => {
+        youHand.classList.remove('win', 'lose');
+        botHand.classList.remove('win', 'lose');
+      }, 700);
+    }, 500);
+  }
+
+  choices.forEach(btn => {
+    btn.addEventListener('click', () => play(btn.dataset.move));
+  });
+
+  resetBtn.addEventListener('click', () => {
+    you = 0; bot = 0;
+    youScore.textContent = '0'; botScore.textContent = '0';
+    youHand.textContent = '❓'; botHand.textContent = '❓';
+    message.textContent = 'Pick your move!';
+  });
+</script>
+</body>
+</html>
