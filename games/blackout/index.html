@@ -117,11 +117,19 @@ function buildMap(){
   for (let i=1;i<rooms.length;i++){
     const a=rooms[i-1], b=rooms[i];
     const cx = Math.floor((a.x+a.w+b.x+b.w)/2), cy = Math.floor((a.y+a.h+b.y+b.h)/2);
-    carveH(Math.floor((a.x+a.w)/2), Math.floor((b.x+b.w)/2), cy);
-    carveV(cx, Math.floor((a.y+a.h)/2), Math.floor((b.y+b.h)/2));
+    carveH(Math.floor((a.x+a.w)/2), Math.floor((b.x+b.w)/2), clamp(cy,0,GH-1));
+    carveV(clamp(cx,0,GW-1), Math.floor((a.y+a.h)/2), Math.floor((b.y+b.h)/2));
   }
-  function carveH(c1,c2,row){ const a=Math.min(c1,c2), b=Math.max(c1,c2); for(let c=a;c<=b;c++) grid[row][c]=0; }
-  function carveV(r1,r2,col){ const a=Math.min(r1,r2), b=Math.max(r1,r2); for(let r=a;r<=b;r++) grid[r][col]=0; }
+  function carveH(c1,c2,row){
+    if (row<0||row>=GH) return;
+    const a=clamp(Math.min(c1,c2),0,GW-1), b=clamp(Math.max(c1,c2),0,GW-1);
+    for(let c=a;c<=b;c++) grid[row][c]=0;
+  }
+  function carveV(r1,r2,col){
+    if (col<0||col>=GW) return;
+    const a=clamp(Math.min(r1,r2),0,GH-1), b=clamp(Math.max(r1,r2),0,GH-1);
+    for(let r=a;r<=b;r++) grid[r][col]=0;
+  }
 }
 function cellAt(x,y){
   const cx = Math.floor((x-ox)/tile), cy = Math.floor((y-oy)/tile);
