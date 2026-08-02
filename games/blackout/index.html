@@ -277,7 +277,7 @@ function draw(){
   }
 
   const b = state.breaker;
-  const showB = b.found || (state.candlesCount||0) >= state.need;
+  const showB = b && (b.found || (state.candlesCount||0) >= state.need);
   if (showB){
     const glow = ctx.createRadialGradient(b.x,b.y,4,b.x,b.y,60);
     glow.addColorStop(0,'rgba(126,224,255,.95)'); glow.addColorStop(1,'rgba(126,224,255,0)');
