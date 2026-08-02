@@ -543,6 +543,7 @@ function punchCone(c,x,y,ang,spread,reach,fill){
 let darkCv = null;
 
 /* ---------- LOOP ---------- */
+buildMap(); // build once so draw() has a valid map before START
 let last = performance.now();
 function loop(now){
   const dt = Math.min(0.05, (now-last)/1000); last = now;
