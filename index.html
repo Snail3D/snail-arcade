@@ -72,6 +72,12 @@
     justify-content: center;
     font-size: 3em;
   }
+  .game-thumb svg {
+    width: 64px;
+    height: 64px;
+    color: #00ff88;
+    filter: drop-shadow(0 0 8px rgba(0,255,136,.35));
+  }
   .game-info {
     padding: 16px;
   }
@@ -110,6 +116,7 @@
   <div class="empty-state" id="empty" style="display:none;">
     <p>No games yet. Tell your AI to make one.</p>
   </div>
+  <script src="icons.js"></script>
   <script>
     // Game registry — add entries here when new games are created
     const GAMES = [
@@ -227,7 +234,7 @@
 
         const thumb = document.createElement('div');
         thumb.className = 'game-thumb';
-        thumb.textContent = g.emoji || '\u{1F3AE}';
+        thumb.innerHTML = gameIcon(g.slug);
 
         const info = document.createElement('div');
         info.className = 'game-info';
