@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Dodge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0b0f1a;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: 'Segoe UI', system-ui, sans-serif; color: #e8ecff;
+    overflow: hidden;
+  }
+  h1 { font-size: 1.6rem; letter-spacing: 4px; color: #7df; text-shadow: 0 0 12px #4af; margin-bottom: 8px; }
+  #hud { display: flex; gap: 24px; font-size: 1.1rem; margin-bottom: 12px; }
+  #hud span b { color: #ffd75e; }
+  canvas {
+    background: #10162b;
+    border: 2px solid #3a4a7a;
+    border-radius: 10px;
+    box-shadow: 0 0 30px rgba(80,120,255,.25);
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; text-align: center;
+    background: rgba(8,10,20,.75); border-radius: 10px; color: #e8ecff;
+  }
+  #overlay h2 { font-size: 2rem; color: #ff6b8a; text-shadow: 0 0 16px #f36; }
+  #overlay p { max-width: 420px; line-height: 1.6; color: #b9c4e8; }
+  #overlay button {
+    background: #4af; color: #0b0f1a; border: none; padding: 12px 28px;
+    font-size: 1.1rem; font-weight: 700; border-radius: 8px; cursor: pointer;
+    box-shadow: 0 0 18px rgba(80,120,255,.6); transition: transform .1s;
+  }
+  #overlay button:hover { transform: scale(1.05); }
+  .wrap { position: relative; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <h1>NEON DODGE</h1>
+  <div id="hud">
+    <span>Score: <b id="score">0</b></span>
+    <span>Best: <b id="best">0</b></span>
+    <span>Speed: <b id="speed">1.0x</b></span>
+  </div>
+  <div class="wrap">
+    <canvas id="game" width="480" height="640"></canvas>
+    <div id="overlay">
+      <h2 id="ovTitle">Ready?</h2>
+      <p id="ovText">Move with <b>WASD / Arrow keys</b> or <b>drag / touch</b>.<br>
+      Dodge the red blocks, grab the gold gems. Survive as long as you can!</p>
+      <button id="startBtn">START</button>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const speedEl = document.getElementById('speed');
+const overlay = document.getElementById('overlay');
+const ovTitle = document.getElementById('ovTitle');
+const ovText = document.getElementById('ovText');
+const startBtn = document.getElementById('startBtn');
+
+// Player
+const player = { x: W/2, y: H - 60, r: 16 };
+const PLAYER_SPEED = 5.5;
+
+let state = 'menu'; // menu | playing | over
+let score = 0, best = 0, frame = 0;
+let spawnTimer = 0, speedMult = 1;
+let obstacles = [], gems = [];
+
+// Input
+const keys = {};
+let touchX = null, touchY = null;
+window.addEventListener('keydown', e => { keys[e.code] = true; });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  touchX = t.clientX - canvas.getBoundingClientRect().left;
+  touchY = t.clientY - canvas.getBoundingClientRect().top;
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  const t = e.touches[0];
+  touchX = t.clientX - canvas.getBoundingClientRect().left;
+  touchY = t.clientY - canvas.getBoundingClientRect().top;
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchX = null; touchY = null; });
+
+function reset() {
+  score = 0; frame = 0; spawnTimer = 0; speedMult = 1;
+  obstacles = []; gems = [];
+  player.x = W/2; player.y = H - 60;
+  updateHUD();
+}
+
+function updateHUD() {
+  scoreEl.textContent = score;
+  bestEl.textContent = best;
+  speedEl.textContent = speedMult.toFixed(1) + 'x';
+}
+
+function spawnObstacle() {
+  const size = 18 + Math.random() * 22;
+  obstacles.push({
+    x: size/2 + Math.random() * (W - size),
+    y: -size,
+    size,
+    vy: 3 + Math.random() * 3 + speedMult * 1.5,
+    hue: 0 // red-ish
+  });
+}
+
+function spawnGem() {
+  const size = 14;
+  gems.push({
+    x: size/2 + Math.random() * (W - size),
+    y: -size,
+    size,
+    vy: 2.5 + speedMult,
+  });
+}
+
+function start() {
+  reset();
+  state = 'playing';
+  overlay.classList.add('hidden');
+}
+
+function gameOver() {
+  state = 'over';
+  if (score > best) best = score;
+  updateHUD();
+  ovTitle.textContent = 'GAME OVER';
+  ovText.textContent = 'You scored ' + score + ' points. Best: ' + best + '. Try again!';
+  startBtn.textContent = 'RETRY';
+  overlay.classList.remove('hidden');
+}
+
+function update() {
+  if (state !== 'playing') return;
+
+  // Player movement
+  let dx = 0, dy = 0;
+  if (keys['ArrowLeft'] || keys['KeyA']) dx -= 1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+  if (keys['ArrowUp'] || keys['KeyW']) dy -= 1;
+  if (keys['ArrowDown'] || keys['KeyS']) dy += 1;
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    player.x += dx/len * PLAYER_SPEED;
+    player.y += dy/len * PLAYER_SPEED;
+  } else if (touchX !== null) {
+    // ease toward touch point
+    player.x += (touchX - player.x) * 0.15;
+    player.y += (touchY - player.y) * 0.15;
+  }
+  player.x = Math.max(player.r, Math.min(W - player.r, player.x));
+  player.y = Math.max(player.r, Math.min(H - player.r, player.y));
+
+  // Speed ramp
+  speedMult = 1 + score / 60;
+  updateHUD();
+
+  // Spawning
+  spawnTimer--;
+  if (spawnTimer <= 0) {
+    spawnObstacle();
+    if (Math.random() < 0.35) spawnGem();
+    spawnTimer = Math.max(8, 30 - speedMult * 6);
+  }
+
+  // Move & collide
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.y += o.vy;
+    if (o.y > H + o.size) { obstacles.splice(i, 1); continue; }
+    // collision with player
+    const dxp = player.x - o.x, dyp = player.y - o.y;
+    if (Math.hypot(dxp, dyp) < player.r + o.size/2) {
+      gameOver();
+      return;
+    }
+  }
+
+  for (let i = gems.length - 1; i >= 0; i--) {
+    const g = gems[i];
+    g.y += g.vy;
+    if (g.y > H + g.size) { gems.splice(i, 1); continue; }
+    const dxp = player.x - g.x, dyp = player.y - g.y;
+    if (Math.hypot(dxp, dyp) < player.r + g.size/2) {
+      gems.splice(i, 1);
+      score += 5;
+      updateHUD();
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // subtle grid
+  ctx.strokeStyle = 'rgba(90,120,200,.08)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // gems
+  for (const g of gems) {
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(Math.sin(frame/20 + g.x) * 0.4);
+    ctx.fillStyle = '#ffd75e';
+    ctx.shadowColor = '#ffd75e'; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(0, -g.size/2); ctx.lineTo(g.size/2, 0); ctx.lineTo(0, g.size/2); ctx.lineTo(-g.size/2, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // obstacles
+  for (const o of obstacles) {
+    ctx.fillStyle = '#ff4d6b';
+    ctx.shadowColor = '#ff4d6b'; ctx.shadowBlur = 14;
+    ctx.fillRect(o.x - o.size/2, o.y - o.size/2, o.size, o.size);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,.25)';
+    ctx.fillRect(o.x - o.size/2 + 3, o.y - o.size/2 + 3, o.size - 6, 4);
+  }
+
+  // player
+  ctx.shadowColor = '#4af'; ctx.shadowBlur = 18;
+  ctx.fillStyle = '#4af';
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0b0f1a';
+  ctx.beginPath(); ctx.arc(player.x - 4, player.y - 4, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(player.x + 4, player.y - 4, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#4af';
+  ctx.fillRect(player.x - 6, player.y + 4, 12, 4);
+
+  frame++;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+startBtn.addEventListener('click', start);
+loop();
+</script>
+</body>
+</html>
