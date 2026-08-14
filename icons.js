@@ -140,6 +140,8 @@ const GAME_ICONS = {
 
   "elpaso-shooter": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11c0-4 3-6 6-6s6 2 6 6"/><path d="M4 11h16"/><path d="M12 11v3"/><path d="M9 17h6"/></svg>`,
 
+  "elpaso-runway": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="17" cy="7" r="3.2"/><path d="M13.8 7h6.4M14.6 9h4.8"/><path d="M9 20L12 8l3 12"/><path d="M6 20l3-6M18 20l-3-6"/></svg>`,
+
   "minesweeper-nt-mobile": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 4v2M12 18v2M4 12h2M18 12h2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M6 18l1.5-1.5"/></svg>`,
 
   "nonogram": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 4v16M12 4v16M16 4v16M4 8h16M4 12h16M4 16h16"/></svg>`,
