@@ -216,8 +216,34 @@ const ctx = canvas.getContext('2d');
 const minimap = document.getElementById('minimap');
 const miniCtx = minimap.getContext('2d');
 
+// ── sound (WebAudio, lazy-created on first gesture) ──
+let actx = null;
+function tone(f, at, dur, type, vol) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = f;
+    const t0 = actx.currentTime + at;
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch (e) {}
+}
+const sfx = {
+  hit()   { tone(180, 0, .07, 'square', .06); },
+  hurt()  { tone(120, 0, .12, 'sawtooth', .08); },
+  kill()  { tone(320, 0, .14, 'triangle', .09); tone(220, .06, .14, 'triangle', .07); },
+  gold()  { tone(880, 0, .06, 'sine', .05); tone(1320, .05, .08, 'sine', .04); },
+  level() { [523, 659, 784].forEach((f, i) => tone(f, i * .1, .2, 'triangle', .1)); },
+  death() { [392, 311, 261, 196].forEach((f, i) => tone(f, i * .18, .3, 'sawtooth', .09)); },
+  win()   { [523, 659, 784, 1046].forEach((f, i) => tone(f, i * .13, .28, 'triangle', .12)); },
+};
+
 let W, H, TILE, COLS, ROWS;
 let map, px, py, hp, maxHp, atk, level, xp, xpNext, gold, floor, gameRunning;
+let enemyHp = []; // per-tile current HP (parallel to map) — avoids mutating shared ENEMY_DATA
 let messages = [], turnCount = 0, totalKills = 0, itemsFound = 0;
 let playerClass;
 let inventory = []; // 5 slots: weapon / armor / ring1 / ring2 / scroll
@@ -321,10 +347,13 @@ function startGame(cls) {
 
 function generateFloor() {
   map = [];
+  enemyHp = [];
   for (let y = 0; y < ROWS; y++) {
     map[y] = [];
+    enemyHp[y] = [];
     for (let x = 0; x < COLS; x++) {
       map[y][x] = TILES.WALL;
+      enemyHp[y][x] = 0;
     }
   }
   // rooms
@@ -379,7 +408,7 @@ function generateFloor() {
         // enemy
         const tier = Math.min(2 + Math.floor(floor / 3), 5);
         const pool = pickEnemyPool(tier);
-        map[iy][ix] = pool[Math.floor(Math.random() * pool.length)];
+        placeEnemy(ix, iy, pool[Math.floor(Math.random() * pool.length)]);
       } else if (roll < 0.7) {
         map[iy][ix] = Math.random() < 0.5 ? TILES.POTION : TILES.GOLD_PILE;
       } else if (roll < 0.85) {
@@ -392,15 +421,15 @@ function generateFloor() {
       }
     }
   });
-  // add boss on stairs floor
+  // add boss on stairs floor (guards around the player start)
   if (floor % 5 === 0) {
-    map[py][px+1] = TILES.DRAGON;
-    map[py][px-1] = TILES.KNIGHT;
-    map[py+1][px] = TILES.MAGE;
-    map[py-1][px] = TILES.WRAITH;
+    placeEnemy(px+1, py, TILES.DRAGON);
+    placeEnemy(px-1, py, TILES.KNIGHT);
+    placeEnemy(px, py+1, TILES.MAGE);
+    placeEnemy(px, py-1, TILES.WRAITH);
   }
-  // center first room has starting potion
-  map[py+1][px] = TILES.POTION;
+  // center first room has starting potion (only if that tile is free)
+  if (map[py+1] && map[py+1][px] === TILES.FLOOR) map[py+1][px] = TILES.POTION;
   // mark seen
   seenMap = [];
   for (let y = 0; y < ROWS; y++) {
@@ -419,6 +448,13 @@ function pickEnemyPool(tier) {
   if (tier === 3) return [TILES.ORC, TILES.SKELETON, TILES.SPIDER, TILES.WRAITH];
   if (tier === 4) return [TILES.KNIGHT, TILES.MAGE, TILES.OOZE, TILES.WRAITH];
   return [TILES.KNIGHT, TILES.MAGE, TILES.DRAGON];
+}
+
+function placeEnemy(x, y, tile) {
+  if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+  if (map[y][x] !== TILES.FLOOR && map[y][x] !== TILES.STAIRS) return;
+  map[y][x] = tile;
+  enemyHp[y][x] = ENEMY_DATA[tile].hp; // fresh HP per instance
 }
 
 function revealAround(x, y) {
@@ -608,26 +644,32 @@ function attackEnemy(ex, ey) {
   const tile = map[ey][ex];
   const data = ENEMY_DATA[tile];
   if (!data) return;
+  let curHp = (enemyHp[ey] && enemyHp[ey][ex]) || data.hp;
   const dmg = atk + Math.floor(Math.random() * 2);
-  data.hp -= dmg;
+  curHp -= dmg;
+  sfx.hit();
   showFloater(`-${dmg}`, 'dmg', ex, ey);
   log(`You hit ${data.name} for ${dmg}`, 'dmg');
-  if (data.hp <= 0) {
+  if (curHp <= 0) {
+    sfx.kill();
     log(`${data.name} dies! (+${data.xp} XP)`, 'info');
     xp += data.xp;
     const [gmin, gmax] = data.gold;
     if (gmax > 0) {
       const g = gmin + Math.floor(Math.random() * (gmax - gmin));
-      if (g > 0) { gold += g; log(`+${g} gold`, 'gold'); }
+      if (g > 0) { gold += g; sfx.gold(); log(`+${g} gold`, 'gold'); }
     }
     totalKills++;
     map[ey][ex] = TILES.FLOOR;
+    if (enemyHp[ey]) enemyHp[ey][ex] = 0;
     checkLevelUp();
   } else {
+    if (enemyHp[ey]) enemyHp[ey][ex] = curHp; // store per-instance HP (never touch shared template)
     // enemy hits back (only if not dragon field)
     let eDmg = data.atk - ((inventory[1] ? inventory[1].def : 0) + (inventory[2] && inventory[2].def ? inventory[2].def : 0) + (inventory[3] && inventory[3].def ? inventory[3].def : 0));
     if (eDmg < 1) eDmg = 1;
     hp -= eDmg;
+    sfx.hurt();
     showFloater(`-${eDmg}`, 'dmg', px, py);
     log(`${data.name} hits you for ${eDmg}`, 'dmg');
   }
@@ -647,6 +689,7 @@ function checkLevelUp() {
 }
 
 function showLevelup() {
+  sfx.level();
   // pause combat
   const choices = document.getElementById('levelupChoices');
   const opts = [
@@ -720,6 +763,7 @@ function descend() {
 
 function playerDeath() {
   gameRunning = false;
+  sfx.death();
   document.getElementById('goFloor').textContent = floor;
   document.getElementById('goLvl').textContent = level;
   document.getElementById('goGold').textContent = gold;
@@ -730,6 +774,7 @@ function playerDeath() {
 
 function showWin() {
   gameRunning = false;
+  sfx.win();
   document.getElementById('winHp').textContent = hp;
   document.getElementById('winLvl').textContent = level;
   document.getElementById('winGold').textContent = gold;

@@ -26,6 +26,7 @@
   <div id="start" class="overlay">
     <h1>FARMING SIM</h1>
     <p>Plant, water, harvest, sell</p>
+    <p style="font-size:.8em">⌨️ Arrows/WASD move · Enter acts · 1-4 tools</p>
     <div class="hs" id="hs-start">🏆 Total Gold: 0</div>
     <button class="btn" onclick="startGame()">▶ START FARM</button>
   </div>
@@ -39,6 +40,31 @@
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
     let W, H, ROWS=6, COLS=6, CELL, plots, gold, day, waterCan, hoeLvl, gameRunning, selectedTool, mode;
+    let curX = 0, curY = 0; // keyboard cursor
+
+    // ── sound (WebAudio, lazy-created on first gesture) ──
+    let actx = null;
+    function tone(f, at, dur, type, vol) {
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        const t0 = actx.currentTime + at;
+        g.gain.setValueAtTime(vol, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g); g.connect(actx.destination);
+        o.start(t0); o.stop(t0 + dur + 0.05);
+      } catch (e) {}
+    }
+    const sfx = {
+      plant()   { tone(300, 0, .08, 'sine', .07); },
+      water()   { tone(600, 0, .1, 'sine', .05); tone(800, .06, .1, 'sine', .04); },
+      harvest() { tone(523, 0, .1, 'triangle', .09); tone(784, .08, .12, 'triangle', .08); },
+      upgrade() { tone(440, 0, .12, 'square', .06); },
+      day()     { tone(392, 0, .15, 'triangle', .06); },
+      fail()    { tone(140, 0, .15, 'sawtooth', .06); },
+    };
     const CROPS = [
       {name:'Corn', seedCost:5, growTime:3, sellPrice:15, color:'#ffcc44'},
       {name:'Tomato', seedCost:8, growTime:4, sellPrice:25, color:'#ff4444'},
@@ -79,6 +105,7 @@
 
     function newDay() {
       day++;
+      sfx.day();
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           const p = plots[y][x];
@@ -86,8 +113,8 @@
             p.growth++;
             if (p.growth >= p.crop.growTime) p.ready = true;
           }
-          if (p.crop && !p.watered && p.growth > 0) {
-            // Wither if not watered
+          if (p.crop && !p.watered && p.growth > 0 && !p.ready) {
+            // Wither if not watered (ready crops are safe until harvested)
             p.crop = null;
             p.watered = false;
             p.growth = 0;
@@ -107,18 +134,20 @@
       const p = plots[y][x];
       if (mode === 'plant') {
         const crop = CROPS[selectedTool];
-        if (gold < crop.seedCost) return;
+        if (gold < crop.seedCost) { sfx.fail(); return; }
         if (p.crop) return;
         gold -= crop.seedCost;
         p.crop = crop;
         p.growth = 0;
         p.ready = false;
         p.watered = false;
+        sfx.plant();
       } else if (mode === 'water') {
-        if (waterCan <= 0) return;
+        if (waterCan <= 0) { sfx.fail(); return; }
         if (!p.crop) return;
         p.watered = true;
         waterCan--;
+        sfx.water();
       } else if (mode === 'harvest') {
         if (!p.ready) return;
         gold += p.crop.sellPrice;
@@ -126,10 +155,12 @@
         p.growth = 0;
         p.ready = false;
         p.watered = false;
+        sfx.harvest();
       } else if (mode === 'upgrade') {
-        if (gold < 30) return;
+        if (gold < 30) { sfx.fail(); return; }
         gold -= 30;
         waterCan++;
+        sfx.upgrade();
       }
     }
 
@@ -150,6 +181,14 @@
           ctx.fillRect(px, py, CELL, CELL);
           ctx.strokeStyle = '#252525';
           ctx.strokeRect(px, py, CELL, CELL);
+
+          // Keyboard cursor highlight
+          if (x === curX && y === curY) {
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2);
+            ctx.lineWidth = 1;
+          }
 
           if (p.crop) {
             // Crop color
@@ -282,6 +321,21 @@
       const gx = Math.floor((x - ox) / CELL);
       const gy = Math.floor((y - oy) / CELL);
       if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) interact(gx, gy);
+    });
+
+    // Keyboard: arrows/WASD move cursor, Enter acts, 1-4 switch mode
+    document.addEventListener('keydown', (e) => {
+      if (!gameRunning) return;
+      const k = e.key.toLowerCase();
+      if (k === 'arrowup' || k === 'w') { e.preventDefault(); curY = Math.max(0, curY - 1); }
+      else if (k === 'arrowdown' || k === 's') { e.preventDefault(); curY = Math.min(ROWS - 1, curY + 1); }
+      else if (k === 'arrowleft' || k === 'a') { e.preventDefault(); curX = Math.max(0, curX - 1); }
+      else if (k === 'arrowright' || k === 'd') { e.preventDefault(); curX = Math.min(COLS - 1, curX + 1); }
+      else if (k === 'enter' || k === ' ') { e.preventDefault(); interact(curX, curY); }
+      else if (k === '1') mode = 'plant';
+      else if (k === '2') mode = 'water';
+      else if (k === '3') mode = 'harvest';
+      else if (k === '4') { mode = 'upgrade'; newDay(); }
     });
 
     function loop() {
