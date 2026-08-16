@@ -276,6 +276,7 @@
       <p>Build your deck. Battle 8 floors of enemies. Defeat the Boss.</p>
       <p style="margin-top:8px;">Each turn: play cards from your hand, then end your turn.
       Enemies have intents (⚔️ attack, 🛡️ block, ✨ buff, 💀 special).</p>
+      <p style="margin-top:8px;">⌨️ <span class="stat">1-9</span> play card · <span class="stat">E/Enter</span> end turn</p>
       <p style="margin-top:8px;">🎴 <span class="stat">25+ unique cards</span> · 8 enemy types · 3 bosses · 8 relics</p>
       <div class="card-grid" id="starterCards"></div>
       <p style="text-align:center; margin-top: 12px;">Choose your starting relic:</p>
@@ -384,6 +385,8 @@ const CARD_DEFS = {
   Offering:      {type:'special',cost:0, value:0,  desc:'Lose 6 HP. Draw 3 cards. Exhaust.'},
   Exhume:        {type:'special',cost:1, value:0,  desc:'Put a card from discard into hand. Exhaust.'},
   UpgradeAll:    {type:'special',cost:0, value:0,  desc:'Upgrade ALL cards in deck. Exhaust.'},
+  Wound:         {type:'special',cost:0, value:0,  desc:'Gain 1 Strength when drawn. Exhaust.'},
+  Burn:          {type:'special',cost:0, value:0,  desc:'Lose 2 HP when drawn. Exhaust.'},
 };
 
 const RELIC_DEFS = {
@@ -422,6 +425,32 @@ const RELIC_ORDER = ['BurningBlood','FrozenCore','Anchor','BagOfMarbles','Vexing
 const STARTER_RELICS = ['BurningBlood','VexingVajra','FrozenCore'];
 
 let state = {};
+
+// ── sound (WebAudio, lazy-created on first gesture) ──
+let actx = null;
+function tone(f, at, dur, type, vol) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = f;
+    const t0 = actx.currentTime + at;
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch (e) {}
+}
+const sfx = {
+  attack() { tone(200, 0, .1, 'square', .07); tone(140, .05, .12, 'sawtooth', .06); },
+  block()  { tone(320, 0, .12, 'sine', .07); },
+  heal()   { tone(523, 0, .14, 'triangle', .08); tone(659, .08, .14, 'triangle', .07); },
+  power()  { tone(660, 0, .18, 'triangle', .07); },
+  special(){ tone(440, 0, .12, 'square', .06); },
+  hurt()   { tone(120, 0, .14, 'sawtooth', .09); },
+  win()    { [523, 659, 784, 1046].forEach((f, i) => tone(f, i * .12, .25, 'triangle', .1)); },
+  lose()   { [392, 311, 261].forEach((f, i) => tone(f, i * .18, .3, 'sawtooth', .09)); },
+};
 
 function newGame(relic) {
   state = {
@@ -468,7 +497,11 @@ function draw(n) {
   for (let i = 0; i < n; i++) {
     if (state.drawPile.length === 0) reshuffle();
     if (state.drawPile.length === 0) break;
-    state.hand.push(state.drawPile.shift());
+    const c = state.drawPile.shift();
+    // Wound / Burn: trigger on draw, then exhaust (never playable)
+    if (c.name === 'Wound') { state.playerStatus.strength = (state.playerStatus.strength || 0) + 1; toast('Wound: +1 Strength', '#ff9800'); continue; }
+    if (c.name === 'Burn') { state.hp -= 2; toast('Burn: -2 HP', '#ff5252'); if (state.hp <= 0) { playerDeath(); return; } continue; }
+    state.hand.push(c);
   }
   renderHand();
 }
@@ -515,6 +548,18 @@ function startTurn() {
     damagePlayer(state.playerStatus.poison);
     state.playerStatus.poison--;
   }
+  // power cards take effect at turn start
+  if (state.playerStatus.ritual > 0) { state.playerStatus.strength = (state.playerStatus.strength || 0) + 1; toast('Ritual: +1 Strength', '#b388ff'); }
+  if (state.playerStatus.regen > 0) { state.hp = Math.min(state.maxHp, state.hp + 2); state.playerStatus.regen--; }
+  // stun: lose this turn (skip energy + draw)
+  if (state.stunned) {
+    state.stunned = false;
+    toast('You are stunned — turn skipped!', '#ff9800');
+    state.energy = 0;
+    updateHUD();
+    doEnemyTurn();
+    return;
+  }
   updateHUD();
   renderHand();
 }
@@ -524,7 +569,16 @@ function endTurn() {
   const played = state.hand.filter(c => c.played);
   state.discard.push(...state.hand.filter(c => !c.played));
   state.hand = [];
-  state.block = 0; // lose block
+  // Combust: at end of turn, lose 1 HP and deal 5 dmg to enemy
+  if (state.playerStatus.combust) {
+    state.hp -= 1;
+    applyDamage(5);
+    toast('Combust: -1 HP, 5 dmg', '#ff9800');
+    if (state.hp <= 0) { playerDeath(); return; }
+    if (state.enemy && state.enemy.hp <= 0) { setTimeout(() => victoryReward(), 600); return; }
+  }
+  // Barricade: block is not lost at start of turn
+  if (!state.barricade) state.block = 0; // lose block unless Barricade
   document.getElementById('endTurnBtn').disabled = true;
   // enemy turn
   doEnemyTurn();
@@ -538,9 +592,12 @@ function doEnemyTurn() {
   state.enemy.statusIcon = intent;
   // describe
   if (intent === 'attack') {
-    const dmg = Math.max(0, state.enemy.atk + (state.enemyStatus.strength || 0) - 1);
+    const weakMod = (state.enemyStatus.weak || 0) > 0 ? 0.75 : 1;
+    const dmg = Math.max(0, Math.floor((state.enemy.atk + (state.enemyStatus.strength || 0) - 1) * weakMod));
     dealDamageToPlayer(dmg);
     toast(`${state.enemy.name} attacks for ${dmg}!`, '#ff5252');
+    // FlameBarrier: deal 4 dmg back when attacked
+    if (state.playerStatus.flameBarrier && state.enemy) { applyDamage(4); toast('Flame Barrier: 4 dmg back', '#ff9800'); }
   } else if (intent === 'block') {
     state.enemyBlock += tier.block;
     toast(`${state.enemy.name} defends with ${tier.block} block.`, '#00d4ff');
@@ -573,6 +630,7 @@ function doEnemyTurn() {
     state.enemy.hp = Math.min(state.enemy.maxHp, state.enemy.hp + 30);
   }
   state.firstFree = false;
+  if (state.enemyStatus.weak > 0) state.enemyStatus.weak--; // weak ticks down each turn
   if (state.hp <= 0) {
     playerDeath();
     return;
@@ -597,12 +655,14 @@ function dealDamageToPlayer(raw) {
   }
   state.hp -= dmg;
   state.damageTaken = (state.damageTaken || 0) + dmg;
+  if (dmg > 0) sfx.hurt();
   shakeEl();
 }
 
 function damagePlayer(raw) {
   state.hp -= raw;
   shakeEl();
+  if (state.hp <= 0) { playerDeath(); }
 }
 
 function applyStatus(target, kind, stacks) {
@@ -617,6 +677,7 @@ function shakeEl() {
 }
 
 function playerDeath() {
+  sfx.lose();
   document.getElementById('goEnemy').textContent = state.enemy.name;
   document.getElementById('goFloor').textContent = state.floor;
   document.getElementById('goHp').textContent = state.hp;
@@ -647,6 +708,7 @@ function playCard(idx) {
   const upgrade = state.upgrades && state.upgrades[card.name];
 
   if (def.type === 'attack') {
+    sfx.attack();
     const baseV = def.value + STR * (def.name === 'HeavyBlade' ? 3 : 1);
     let dmg = Math.floor(baseV * WEAK * VULN);
     // Pen Nib
@@ -662,17 +724,20 @@ function playCard(idx) {
     toast(`${card.name}: ${dmg} dmg`, '#ff5252');
     state.damageDealt += dmg;
   } else if (def.type === 'block') {
+    sfx.block();
     let blockVal = def.value;
     if (def.name === 'Entrench') blockVal = state.block;
     state.block += blockVal;
     toast(`${card.name}: +${blockVal} block`, '#00d4ff');
   } else if (def.type === 'heal') {
+    sfx.heal();
     const healVal = def.value;
     state.hp = Math.min(state.maxHp, state.hp + healVal);
     toast(`${card.name}: +${healVal} HP`, '#00ff88');
     if (def.name === 'Regen') state.playerStatus.regen = (state.playerStatus.regen || 0) + 2;
     if (def.name === 'Rejuvenate') draw(1);
   } else if (def.type === 'power') {
+    sfx.power();
     if (def.name === 'Barricade') state.barricade = true;
     if (def.name === 'Ritual') state.playerStatus.ritual = (state.playerStatus.ritual || 0) + 1;
     if (def.name === 'Berserk') state.energy++;
@@ -686,6 +751,7 @@ function playCard(idx) {
     if (def.name === 'Corruption') state.playerStatus.corruption = true;
     toast(`${card.name}: POWER`, '#b388ff');
   } else if (def.type === 'special') {
+    sfx.special();
     if (def.name === 'Reaper') {
       for (let i = 0; i < 4; i++) applyDamage(4);
       toast(`Reaper strikes!`, '#b388ff');
@@ -993,6 +1059,7 @@ function restUpgrade() {
 }
 
 function showWin() {
+  sfx.win();
   document.getElementById('winHp').textContent = state.hp;
   document.getElementById('winDeck').textContent = state.deck.length;
   document.getElementById('winOverlay').classList.add('active');
@@ -1049,6 +1116,19 @@ function toast(text, color) {
   document.getElementById('wrap').appendChild(t);
   setTimeout(() => t.remove(), 1200);
 }
+
+// Keyboard: 1-9 play a card, E/Enter ends turn (combat only)
+document.addEventListener('keydown', (e) => {
+  if (!state.inCombat || state.hp <= 0) return;
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '9') {
+    const idx = parseInt(k, 10) - 1;
+    if (idx < state.hand.length && !state.hand[idx].played) { e.preventDefault(); playCard(idx); }
+  } else if (k === 'e' || k === 'enter') {
+    e.preventDefault();
+    if (!document.getElementById('endTurnBtn').disabled) endTurn();
+  }
+});
 
 showStart();
 </script>
