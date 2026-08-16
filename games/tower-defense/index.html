@@ -217,6 +217,15 @@
       </div>
     </div>
   </div>
+  <div class="overlay" id="pauseOverlay">
+    <div class="panel">
+      <h1>⏸ PAUSED</h1>
+      <p>The invaders are frozen in time.</p>
+      <div style="text-align:center; margin-top:14px;">
+        <button class="btn" onclick="togglePause()">▶ RESUME</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script>
 const canvas = document.getElementById('c');
@@ -227,6 +236,7 @@ let grid, path, towers, enemies, projectiles, particles, gold, lives, score, wav
 let spawnQueue, spawnTimer, waveCount, totalKills, totalTowers;
 let selectedTower = 'arrow', upgradeTarget = null;
 let enemiesKilledByTower = {}; // track kill counts for tower stat
+let loopRunning = false;       // guard against duplicate rAF loops on retry
 
 const PATH_SET = new Set();
 
@@ -306,8 +316,35 @@ function startGame() {
   updateShopUI();
   updateHUD();
   draw();
-  loop();
+  if (!loopRunning) { loopRunning = true; loop(); } // never stack a second rAF loop
 }
+
+// ── sound (WebAudio, lazy-created on first gesture) ──
+let actx = null;
+function tone(f, at, dur, type, vol) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = f;
+    const t0 = actx.currentTime + at;
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch (e) {}
+}
+const sfx = {
+  shoot(type) {
+    const f = { arrow: 520, cannon: 180, magic: 700, ice: 900, poison: 300, lightning: 1200 }[type] || 500;
+    tone(f, 0, .06, type === 'cannon' ? 'square' : 'sine', .05);
+  },
+  kill() { tone(240, 0, .1, 'triangle', .08); },
+  leak() { tone(120, 0, .3, 'sawtooth', .14); },
+  wave() { [392, 523].forEach((f, i) => tone(f, i * .1, .18, 'triangle', .1)); },
+  win() { [523, 659, 784, 1046].forEach((f, i) => tone(f, i * .13, .28, 'triangle', .14)); },
+  lose() { [392, 311, 261].forEach((f, i) => tone(f, i * .18, .3, 'sawtooth', .1)); },
+};
 
 function buildPath() {
   path = [];
@@ -357,6 +394,7 @@ function startWave() {
     spawnQueue.push({...e});
   }
   waveInProgress = true;
+  sfx.wave();
   document.getElementById('startBtn').textContent = '▶ WAVE ' + wave + ' IN PROGRESS';
   document.getElementById('startBtn').disabled = true;
   updateHUD();
@@ -365,6 +403,7 @@ function startWave() {
 function togglePause() {
   if (!gameRunning) return;
   paused = !paused;
+  document.getElementById('pauseOverlay').classList.toggle('active', paused);
 }
 
 function toggleSpeed() {
@@ -517,6 +556,7 @@ function towerShoot(tower, dt) {
   const target = findTowerTarget(tower);
   if (!target) return;
   tower.cooldown = tower.speed;
+  if (performance.now() - sfx._lastShoot > 90) { sfx.shoot(tower.type); sfx._lastShoot = performance.now(); }
   const px = tower.x * CELL + CELL/2;
   const py = tower.y * CELL + CELL/2;
   const tx = target.x;
@@ -609,6 +649,7 @@ function projectileHit(proj, e) {
 
 function killEnemy(e, tower) {
   e.dead = true;
+  sfx.kill();
   gold += e.gold;
   score += 5;
   totalKills++;
@@ -656,6 +697,7 @@ function update(dt) {
     let next = path[Math.floor(e.pathIdx) + 1];
     if (!next) {
       // reached end
+      sfx.leak();
       lives -= Math.max(1, Math.ceil(e.maxHp / 50));
       e.dead = true;
       spawnExplosion(e.x, e.y, '#ff5252', 20);
@@ -859,6 +901,7 @@ function loop() {
 
 function gameOver() {
   gameRunning = false;
+  sfx.lose();
   document.getElementById('goWave').textContent = wave;
   document.getElementById('goScore').textContent = score;
   document.getElementById('goTowers').textContent = totalTowers;
@@ -868,6 +911,7 @@ function gameOver() {
 
 function gameWon() {
   gameRunning = false;
+  sfx.win();
   document.getElementById('winScore').textContent = score;
   document.getElementById('winLives').textContent = lives;
   document.getElementById('winOverlay').classList.add('active');

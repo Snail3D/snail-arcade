@@ -110,7 +110,7 @@ canvas{display:block;touch-action:none;border-radius:18px;box-shadow:0 24px 80px
 
 <div class="overlay" id="start">
   <h1>🎱 <em>8-Ball</em></h1>
-  <p>Pull back anywhere on the table to aim — the farther you pull, the harder the break. Pocket your set, then the 8. Fouls hand the table over.</p>
+  <p>Pull back anywhere on the table to aim — the farther you pull, the harder the break. Or use <b>←/→</b> to aim, <b>↑/↓</b> for power, <b>Space</b> to shoot. Pocket your set, then the 8.</p>
   <p class="hint">solids 1–7 · stripes 9–15 · 8 last · scratch = ball in hand</p>
   <button class="btn" id="start-btn">RACK 'EM</button>
 </div>
@@ -159,12 +159,55 @@ let shooter = 0;     // 0 = P1, 1 = P2
 let types = [null, null]; // 'solids' | 'stripes'
 let pocketedBy = [[], []]; // ball numbers per player
 let aim = { x: 0, y: 0, pulling: false, pullX: 0, pullY: 0 };
+let kb = { active: false, angle: 0, power: 0.5 }; // keyboard aim state
 let strokeT = 0, strokeFrom = 0;
 let firstContact = null, shotPocketed = [], scratched = false;
 let pocketAnims = [];
 let last = performance.now(), acc = 0;
 let toastTimer = null;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── sound (WebAudio, lazy-created on first gesture) ──
+let actx = null;
+function tone(f, at, dur, type, vol) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = f;
+    const t0 = actx.currentTime + at;
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  } catch (e) {}
+}
+// short filtered noise "clack" for ball impacts, scaled by impact speed
+let _noiseBuf = null;
+function clack(vol) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    if (!_noiseBuf) {
+      const len = Math.floor(actx.sampleRate * 0.05);
+      _noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+      const d = _noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    }
+    const src = actx.createBufferSource(); src.buffer = _noiseBuf;
+    const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 1.2;
+    const g = actx.createGain(); g.gain.value = Math.min(0.5, vol);
+    src.connect(bp); bp.connect(g); g.connect(actx.destination);
+    src.start();
+  } catch (e) {}
+}
+const sfx = {
+  strike(p) { tone(180, 0, .06, 'square', .12 + p * .1); clack(.15 + p * .3); },
+  hit(v) { if (v > 40) clack(Math.min(.5, v / 900)); },
+  pocket() { tone(320, 0, .18, 'sine', .16); tone(150, .04, .22, 'sine', .1); },
+  scratch() { tone(160, 0, .3, 'sawtooth', .12); },
+  win() { [523, 659, 784, 1046].forEach((f, i) => tone(f, i * .13, .28, 'triangle', .14)); },
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -278,6 +321,7 @@ function physics(dt) {
         const imp = -(1 + E_BALL) * vn / 2;
         a.vx -= imp * nx; a.vy -= imp * ny;
         b.vx += imp * nx; b.vy += imp * ny;
+        sfx.hit(-vn); // vn is negative on approach; magnitude = impact speed
       }
     }
   }
@@ -287,8 +331,8 @@ function startPocket(b, p) {
   b.pocketing = true;
   b.vx = b.vy = 0;
   pocketAnims.push({ b, p, t: 0 });
-  if (b.num === 0) scratched = true;
-  else if (!shotPocketed.includes(b.num)) shotPocketed.push(b.num);
+  if (b.num === 0) { scratched = true; sfx.scratch(); }
+  else if (!shotPocketed.includes(b.num)) { shotPocketed.push(b.num); sfx.pocket(); }
 }
 
 function stepPocketAnims(dt) {
@@ -357,6 +401,7 @@ function evaluateShot() {
 
 function endGame(winner, reason) {
   state = 'over';
+  sfx.win();
   $('winner-text').textContent = '🏆 Player ' + (winner + 1) + ' wins';
   $('winner-desc').textContent = reason;
   $('gameover').classList.remove('hidden');
@@ -368,6 +413,7 @@ function cue() { return balls.find(b => b.num === 0); }
 
 function aimVector() {
   const c = cue();
+  if (kb.active) return { angle: kb.angle, power: kb.power, dist: kb.power * MAX_PULL };
   const dx = c.x - aim.pullX, dy = c.y - aim.pullY;
   const d = Math.hypot(dx, dy);
   return { angle: Math.atan2(dy, dx), power: Math.min(d / MAX_PULL, 1), dist: d };
@@ -440,12 +486,40 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', (e) => {
   if (state !== 'pull' || !aim.pulling) return;
   aim.pulling = false;
+  kb.active = false; // pointer takes over from keyboard aim
   const { angle, power, dist } = aimVector();
   if (dist < 14) { state = 'aim'; return; } // too soft — cancel
   strokeFrom = power;
   strokeT = 0;
   state = 'stroke';
   $('power').classList.remove('on');
+});
+
+// ── keyboard aiming: ←/→ rotate, ↑/↓ power, Space shoot, R re-rack ──
+window.addEventListener('keydown', (e) => {
+  if (state === 'start' || state === 'over') return;
+  const c = cue(); if (!c) return;
+  switch (e.code) {
+    case 'ArrowLeft': case 'KeyA':
+      kb.active = true; kb.angle -= 0.035; state = 'pull'; e.preventDefault(); break;
+    case 'ArrowRight': case 'KeyD':
+      kb.active = true; kb.angle += 0.035; state = 'pull'; e.preventDefault(); break;
+    case 'ArrowUp': case 'KeyW':
+      kb.active = true; kb.power = Math.min(1, kb.power + 0.05); state = 'pull'; e.preventDefault(); break;
+    case 'ArrowDown': case 'KeyS':
+      kb.active = true; kb.power = Math.max(0.12, kb.power - 0.05); state = 'pull'; e.preventDefault(); break;
+    case 'Space':
+      if (state === 'pull' && kb.active) {
+        strokeFrom = kb.power; strokeT = 0; state = 'stroke';
+      } else if (state === 'aim') {
+        kb.active = true; state = 'pull'; // start a keyboard shot at current power
+      }
+      e.preventDefault(); break;
+    case 'KeyR': resetGame(); break;
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if ((e.code === 'Space') && state === 'pull' && kb.active) { /* keep aim */ }
 });
 
 // ── render ──
@@ -641,7 +715,7 @@ function render() {
   for (const b of balls) if (b.num !== 0) drawBall(b);
   const c = cue();
   if (c) drawBall(c);
-  if (state === 'pull' || (state === 'stroke' && !reduced)) drawAim();
+  if (state === 'pull' || (state === 'stroke' && !reduced) || kb.active) drawAim();
   else if (state === 'aim' && c) drawCue(c, Math.atan2(c.y - aim.y, c.x - aim.x) || 0, 0);
   if (state === 'place') drawPlacement();
 }
@@ -660,6 +734,7 @@ function frame(now) {
       c.vx = Math.cos(angle) * speed;
       c.vy = Math.sin(angle) * speed;
       firstContact = null; shotPocketed = []; scratched = false;
+      sfx.strike(power);
       state = 'rolling';
     }
   }
