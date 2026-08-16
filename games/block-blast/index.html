@@ -13,7 +13,8 @@ body {
   background: radial-gradient(130% 100% at 50% -20%, #1c2033 0%, #0b0d18 50%, #04050a 100%);
   color:#fff; user-select:none; -webkit-user-select:none; touch-action:manipulation;
 }
-#app { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:12px; }
+#bgfx { position:fixed; inset:0; z-index:0; pointer-events:none; }
+#app { position:relative; z-index:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:12px; }
 
 header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1fr; align-items:center; }
 .hbtn { width:42px; height:42px; border-radius:12px; border:none; background:rgba(255,255,255,.08); color:#fff; font-size:19px; cursor:pointer; transition:background .15s, transform .1s; }
@@ -71,6 +72,8 @@ header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1f
 
 #tray { display:flex; gap:12px; }
 .slot { width:calc(var(--cell)*3); height:calc(var(--cell)*2.9); display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.05); border-radius:14px; }
+.slot.hintflash { animation:hintFlash .8s ease 2; }
+@keyframes hintFlash { 50% { background:rgba(255,211,42,.35); box-shadow:0 0 18px rgba(255,211,42,.6); } }
 .piece { display:grid; cursor:grab; touch-action:none; -webkit-user-drag:none; }
 .piece.dragging { opacity:.25; }
 .piece.spawn { animation:spawn .3s cubic-bezier(.34,1.56,.64,1); }
@@ -109,6 +112,7 @@ header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1f
 </style>
 </head>
 <body>
+<canvas id="bgfx"></canvas>
 <div id="app">
   <header>
     <div class="hbtns left"><button id="muteBtn" class="hbtn" title="Sound on/off">🔊</button></div>
@@ -119,7 +123,7 @@ header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1f
         <div class="score-main"><span id="score">0</span><div id="combo"></div></div>
       </div>
     </div>
-    <div class="hbtns right"><button id="restartBtn" class="hbtn" title="Restart">↻</button></div>
+    <div class="hbtns right"><button id="hintBtn" class="hbtn" title="Show best move">💡</button><button id="restartBtn" class="hbtn" title="Restart">↻</button></div>
   </header>
   <div id="board"><div id="grid"></div></div>
   <div id="tray">
@@ -127,7 +131,7 @@ header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1f
     <div class="slot" id="slot1"></div>
     <div class="slot" id="slot2"></div>
   </div>
-  <div id="hint">Fill rows or columns to blast — ice shatters for bonus, bricks take two hits</div>
+  <div id="hint">Fill rows or columns to blast — ice shatters for bonus, bricks take two hits · 💡 shows best move</div>
 </div>
 <div id="overlay" class="hidden">
   <div class="card">
@@ -138,6 +142,44 @@ header { width:min(94vw, 560px); display:grid; grid-template-columns:1fr auto 1f
   </div>
 </div>
 <script>
+// ── Ambient background: slow-drifting glowing blocks, hue-synced to the game ──
+(function () {
+  const c = document.getElementById('bgfx');
+  const ctx = c.getContext('2d');
+  let W, H;
+  function resize() { W = c.width = innerWidth; H = c.height = innerHeight; }
+  addEventListener('resize', resize); resize();
+  const BG_COLORS = ['#ff4d5a', '#ff9f1a', '#ffd32a', '#2ed573', '#1e90ff', '#a55eea', '#f368a4', '#00d2d3'];
+  const blocks = Array.from({ length: 14 }, () => ({
+    x: Math.random(), y: Math.random(), s: 14 + Math.random() * 30,
+    vx: (Math.random() - .5) * .0004, vy: (Math.random() - .5) * .0003,
+    rot: Math.random() * Math.PI, vr: (Math.random() - .5) * .002,
+    ci: (Math.random() * BG_COLORS.length) | 0, a: .05 + Math.random() * .1
+  }));
+  function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function tick() {
+    ctx.clearRect(0, 0, W, H);
+    for (const b of blocks) {
+      b.x += b.vx; b.y += b.vy; b.rot += b.vr;
+      if (b.x < -.1) b.x = 1.1; if (b.x > 1.1) b.x = -.1;
+      if (b.y < -.1) b.y = 1.1; if (b.y > 1.1) b.y = -.1;
+      const [r, g, bl] = hexToRgb(BG_COLORS[b.ci]);
+      ctx.save();
+      ctx.translate(b.x * W, b.y * H);
+      ctx.rotate(b.rot);
+      ctx.globalAlpha = b.a;
+      ctx.fillStyle = `rgb(${r},${g},${bl})`;
+      ctx.shadowColor = `rgb(${r},${g},${bl})`;
+      ctx.shadowBlur = 18;
+      const s = b.s;
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+      ctx.restore();
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
 const SIZE = 8;
 const TRAY_SCALE = 0.5;
 const COLORS = [
@@ -494,13 +536,11 @@ function placePiece(slot, row, col) {
   sfx.place();
   const { rows, cols } = fullLines();
   if (rows.length + cols.length > 0) {
-    combo++;
-    const lines = rows.length + cols.length;
-    gained += lines * 10 * combo;
     const toClear = new Set();
     rows.forEach(r => { for (let c = 0; c < SIZE; c++) toClear.add(r + ',' + c); });
     cols.forEach(c => { for (let r = 0; r < SIZE; r++) toClear.add(r + ',' + c); });
     let bonus = 0, particles = 0;
+    const removed = new Set();
     toClear.forEach(k => {
       const [r, c] = k.split(',').map(Number);
       const cell = grid[r][c];
@@ -515,17 +555,28 @@ function placePiece(slot, row, col) {
       }
       if (cell.type === 'ice') bonus += 5; else if (cell.type === 'brick') bonus += 10;
       grid[r][c] = null;
+      removed.add(k);
       const el = cellEls[r][c];
       el.classList.add(cell.type === 'ice' ? 'shatter' : 'clearing');
       if (particles < 36) { const rect = el.getBoundingClientRect(); burst(rect.left + rect.width / 2, rect.top + rect.height / 2, cell.type === 'ice' ? '#bfefff' : cell.color.light); particles += 3; }
     });
+    // Only reward lines that actually lost cells — a line of uncracked bricks just gets cracked, not cleared.
+    let linesCleared = 0;
+    for (const r of rows) { let any = false; for (let c = 0; c < SIZE; c++) if (removed.has(r + ',' + c)) { any = true; break; } if (any) linesCleared++; }
+    for (const c of cols) { let any = false; for (let r = 0; r < SIZE; r++) if (removed.has(r + ',' + c)) { any = true; break; } if (any) linesCleared++; }
+    if (linesCleared > 0) {
+      combo++;
+      gained += linesCleared * 10 * combo;
+    }
     gained += bonus;
-    hueShift = (hueShift + 25 + Math.random() * 45) % 360;
-    sfx.clear(combo);
-    const gRect = gridEl.getBoundingClientRect();
-    floatText('+' + gained, gRect.left + gRect.width / 2, gRect.top + gRect.height * .35);
-    if (combo >= 2) showComboBurst(combo, gRect);
-    if (lines >= 3) { boardEl.classList.remove('shake'); void boardEl.offsetWidth; boardEl.classList.add('shake'); }
+    if (linesCleared > 0) {
+      hueShift = (hueShift + 25 + Math.random() * 45) % 360;
+      sfx.clear(combo);
+      const gRect = gridEl.getBoundingClientRect();
+      floatText('+' + gained, gRect.left + gRect.width / 2, gRect.top + gRect.height * .35);
+      if (combo >= 2) showComboBurst(combo, gRect);
+      if (linesCleared >= 3) { boardEl.classList.remove('shake'); void boardEl.offsetWidth; boardEl.classList.add('shake'); }
+    }
     setTimeout(() => { toClear.forEach(k => { const [r, c] = k.split(',').map(Number); if (!grid[r][c]) paint(r, c); }); }, 520);
   } else combo = 0;
   score += gained;
@@ -547,6 +598,55 @@ function endGame() {
 $('muteBtn').addEventListener('click', () => { muted = !muted; $('muteBtn').textContent = muted ? '🔇' : '🔊'; });
 $('restartBtn').addEventListener('click', () => reset());
 $('playAgainBtn').addEventListener('click', () => reset());
+
+// Hint: simulate every tray piece at every position, pick the move that clears
+// the most lines (a line only counts if it would actually lose cells — bricks
+// that merely get cracked don't count), then flash the ghost there.
+$('hintBtn').addEventListener('click', () => {
+  if (gameOver) return;
+  let bestMove = null, bestLines = -1, bestGain = -1;
+  slots.forEach((slotEl, i) => {
+    const piece = tray[i];
+    if (!piece) return;
+    for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++) {
+      if (!canPlaceAt(piece, r, c)) continue;
+      let lines = 0;
+      for (let rr = 0; rr < SIZE; rr++) {
+        let full = true, touches = false;
+        for (let cc = 0; cc < SIZE; cc++) {
+          const isPlaced = piece.cells.some(([dr, dc]) => r + dr === rr && c + dc === cc);
+          if (isPlaced) touches = true;
+          const cell = grid[rr][cc];
+          if (!cell && !isPlaced) { full = false; break; }
+          if (full && cell && cell.type === 'brick' && !cell.cracked) { full = false; break; } // would only crack, not clear
+        }
+        if (full && touches) lines++;
+      }
+      for (let cc = 0; cc < SIZE; cc++) {
+        let full = true, touches = false;
+        for (let rr = 0; rr < SIZE; rr++) {
+          const isPlaced = piece.cells.some(([dr, dc]) => r + dr === rr && c + dc === cc);
+          if (isPlaced) touches = true;
+          const cell = grid[rr][cc];
+          if (!cell && !isPlaced) { full = false; break; }
+          if (full && cell && cell.type === 'brick' && !cell.cracked) { full = false; break; }
+        }
+        if (full && touches) lines++;
+      }
+      const gain = piece.cells.length + lines * 10;
+      if (lines > bestLines || (lines === bestLines && gain > bestGain)) {
+        bestLines = lines; bestGain = gain; bestMove = { slot: i, row: r, col: c };
+      }
+    }
+  });
+  if (!bestMove) return;
+  const piece = tray[bestMove.slot];
+  setGhost(bestMove.row, bestMove.col, piece);
+  const slotEl = slots[bestMove.slot];
+  if (slotEl) { slotEl.classList.remove('hintflash'); void slotEl.offsetWidth; slotEl.classList.add('hintflash'); }
+  setTimeout(() => { clearGhost(); if (slotEl) slotEl.classList.remove('hintflash'); }, 1600);
+});
+
 document.addEventListener('contextmenu', e => { if (e.target.closest('.piece')) e.preventDefault(); });
 addEventListener('resize', layout);
 
