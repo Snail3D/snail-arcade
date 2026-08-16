@@ -26,6 +26,7 @@
   <div id="start" class="overlay">
     <h1>NEON DATE SIM</h1>
     <p>Make choices. Find your romance.</p>
+    <p style="font-size:.8em">⌨️ Press 1-3 to choose</p>
     <div class="hs" id="hs-start">🏆 Best Affinity: 0</div>
     <button class="btn" onclick="startGame()">▶ START</button>
   </div>
@@ -39,6 +40,27 @@
     const canvas = document.getElementById('c');
     const ctx = canvas.getContext('2d');
     let W, H, scene, affinity, currentNode, gameRunning, ending;
+
+    // ── sound (WebAudio, lazy-created on first gesture) ──
+    let actx = null;
+    function tone(f, at, dur, type, vol) {
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        const t0 = actx.currentTime + at;
+        g.gain.setValueAtTime(vol, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g); g.connect(actx.destination);
+        o.start(t0); o.stop(t0 + dur + 0.05);
+      } catch (e) {}
+    }
+    const sfx = {
+      choice()  { tone(520, 0, .06, 'sine', .04); },
+      good()    { [523, 659, 784].forEach((f, i) => tone(f, i * .12, .2, 'triangle', .09)); },
+      bad()     { [392, 311].forEach((f, i) => tone(f, i * .16, .25, 'sawtooth', .08)); },
+    };
     const CHARS = {
       raven: {name:'Raven', color:'#8844ff', emoji:'💜'},
       nova: {name:'Nova', color:'#4488ff', emoji:'💙'},
@@ -184,9 +206,11 @@
     function startGame() { reset(); }
 
     function choose(idx) {
+      if (!gameRunning) return; // guard: never advance from an ended run (prevents stale-state restart)
       const node = STORY.find(n => n.id === currentNode);
       if (!node || !node.choices || idx >= node.choices.length) return;
       const choice = node.choices[idx];
+      sfx.choice();
       // Apply affinity
       if (choice.aff) {
         for (const [k, v] of Object.entries(choice.aff)) {
@@ -200,10 +224,12 @@
         // Determine which character had highest affinity
         const maxChar = Object.entries(affinity).sort((a,b) => b[1]-a[1])[0];
         ending = maxChar[0];
+        sfx.good();
       }
       if (nextNode && nextNode.id === 41) {
         // Bad ending
         ending = 'bad';
+        sfx.bad();
       }
     }
 
@@ -350,6 +376,17 @@
       for (let i = 0; i < choices.length; i++) {
         const cy2 = cStart + i * (ch + cgap);
         if (y > cy2 && y < cy2 + ch) { choose(i); return; }
+      }
+    });
+
+    // Keyboard: 1-3 pick a choice (visual novels are keyboard-friendly)
+    document.addEventListener('keydown', (e) => {
+      if (!gameRunning) return;
+      const k = e.key.toLowerCase();
+      if (k >= '1' && k <= '9') {
+        const idx = parseInt(k, 10) - 1;
+        const node = STORY.find(n => n.id === currentNode);
+        if (node && idx < node.choices.length) { e.preventDefault(); choose(idx); }
       }
     });
 

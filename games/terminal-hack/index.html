@@ -21,6 +21,9 @@
       flex: 1; background: transparent; border: none; color: #33ff33;
       font-family: 'Courier New', monospace; font-size: 14px; outline: none;
     }
+    #tracebar { margin-bottom: 8px; font-size: 12px; }
+    #tracebar .track { display: inline-block; width: 180px; height: 10px; background: #1a2a1a; border: 1px solid #33ff33; vertical-align: middle; }
+    #tracebar .fill { display: inline-block; height: 10px; background: linear-gradient(90deg, #33ff33, #ffcc33, #ff4466); width: 0%; transition: width .2s; }
     canvas { display: none; }
     .overlay {
       position: fixed; inset: 0; background: rgba(10,10,15,0.95);
@@ -36,6 +39,12 @@
 </head>
 <body>
   <div id="term">
+    <div id="statusbar" style="display:flex; gap:14px; margin-bottom:8px; font-size:12px;">
+      <span>TRACE <span class="track" style="display:inline-block;width:120px;height:9px;background:#1a2a1a;border:1px solid #33ff33;vertical-align:middle;"><span class="fill" id="traceFill" style="display:inline-block;height:9px;background:#33ff33;width:0%;"></span></span> <b id="tracePct">0%</b></span>
+      <span>DATA <b id="dataVal" style="color:#ffeb3b">0</b>MB</span>
+      <span>TARGET <b id="targetVal" style="color:#ffeb3b">-</b></span>
+      <span>LVL <b id="lvlVal" style="color:#ffeb3b">1</b></span>
+    </div>
     <div id="output">SYSTEM INITIALIZED...\nCONNECTION ESTABLISHED.\n\n</div>
     <div id="input-line"><span id="prompt">root@node:~$ </span><input id="input" type="text" autocomplete="off" spellcheck="false"></div>
   </div>
@@ -57,6 +66,29 @@
     const input = document.getElementById('input');
     const prompt = document.getElementById('prompt');
     let nodes, currentNode, trace, maxTrace, dataExtracted, score, upgrades, gameRunning, level;
+
+    // ── sound (WebAudio, lazy-created on first gesture) ──
+    let actx = null;
+    function tone(f, at, dur, type, vol) {
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        const t0 = actx.currentTime + at;
+        g.gain.setValueAtTime(vol, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g); g.connect(actx.destination);
+        o.start(t0); o.stop(t0 + dur + 0.05);
+      } catch (e) {}
+    }
+    const sfx = {
+      ok()     { tone(660, 0, .08, 'square', .05); },
+      err()    { tone(160, 0, .14, 'sawtooth', .07); },
+      data()   { tone(880, 0, .1, 'sine', .06); tone(1320, .07, .1, 'sine', .05); },
+      alarm()  { tone(440, 0, .12, 'square', .08); tone(330, .14, .12, 'square', .08); },
+      traced() { [392, 311, 261].forEach((f, i) => tone(f, i * .18, .3, 'sawtooth', .09)); },
+    };
 
     const COMMANDS = {
       SCAN: { desc: 'Scan network for nodes', cost: 0, risk: 0 },
@@ -83,6 +115,7 @@
       addOutput('CONNECTION ESTABLISHED.');
       addOutput('Network scan recommended (SCAN)');
       input.value = '';
+      updateStatus();
       document.getElementById('start').classList.add('hidden');
       document.getElementById('gameover').classList.add('hidden');
     }
@@ -109,6 +142,16 @@
       output.scrollTop = output.scrollHeight;
     }
 
+    function updateStatus() {
+      const pct = Math.min(100, Math.round(trace / maxTrace * 100));
+      const fill = document.getElementById('traceFill');
+      if (fill) { fill.style.width = pct + '%'; fill.style.background = pct > 70 ? '#ff4466' : pct > 40 ? '#ffcc33' : '#33ff33'; }
+      const tp = document.getElementById('tracePct'); if (tp) tp.textContent = pct + '%';
+      const dv = document.getElementById('dataVal'); if (dv) dv.textContent = dataExtracted;
+      const tv = document.getElementById('targetVal'); if (tv) tv.textContent = currentNode > 0 ? 'Node ' + currentNode : '-';
+      const lv = document.getElementById('lvlVal'); if (lv) lv.textContent = level;
+    }
+
     function executeCommand(cmd, args) {
       if (!gameRunning) return;
       const upper = cmd.toUpperCase();
@@ -132,9 +175,11 @@
           if (Math.random() * 100 < hackChance) {
             addOutput(`✓ Node ${currentNode} breached!`);
             n.hacked = true;
+            sfx.ok();
           } else {
             addOutput(`✕ Hack failed on Node ${currentNode}! Trace increased!`);
             trace += COMMANDS.HACK.risk;
+            sfx.err();
           }
           break;
 
@@ -151,11 +196,13 @@
           if (currentNode === 0) { addOutput('ERROR: No node selected.'); break; }
           const dn = nodes[currentNode - 1];
           if (!dn.hacked) { addOutput('ERROR: Node not hacked.'); break; }
-          dataExtracted += dn.data;
-          score += dn.data;
+          const got = dn.data;
+          dataExtracted += got;
+          score += got;
           dn.data = 0;
           trace += COMMANDS.DECRYPT.risk;
-          addOutput(`✓ ${dn.data}MB extracted from Node ${currentNode}.`);
+          addOutput(`✓ ${got}MB extracted from Node ${currentNode}.`);
+          sfx.data();
           // Check if all nodes hacked
           if (nodes.every(n => n.hacked && n.data === 0)) {
             level++;
@@ -201,6 +248,9 @@
       // Trace check
       if (trace >= maxTrace) {
         gameOver();
+      } else {
+        updateStatus();
+        if (trace >= maxTrace * 0.7) sfx.alarm(); // warning as trace climbs
       }
     }
 
@@ -217,6 +267,7 @@
 
     function gameOver() {
       gameRunning = false;
+      sfx.traced();
       const hs = localStorage.getItem('hack_highscore') || 0;
       if (score > parseInt(hs)) {
         localStorage.setItem('hack_highscore', score);

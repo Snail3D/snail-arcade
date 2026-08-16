@@ -26,6 +26,7 @@
   <div id="start" class="overlay">
     <h1>STEALTH INFILTRATOR</h1>
     <p>Sneak past guards. Reach the exit.</p>
+    <p style="font-size:.8em">⌨️ Arrows/WASD move · Space distract</p>
     <div class="hs" id="hs-start">🏆 Best Level: 0</div>
     <button class="btn" onclick="startGame()">▶ INFILTRATE</button>
   </div>
@@ -40,6 +41,28 @@
     const ctx = canvas.getContext('2d');
     let W, H, COLS=16, ROWS=12, TILE, map, px, py, exitX, exitY, guards, level, gameRunning, hideMode, items;
     const T_WALL=0, T_FLOOR=1, T_SHADOW=2, T_EXIT=3;
+
+    // ── sound (WebAudio, lazy-created on first gesture) ──
+    let actx = null;
+    function tone(f, at, dur, type, vol) {
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        const t0 = actx.currentTime + at;
+        g.gain.setValueAtTime(vol, t0);
+        g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+        o.connect(g); g.connect(actx.destination);
+        o.start(t0); o.stop(t0 + dur + 0.05);
+      } catch (e) {}
+    }
+    const sfx = {
+      move()     { tone(240, 0, .05, 'sine', .03); },
+      distract() { tone(660, 0, .12, 'square', .05); tone(880, .08, .12, 'square', .04); },
+      caught()   { [392, 311, 261].forEach((f, i) => tone(f, i * .18, .3, 'sawtooth', .09)); },
+      win()      { [523, 659, 784].forEach((f, i) => tone(f, i * .12, .2, 'triangle', .09)); },
+    };
 
     function resize() {
       W = Math.min(window.innerWidth, 480);
@@ -138,9 +161,11 @@
       if (map[ny][nx] === T_WALL) return;
 
       px = nx; py = ny;
+      sfx.move();
 
       // Check if reached exit
       if (map[ny][nx] === T_EXIT) {
+        sfx.win();
         level++;
         guards = [];
         items = [];
@@ -162,15 +187,24 @@
 
     function useItem() {
       if (!gameRunning) return;
-      // Find nearest guard and distract
+      // Consume a rock to distract the nearest guard (pull it away from you)
+      if (items.length === 0) return;
+      let nearest = null, bestD = Infinity;
       for (const g of guards) {
         const dx = g.x - px, dy = g.y - py;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < 5) {
-          // Move guard to distraction location
-          g.x = px + (Math.random() > 0.5 ? 1 : -1);
-          g.y = py + (Math.random() > 0.5 ? 1 : -1);
-          return;
+        if (dist < 5 && dist < bestD) { nearest = g; bestD = dist; }
+      }
+      if (!nearest) return; // no guard in range — keep the rock
+      items.pop(); // consume one rock
+      sfx.distract();
+      // Move the guard to a valid floor tile away from the player
+      const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+      for (let i = 0; i < dirs.length; i++) {
+        const nx = nearest.x + dirs[i][0], ny = nearest.y + dirs[i][1];
+        if (nx > 0 && nx < COLS-1 && ny > 0 && ny < ROWS-1 && map[ny][nx] !== T_WALL && !(nx === px && ny === py) && !(nx === exitX && ny === exitY)) {
+          nearest.x = nx; nearest.y = ny;
+          break;
         }
       }
     }
@@ -184,7 +218,7 @@
           const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
           const d = dirs[Math.floor(Math.random() * 4)];
           const nx = g.x + d[0], ny = g.y + d[1];
-          if (nx > 0 && nx < COLS-1 && ny > 0 && ny < ROWS-1 && map[ny][nx] !== T_WALL) {
+          if (nx > 0 && nx < COLS-1 && ny > 0 && ny < ROWS-1 && map[ny][nx] !== T_WALL && !(nx === px && ny === py) && !(nx === exitX && ny === exitY)) {
             g.x = nx;
             g.y = ny;
           }
@@ -271,6 +305,7 @@
 
     function gameOver() {
       gameRunning = false;
+      sfx.caught();
       const hs = localStorage.getItem('stealth_highscore') || 0;
       if (level > parseInt(hs)) {
         localStorage.setItem('stealth_highscore', level);
@@ -307,6 +342,20 @@
       const y = e.clientY - rect.top;
       // Distract button
       if (y > H - 50) { useItem(); return; }
+    });
+
+    // Keyboard: arrows/WASD move, Space/E distract
+    document.addEventListener('keydown', (e) => {
+      if (!gameRunning) return;
+      const k = e.key.toLowerCase();
+      let handled = true;
+      if (k === 'arrowup' || k === 'w') movePlayer(0, -1);
+      else if (k === 'arrowdown' || k === 's') movePlayer(0, 1);
+      else if (k === 'arrowleft' || k === 'a') movePlayer(-1, 0);
+      else if (k === 'arrowright' || k === 'd') movePlayer(1, 0);
+      else if (k === ' ' || k === 'e') { useItem(); }
+      else handled = false;
+      if (handled) e.preventDefault();
     });
 
     function loop() {
