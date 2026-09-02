@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>El Paso Sunrise</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Georgia,serif;}
+  canvas{display:block;}
+  #hud{position:fixed;top:16px;left:0;right:0;text-align:center;color:#fff;
+       text-shadow:0 2px 6px rgba(0,0,0,.6);pointer-events:none;user-select:none;}
+  #hud h1{font-size:28px;margin:0 0 6px;letter-spacing:2px;}
+  #hud p{font-size:15px;margin:0;opacity:.9;}
+  #win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+       background:rgba(0,0,0,.25);}
+  #win div{background:rgba(20,10,30,.85);color:#ffe9b0;padding:28px 40px;border-radius:14px;
+       text-align:center;font-size:22px;box-shadow:0 0 40px rgba(255,180,80,.4);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <h1>EL PASO SUNRISE</h1>
+  <p>Hold SPACE (or click/tap) to drag the sun up over the Franklin Mountains before the timer runs out</p>
+</div>
+<div id="win"><div id="winmsg"></div></div>
+<script>
+const cv = document.getElementById('c'), x = cv.getContext('2d');
+let W,H; function fit(){W=cv.width=innerWidth;H=cv.height=innerHeight;} fit(); onresize=fit;
+
+const horizon = () => H*0.72;
+const startTime = 30; // seconds
+let sunY = 0.95;      // 1 = below horizon, 0 = top
+let t = startTime, playing = true, won=false;
+let stars = Array.from({length:120},()=>({x:Math.random(),y:Math.random()*0.5,s:Math.random()*1.5+.3}));
+let birds = [];
+for(let i=0;i<5;i++) birds.push({x:Math.random(),y:.15+Math.random()*.2,v:.0006+Math.random()*.0009,f:Math.random()*10});
+
+let charging=false;
+const press = e => { if(playing) charging=true; };
+const release = () => charging=false;
+addEventListener('keydown',e=>{if(e.code==='Space')press();});
+addEventListener('keyup',release);
+addEventListener('mousedown',press); addEventListener('mouseup',release);
+addEventListener('touchstart',e=>{e.preventDefault();press();},{passive:false});
+addEventListener('touchend',release);
+
+function lerp(a,b,k){return a+(b-a)*k;}
+function mix(c1,c2,k){return `rgb(${lerp(c1[0],c2[0],k)|0},${lerp(c1[1],c2[1],k)|0},${lerp(c1[2],c2[2],k)|0})`;}
+
+// sky color stops as sun rises (k: 0=night, .5=dawn, 1=day)
+function skyCol(k){
+  if(k<0.5) return mix([8,10,30],[120,40,70],k*2);
+  return mix([120,40,70],[110,180,235],(k-0.5)*2);
+}
+function glowCol(k){
+  if(k<0.5) return mix([60,20,50],[255,110,50],k*2);
+  return mix([255,110,50],[255,220,140],(k-0.5)*2);
+}
+
+function drawMountain(peak, base, col){
+  x.fillStyle = col;
+  x.beginPath();
+  x.moveTo(0,H);
+  x.lineTo(0, base);
+  x.lineTo(W*0.10, peak+H*0.06);
+  x.lineTo(W*0.20, base+H*0.03);
+  x.lineTo(W*0.30, peak-H*0.04);       // the "peak" of the Franklins
+  x.lineTo(W*0.42, base);
+  x.lineTo(W*0.58, peak+H*0.02);
+  x.lineTo(W*0.70, base+H*0.02);
+  x.lineTo(W*0.85, peak+H*0.08);
+  x.lineTo(W, base+H*0.01);
+  x.lineTo(W,H);
+  x.closePath(); x.fill();
+}
+
+function drawCity(lit){
+  const y = horizon();
+  x.fillStyle = lit ? '#2a1e33' : '#14101c';
+  x.fillRect(0,y,W,H-y);
+  for(let i=0;i<40;i++){
+    const bw = 14+((i*37)%23), bh = 18+((i*53)%70);
+    const bx = (i*W/40)+((i*13)%9), by = y+bh*0.0;
+    x.fillStyle = lit ? '#1c1428' : '#0e0a16';
+    x.fillRect(bx, y-bh+H*0.005, bw, bh+H*0.005);
+    // windows
+    for(let wy=y-bh+6; wy<y-6; wy+=9){
+      for(let wx=bx+3; wx<bx+bw-4; wx+=7){
+        const on = ((wx*7+wy*13+i)|0)%3===0;
+        x.fillStyle = on ? (lit?'#ffd27a':'#8a7a4a') : (lit?'#3a2c48':'#221a30');
+        x.fillRect(wx,wy,3,4);
+      }
+    }
+  }
+}
+
+function draw(now){
+  const k = 1-sunY;                     // 0 night → 1 day
+  // sky
+  const g = x.createLinearGradient(0,0,0,horizon());
+  g.addColorStop(0, mix([5,5,20],[80,150,220],k));
+  g.addColorStop(1, skyCol(k));
+  x.fillStyle=g; x.fillRect(0,0,W,horizon());
+  // sun glow
+  const sunX = W*0.62, sy = lerp(H*0.9, H*0.12, 1-sunY);
+  const glow = x.createRadialGradient(sunX,sy,10,sunX,sy,H*0.7);
+  const gc = glowCol(k);
+  glow.addColorStop(0, gc.replace('rgb','rgba').replace(')',',0.9)'));
+  glow.addColorStop(1, gc.replace('rgb','rgba').replace(')',',0)'));
+  x.fillStyle=glow; x.fillRect(0,0,W,horizon());
+  // stars fade out
+  const sa = Math.max(0,1-k*1.8);
+  if(sa>0){ x.fillStyle=`rgba(255,255,255,${sa})`;
+    stars.forEach(s=>x.fillRect(s.x*W, s.y*H, s.s, s.s)); }
+  // sun disc
+  if(sy < horizon()+40){
+    x.fillStyle = k<0.5 ? '#ffcf6e' : '#fff3c0';
+    x.beginPath(); x.arc(sunX, sy, 34, 0, 7); x.fill();
+  }
+  // mountains (two layers)
+  drawMountain(H*0.30, horizon()-H*0.02, mix([25,20,45],[70,55,95],k));
+  drawMountain(H*0.42, horizon(), mix([15,12,30],[45,35,65],k));
+  // city
+  drawCity(k>0.25);
+  // birds appear at dawn
+  if(k>0.4){ x.strokeStyle='rgba(20,15,30,.8)'; x.lineWidth=2;
+    birds.forEach(b=>{
+      b.x+=b.v; if(b.x>1.05)b.x=-0.05;
+      const fy = Math.sin(now/300+b.f)*6;
+      const bx=b.x*W, by=b.y*H+fy;
+      x.beginPath(); x.moveTo(bx-8,by); x.quadraticCurveTo(bx-3,by-5,bx,by);
+      x.quadraticCurveTo(bx+3,by-5,bx+8,by); x.stroke();
+    });
+  }
+  // timer bar
+  x.fillStyle='rgba(0,0,0,.4)'; x.fillRect(W/2-160,H-46,320,14);
+  x.fillStyle = t<8 ? '#ff5555' : '#ffd27a';
+  x.fillRect(W/2-158,H-44,316*(t/startTime),10);
+  x.fillStyle='#fff'; x.font='16px Georgia'; x.textAlign='center';
+  x.fillText(`${t.toFixed(1)}s — keep lifting the sun!`, W/2, H-56);
+}
+
+let last = performance.now();
+function loop(now){
+  const dt = (now-last)/1000; last=now;
+  if(playing){
+    if(charging) sunY = Math.max(0, sunY - dt*0.10);
+    else         sunY = Math.min(1, sunY + dt*0.035);  // sun sinks back
+    t -= dt;
+    if(sunY <= 0.02){ won=true; playing=false; showWin(true); }
+    if(t<=0){ playing=false; showWin(false); }
+  }
+  draw(now);
+  requestAnimationFrame(loop);
+}
+function showWin(w){
+  const el=document.getElementById('win'), msg=document.getElementById('winmsg');
+  msg.innerHTML = w
+    ? '🌅 ¡Ándale! The sun rises over El Paso!<br><small style="font-size:15px">The Franklin Mountains glow gold and the city wakes up.</small>'
+    : '🌙 The sun slid back behind the mountains…<br><small style="font-size:15px">El Paso stays asleep. Try again!</small><br><br><span style="font-size:16px">Click to retry</span>';
+  el.style.display='flex';
+  el.onclick = () => { sunY=0.95; t=startTime; playing=true; won=false; el.style.display='none'; };
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
