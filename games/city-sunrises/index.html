@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>City Sunrises</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Georgia,serif;}
+  canvas{display:block;}
+  #hud{position:fixed;top:10px;left:0;right:0;text-align:center;color:#fff;
+       text-shadow:0 2px 6px rgba(0,0,0,.6);pointer-events:none;user-select:none;}
+  #hud h1{font-size:22px;margin:0 0 4px;letter-spacing:2px;}
+  #hud p{font-size:13px;margin:0;opacity:.9;padding:0 12px;}
+  #tabs{position:fixed;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:5;}
+  #tabs button{font-family:Georgia,serif;font-size:13px;padding:6px 12px;border-radius:8px;
+       border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#ddd;cursor:pointer;}
+  #tabs button.on{background:rgba(255,210,120,.25);color:#ffe9b0;border-color:#ffd27a;}
+  #win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+       background:rgba(0,0,0,.25);z-index:9;}
+  #win div{background:rgba(20,10,30,.85);color:#ffe9b0;padding:28px 40px;border-radius:14px;
+       text-align:center;font-size:22px;box-shadow:0 0 40px rgba(255,180,80,.4);max-width:90vw;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <h1>CITY SUNRISES</h1>
+  <p>Hold SPACE (or click/tap) to drag the sun up before the timer runs out — switch cities anytime</p>
+</div>
+<div id="tabs"></div>
+<div id="win"><div id="winmsg"></div></div>
+<script>
+const cv = document.getElementById('c'), x = cv.getContext('2d');
+let W,H; function fit(){W=cv.width=innerWidth;H=cv.height=innerHeight;} fit(); onresize=fit;
+
+/* ── cities ── */
+const CITIES = [
+  { name:'El Paso', flag:'🇺🇸', win:'🌅 ¡Ándale! The sun rises over the Franklins!',
+    lose:'🌙 The sun slid back behind the mountains… El Paso sleeps on.' },
+  { name:'New York', flag:'🗽', win:'🌅 The sun climbs over the Brooklyn Bridge — NYC wakes up!',
+    lose:'🌙 The sun sank back behind Jersey… the city that never sleeps sleeps in.' },
+  { name:'Berlin', flag:'🇩🇪', win:'🌅 Sonnenaufgang! The sun rises over the Fernsehturm!',
+    lose:'🌙 Die Sonne bleibt im Bett. Berlin stays gray a little longer.' },
+  { name:'Paris', flag:'🇫🇷', win:'🌅 Le lever du soleil! Golden light on the Eiffel Tower!',
+    lose:'🌙 Le soleil est retombé… Paris stays under its duvet.' },
+];
+
+const startTime = 30;
+let sunY = 0.95, t = startTime, playing = true, charging = false, cityIdx = 0;
+let stars = Array.from({length:120},()=>({x:Math.random(),y:Math.random()*0.5,s:Math.random()*1.5+.3}));
+let birds = [];
+for(let i=0;i<5;i++) birds.push({x:Math.random(),y:.15+Math.random()*.2,v:.0006+Math.random()*.0009,f:Math.random()*10});
+
+/* tabs */
+const tabsEl = document.getElementById('tabs');
+CITIES.forEach((c,i)=>{
+  const b=document.createElement('button'); b.textContent=c.flag+' '+c.name;
+  b.onclick=()=>setCity(i); tabsEl.appendChild(b);
+});
+function setCity(i){ cityIdx=i;
+  [...tabsEl.children].forEach((b,j)=>b.classList.toggle('on',j===i));
+}
+setCity(0);
+
+/* input */
+const press = () => { if(playing) charging=true; };
+const release = () => charging=false;
+addEventListener('keydown',e=>{if(e.code==='Space')press();});
+addEventListener('keyup',release);
+addEventListener('mousedown',press); addEventListener('mouseup',release);
+addEventListener('touchstart',e=>{if(e.target.tagName!=='BUTTON'){e.preventDefault();press();}},{passive:false});
+addEventListener('touchend',release);
+
+const lerp=(a,b,k)=>a+(b-a)*k;
+const mix=(c1,c2,k)=>`rgb(${lerp(c1[0],c2[0],k)|0},${lerp(c1[1],c2[1],k)|0},${lerp(c1[2],c2[2],k)|0})`;
+function skyCol(k){ return k<0.5 ? mix([8,10,30],[120,40,70],k*2) : mix([120,40,70],[110,180,235],(k-0.5)*2); }
+function glowCol(k){ return k<0.5 ? mix([60,20,50],[255,110,50],k*2) : mix([255,110,50],[255,220,140],(k-0.5)*2); }
+
+const horizon = () => H*0.72;
+function buildings(yBase, seed, col, lit, minH, maxH){
+  x.fillStyle = col;
+  let bx = -((seed*97)%40);
+  let i = seed;
+  while(bx < W+40){
+    i++;
+    const bw = 22+((i*37+seed*13)%36);
+    const bh = minH + ((i*53+seed*29)%100)/100*(maxH-minH);
+    x.fillRect(bx, yBase-bh, bw, bh);
+    // windows
+    if(lit){
+      for(let wy=yBase-bh+8; wy<yBase-8; wy+=11){
+        for(let wx=bx+4; wx<bx+bw-6; wx+=9){
+          const on = ((wx*7+wy*13+i)|0)%4===0;
+          x.fillStyle = on ? '#ffd27a' : 'rgba(0,0,0,0)';
+          if(on) x.fillRect(wx,wy,3,5);
+        }
+      }
+      x.fillStyle = col;
+    }
+    bx += bw + 4+((i*17)%10);
+  }
+}
+
+/* ── per-city skylines, drawn between horizon and bottom ── */
+function drawSkyline(idx, k){
+  const y = horizon(), lit = k>0.25;
+  const ground1 = mix([10,8,18],[40,35,60],k), ground2 = mix([18,14,28],[60,50,80],k);
+  if(idx===0){ // El Paso — mountains
+    x.fillStyle=mix([25,20,45],[70,55,95],k);
+    x.beginPath(); x.moveTo(0,y-H*0.02); x.lineTo(W*0.10,y-H*0.08); x.lineTo(W*0.30,y-H*0.20);
+    x.lineTo(W*0.42,y-H*0.02); x.lineTo(W*0.58,y-H*0.10); x.lineTo(W*0.85,y-H*0.04); x.lineTo(W,y-H*0.02);
+    x.lineTo(W,y); x.lineTo(0,y); x.fill();
+    buildings(y, 7, ground1, lit, H*0.04, H*0.10);
+  } else if(idx===1){ // New York — dense towers + bridge
+    buildings(y, 3, ground1, lit, H*0.10, H*0.24);
+    // Empire State-ish spire
+    x.fillStyle=ground2; const ex=W*0.30, ew=W*0.05, eh=H*0.30;
+    x.fillRect(ex,y-eh,ew,eh); x.fillRect(ex+ew*0.3,y-eh-H*0.06,ew*0.4,H*0.06);
+    x.fillRect(ex+ew*0.42,y-eh-H*0.10,ew*0.16,H*0.05);
+    // Brooklyn Bridge
+    x.strokeStyle=mix([30,25,50],[80,70,105],k); x.lineWidth=3;
+    x.beginPath(); x.moveTo(0,y-H*0.06);
+    x.quadraticCurveTo(W*0.5,y+H*0.02,W,y-H*0.06); x.stroke();
+    [0.3,0.5,0.7].forEach(f=>{
+      x.fillStyle=mix([30,25,50],[80,70,105],k);
+      x.fillRect(W*f-4, y-H*0.06-((f===0.5)?H*0.10:H*0.05), 8, ((f===0.5)?H*0.10:H*0.05)+H*0.03);
+      x.beginPath(); x.moveTo(W*f, y-H*0.15);
+      x.quadraticCurveTo(W*f+0.1*W, y-H*0.02, W*f+0.16*W, y-H*0.045);
+      x.moveTo(W*f, y-H*0.15);
+      x.quadraticCurveTo(W*f-0.1*W, y-H*0.02, W*f-0.16*W, y-H*0.045);
+      x.lineWidth=1.5; x.stroke(); x.lineWidth=3;
+    });
+    buildings(y, 11, ground2, lit, H*0.05, H*0.13);
+  } else if(idx===2){ // Berlin — Fernsehturm + flat blocks
+    buildings(y, 5, ground1, lit, H*0.05, H*0.12);
+    // TV tower at Alexanderplatz
+    const fx=W*0.5;
+    x.strokeStyle=mix([30,25,50],[85,75,110],k); x.lineWidth=5;
+    x.beginPath(); x.moveTo(fx,y); x.lineTo(fx,y-H*0.26); x.stroke();
+    x.fillStyle=mix([40,32,60],[95,85,120],k);
+    x.beginPath(); x.arc(fx,y-H*0.26,10,0,7); x.fill();
+    x.fillRect(fx-2,y-H*0.26-26,4,22); x.fillRect(fx-6,y-H*0.26-32,12,4);
+    // Reichstag-ish dome
+    x.beginPath(); x.arc(W*0.18, y, H*0.07, Math.PI, 0); x.fill();
+    buildings(y, 13, ground2, lit, H*0.03, H*0.08);
+  } else { // Paris — Eiffel Tower + zinc rooftops
+    buildings(y, 9, ground1, lit, H*0.04, H*0.10);
+    // Eiffel Tower
+    const ex=W*0.5, th=H*0.34;
+    x.fillStyle=mix([35,28,55],[100,88,125],k);
+    x.beginPath();
+    x.moveTo(ex-14,y); x.lineTo(ex-34,y-th*0.36); x.lineTo(ex-10,y-th*0.36);
+    x.lineTo(ex-4,y-th*0.62); x.lineTo(ex-2,y-th); x.lineTo(ex+2,y-th);
+    x.lineTo(ex+4,y-th*0.62); x.lineTo(ex+10,y-th*0.36); x.lineTo(ex+34,y-th*0.36);
+    x.lineTo(ex+14,y); x.closePath(); x.fill();
+    x.fillRect(ex-40,y-th*0.36-6,80,6);           // first deck
+    x.fillRect(ex-14,y-th*0.62-5,28,5);           // second deck
+    x.strokeStyle=mix([35,28,55],[100,88,125],k); x.lineWidth=2;
+    x.beginPath(); x.moveTo(ex-34,y-th*0.36); x.lineTo(ex+14,y); x.stroke();
+    x.beginPath(); x.moveTo(ex+34,y-th*0.36); x.lineTo(ex-14,y); x.stroke();
+    x.beginPath(); x.moveTo(ex-10,y-th*0.36); x.lineTo(ex+4,y-th*0.62); x.stroke();
+    x.beginPath(); x.moveTo(ex+10,y-th*0.36); x.lineTo(ex-4,y-th*0.62); x.stroke();
+    // Sacré-Cœur domes
+    x.beginPath(); x.arc(W*0.16, y, H*0.045, Math.PI, 0); x.fill();
+    x.beginPath(); x.arc(W*0.16, y-H*0.045, H*0.02, 0, 7); x.fill();
+    buildings(y, 15, ground2, lit, H*0.03, H*0.07);
+  }
+}
+
+function draw(now){
+  const k = 1-sunY;
+  const g = x.createLinearGradient(0,0,0,horizon());
+  g.addColorStop(0, mix([5,5,20],[80,150,220],k));
+  g.addColorStop(1, skyCol(k));
+  x.fillStyle=g; x.fillRect(0,0,W,horizon());
+  const sunX = W*0.62, sy = lerp(H*0.9, H*0.12, k);
+  const glow = x.createRadialGradient(sunX,sy,10,sunX,sy,H*0.7);
+  const gc = glowCol(k);
+  glow.addColorStop(0, gc.replace('rgb','rgba').replace(')',',0.9)'));
+  glow.addColorStop(1, gc.replace('rgb','rgba').replace(')',',0)'));
+  x.fillStyle=glow; x.fillRect(0,0,W,horizon());
+  const sa = Math.max(0,1-k*1.8);
+  if(sa>0){ x.fillStyle=`rgba(255,255,255,${sa})`;
+    stars.forEach(s=>x.fillRect(s.x*W, s.y*H, s.s, s.s)); }
+  if(sy < horizon()+40){
+    x.fillStyle = k<0.5 ? '#ffcf6e' : '#fff3c0';
+    x.beginPath(); x.arc(sunX, sy, 34, 0, 7); x.fill();
+  }
+  drawSkyline(cityIdx, k);
+  // ground
+  x.fillStyle=mix([6,5,12],[25,22,40],k); x.fillRect(0,horizon(),W,H);
+  if(k>0.4){ x.strokeStyle='rgba(20,15,30,.8)'; x.lineWidth=2;
+    birds.forEach(b=>{
+      b.x+=b.v; if(b.x>1.05)b.x=-0.05;
+      const fy = Math.sin(now/300+b.f)*6, bx=b.x*W, by=b.y*H+fy;
+      x.beginPath(); x.moveTo(bx-8,by); x.quadraticCurveTo(bx-3,by-5,bx,by);
+      x.quadraticCurveTo(bx+3,by-5,bx+8,by); x.stroke();
+    });
+  }
+  // timer
+  x.fillStyle='rgba(0,0,0,.4)'; x.fillRect(W/2-160,H-46,320,14);
+  x.fillStyle = t<8 ? '#ff5555' : '#ffd27a';
+  x.fillRect(W/2-158,H-44,316*Math.max(0,t/startTime),10);
+  x.fillStyle='#fff'; x.font='16px Georgia'; x.textAlign='center';
+  x.fillText(CITIES[cityIdx].flag+' '+CITIES[cityIdx].name+' — '+Math.max(0,t).toFixed(1)+'s', W/2, H-56);
+}
+
+let last = performance.now();
+function loop(now){
+  const dt = (now-last)/1000; last=now;
+  if(playing){
+    if(charging) sunY = Math.max(0, sunY - dt*0.10);
+    else         sunY = Math.min(1, sunY + dt*0.035);
+    t -= dt;
+    if(sunY <= 0.02){ playing=false; showWin(true); }
+    if(t<=0){ playing=false; showWin(false); }
+  }
+  draw(now);
+  requestAnimationFrame(loop);
+}
+function showWin(w){
+  const c=CITIES[cityIdx];
+  const el=document.getElementById('win'), msg=document.getElementById('winmsg');
+  msg.innerHTML = (w?c.win:c.lose)+'<br><br><span style="font-size:16px">Click to retry — or switch cities</span>';
+  el.style.display='flex';
+  el.onclick = e => { if(e.target.tagName==='BUTTON')return;
+    sunY=0.95; t=startTime; playing=true; el.style.display='none'; };
+  tabsEl.onclick = e => { if(e.target.tagName==='BUTTON' && !playing){ el.style.display='none'; sunY=0.95; t=startTime; playing=true; } };
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
