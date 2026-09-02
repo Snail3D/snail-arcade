@@ -15,6 +15,10 @@
   #tabs button{font-family:Georgia,serif;font-size:12px;padding:4px 10px;border-radius:8px;
        border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#ddd;cursor:pointer;}
   #tabs button.on{background:rgba(255,210,120,.25);color:#ffe9b0;border-color:#ffd27a;}
+  #tabsL{position:fixed;top:10px;left:10px;display:flex;flex-direction:column;gap:4px;z-index:5;max-height:90vh;overflow-y:auto;}
+  #tabsL button{font-family:Georgia,serif;font-size:12px;padding:4px 10px;border-radius:8px;
+       border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#ddd;cursor:pointer;}
+  #tabsL button.on{background:rgba(255,210,120,.25);color:#ffe9b0;border-color:#ffd27a;}
   #win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
        background:rgba(0,0,0,.25);z-index:9;}
   #win div{background:rgba(20,10,30,.85);color:#ffe9b0;padding:28px 40px;border-radius:14px;
@@ -25,8 +29,9 @@
 <canvas id="c"></canvas>
 <div id="hud">
   <h1>CITY SUNRISES</h1>
-  <p>Hold SPACE (or click/tap) to drag the sun up before the timer runs out — 14 cities worldwide!</p>
+  <p>Hold SPACE (or click/tap) to drag the sun up before the timer runs out — 28 cities worldwide!</p>
 </div>
+<div id="tabsL"></div>
 <div id="tabs"></div>
 <div id="win"><div id="winmsg"></div></div>
 <script>
@@ -63,6 +68,34 @@ const CITIES = [
     lose:'🌙 The sun slipped back across two continents. Güle güle, morning.' },
   { name:'Toronto', flag:'🇨🇦', win:'🌅 The sun crests the CN Tower — the 6ix is up!',
     lose:'🌙 Sorry, the sun went back down, eh. Toronto sleeps in.' },
+  { name:'Los Angeles', flag:'🌴', win:'🌅 Another day in LA! The sun climbs over the palm hills!',
+    lose:'🌙 The sun rolled back behind the 405. Traffic waits for no one.' },
+  { name:'Chicago', flag:'🥶', win:'🌅 The sun tops the Willis Tower — Chicago shines on the lake!',
+    lose:'🌙 The sun dove into Lake Michigan. The wind city stays windswept and dark.' },
+  { name:'Mexico City', flag:'🇲🇽', win:'🌅 ¡Buenos días! Popocatépetl glows over the Zócalo!',
+    lose:'🌙 The sun went back behind Popocatépetl. CDMX descansa.' },
+  { name:'Buenos Aires', flag:'🇦🇷', win:'🌅 ¡Buen día! The Obelisco catches the first light!',
+    lose:'🌙 The sun folded like a tango finale. Buenos Aires sleeps.' },
+  { name:'Seoul', flag:'🇰🇷', win:'🌅 좋은 아침! N Seoul Tower glows above the Han River!',
+    lose:'🌙 The sun set back over Namsan. Seoul hits snooze.' },
+  { name:'Shanghai', flag:'🇨🇳', win:'🌅 The Oriental Pearl lights up — Shanghai greets the day!',
+    lose:'🌙 The sun sank into the Huangpu. Shanghai stays on Do Not Disturb.' },
+  { name:'Hong Kong', flag:'🐉', win:'🌅 The sun rises over Victoria Peak — Hong Kong dazzles!',
+    lose:'🌙 The sun ducked behind the Peak. Hong Kong pours another milk tea.' },
+  { name:'Bangkok', flag:'🛕', win:'🌅 Sawasdee! Dawn gilds Wat Arun by the Chao Phraya!',
+    lose:'🌙 The sun slid back behind the temple. Bangkok dreams on.' },
+  { name:'Mumbai', flag:'🇮🇳', win:'🌅 The sun rises through the Gateway of India — Shubh prabhat!',
+    lose:'🌙 The sun retreated into the Arabian Sea. Mumbai mono daus.' },
+  { name:'Athens', flag:'🏛️', win:'🌅 Kalimera! The sun crowns the Acropolis!',
+    lose:'🌙 Zeus pulled the sun back. Athens waits for the gods.' },
+  { name:'Rome', flag:'🏛️', win:'🌅 Buongiorno! The sun rises over St Peter\u2019s dome!',
+    lose:'🌙 Roma dolce far niente — the sun stays abed.' },
+  { name:'Cape Town', flag:'🐧', win:'🌅 Lekker! The sun clears Table Mountain\u2019s tablecloth!',
+    lose:'🌙 The sun slid back behind Table Mountain. Lekker slapt, Cape Town.' },
+  { name:'Amsterdam', flag:'🚲', win:'🌅 Goedemorgen! Sunlight sparkles on the canal houses!',
+    lose:'🌙 The sun sank below the canals. Amsterdam winds down.' },
+  { name:'Auckland', flag:'🥝', win:'🌅 Kia ora! The Sky Tower catches the first light of the day!',
+    lose:'🌙 The sun rolled back into the Hauraki Gulf. Auckland, later mate.' },
 ];
 
 const startTime = 30;
@@ -71,14 +104,17 @@ let stars = Array.from({length:120},()=>({x:Math.random(),y:Math.random()*0.5,s:
 let birds = [];
 for(let i=0;i<5;i++) birds.push({x:Math.random(),y:.15+Math.random()*.2,v:.0006+Math.random()*.0009,f:Math.random()*10});
 
-/* tabs */
-const tabsEl = document.getElementById('tabs');
+/* tabs — 0-13 on the right, 14-27 on the left */
+const tabsEl = document.getElementById('tabs'), tabsLEl = document.getElementById('tabsL');
+const tabsList = [...tabsEl.children, ...tabsLEl.children];
 CITIES.forEach((c,i)=>{
   const b=document.createElement('button'); b.textContent=c.flag+' '+c.name;
-  b.onclick=()=>setCity(i); tabsEl.appendChild(b);
+  (i<14?tabsEl:tabsLEl).appendChild(b);
+  b.onclick=()=>setCity(i);
 });
+const allTabs = ()=>[...tabsEl.children, ...tabsLEl.children];
 function setCity(i){ cityIdx=i;
-  [...tabsEl.children].forEach((b,j)=>b.classList.toggle('on',j===i));
+  allTabs().forEach((b,j)=>b.classList.toggle('on',j===i));
 }
 setCity(0);
 
@@ -359,7 +395,7 @@ function drawSkyline(idx, k){
     });
     buildings(y, 29, g2, lit, H*0.03, H*0.07);
 
-  } else { // Toronto — CN Tower
+  } else if(idx===13){ // Toronto — CN Tower
     buildings(y, 23, g1, lit, H*0.05, H*0.13);
     const tx=W*0.55;
     x.strokeStyle=g3; x.lineWidth=6;
@@ -375,6 +411,220 @@ function drawSkyline(idx, k){
     x.beginPath(); x.moveTo(W*0.74,y); x.quadraticCurveTo(W*0.76,y-H*0.12,W*0.82,y-H*0.05);
     x.lineTo(W*0.88,y); x.stroke();
     buildings(y, 31, g2, lit, H*0.03, H*0.08);
+
+  } else if(idx===14){ // Los Angeles — palms + hills
+    x.fillStyle=mix([50,35,40],[150,100,90],k);
+    x.beginPath(); x.moveTo(W*0.55,y); x.quadraticCurveTo(W*0.70,y-H*0.10,W*0.85,y-H*0.06);
+    x.quadraticCurveTo(W*0.93,y-H*0.03,W,y-H*0.06); x.lineTo(W,y); x.fill();
+    buildings(y, 33, g1, lit, H*0.04, H*0.10);
+    // palm trees
+    x.strokeStyle=mix([40,30,25],[110,85,60],k); x.lineWidth=3;
+    [[0.06],[0.12],[0.88],[0.94]].forEach(([f])=>{
+      const px=W*f;
+      x.beginPath(); x.moveTo(px,y); x.quadraticCurveTo(px+3,y-H*0.06,px+1,y-H*0.12); x.stroke();
+      x.lineWidth=2;
+      for(let a=0;a<5;a++){ const ang=-Math.PI/2+(a-2)*0.5;
+        x.beginPath(); x.moveTo(px+1,y-H*0.12);
+        x.quadraticCurveTo(px+Math.cos(ang)*H*0.04, y-H*0.12+Math.sin(ang)*H*0.05,
+          px+Math.cos(ang)*H*0.055, y-H*0.12+Math.sin(ang)*H*0.05+H*0.02); x.stroke(); }
+      x.lineWidth=3;
+    });
+    buildings(y, 35, g2, lit, H*0.03, H*0.07);
+
+  } else if(idx===15){ // Chicago — Willis Tower + Hancock
+    buildings(y, 32, g1, lit, H*0.08, H*0.20);
+    // Willis (antenna twin)
+    const wx=W*0.42;
+    x.fillStyle=g3;
+    x.fillRect(wx-14,y-H*0.26,28,H*0.26);
+    x.fillRect(wx-2,y-H*0.30,3,H*0.04); x.fillRect(wx+4,y-H*0.30,3,H*0.04);
+    x.fillRect(wx-2,y-H*0.34,3,H*0.04);
+    // Hancock (tapered)
+    x.beginPath(); x.moveTo(W*0.60-10,y); x.lineTo(W*0.60-6,y-H*0.24);
+    x.lineTo(W*0.60+6,y-H*0.24); x.lineTo(W*0.60+10,y); x.closePath(); x.fill();
+    // the Bean
+    x.fillStyle=`rgba(220,230,240,${0.35+k*0.3})`;
+    x.beginPath(); x.ellipse(W*0.74,y-H*0.02,W*0.03,H*0.035,0,0,7); x.fill();
+    buildings(y, 36, g2, lit, H*0.04, H*0.11);
+
+  } else if(idx===16){ // Mexico City — cathedral + volcano
+    x.fillStyle=mix([50,40,60],[150,120,140],k);
+    x.beginPath(); x.moveTo(W*0.62,y); x.lineTo(W*0.74,y-H*0.24); x.lineTo(W*0.78,y-H*0.21);
+    x.lineTo(W*0.88,y); x.fill();
+    x.fillStyle=`rgba(255,150,80,${0.3+k*0.3})`; // Popo glow/vent
+    x.beginPath(); x.arc(W*0.775,y-H*0.205,4,0,7); x.fill();
+    buildings(y, 34, g1, lit, H*0.04, H*0.09);
+    // Metropolitan Cathedral
+    const cx=W*0.30;
+    x.fillStyle=g3;
+    x.fillRect(cx-30,y-H*0.12,60,H*0.12);
+    dome(cx,y-H*0.12,12,g3); dome(cx-22,y-H*0.10,6,g2); dome(cx+22,y-H*0.10,6,g2);
+    x.fillStyle=g3;
+    x.fillRect(cx-34,y-H*0.14,6,H*0.14); x.fillRect(cx+28,y-H*0.14,6,H*0.14);
+    buildings(y, 38, g2, lit, H*0.03, H*0.07);
+
+  } else if(idx===17){ // Buenos Aires — Obelisco
+    buildings(y, 37, g1, lit, H*0.05, H*0.11);
+    const ox=W*0.5;
+    x.fillStyle=g3;
+    x.beginPath(); x.moveTo(ox-6,y); x.lineTo(ox-3,y-H*0.26); x.lineTo(ox+3,y-H*0.26);
+    x.lineTo(ox+6,y); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(ox-3,y-H*0.26); x.lineTo(ox,y-H*0.30); x.lineTo(ox+3,y-H*0.26); x.fill();
+    x.fillRect(ox-8,y-H*0.20,16,3);
+    buildings(y, 40, g2, lit, H*0.03, H*0.08);
+
+  } else if(idx===18){ // Seoul — N Seoul Tower
+    buildings(y, 39, g1, lit, H*0.06, H*0.14);
+    // Namsan hill
+    x.fillStyle=mix([35,40,35],[85,105,85],k);
+    x.beginPath(); x.moveTo(W*0.38,y); x.quadraticCurveTo(W*0.5,y-H*0.14,W*0.62,y); x.fill();
+    const tx=W*0.5, ty=y-H*0.13;
+    x.strokeStyle=g3; x.lineWidth=4;
+    x.beginPath(); x.moveTo(tx,ty); x.lineTo(tx,ty-H*0.16); x.stroke();
+    x.fillStyle=g3;
+    x.beginPath(); x.moveTo(tx-7,ty-H*0.13); x.lineTo(tx-4,ty-H*0.17);
+    x.lineTo(tx+4,ty-H*0.17); x.lineTo(tx+7,ty-H*0.13); x.closePath(); x.fill();
+    x.fillRect(tx-1,ty-H*0.22,2,H*0.05);
+    buildings(y, 42, g2, lit, H*0.04, H*0.10);
+
+  } else if(idx===19){ // Shanghai — Oriental Pearl
+    buildings(y, 41, g1, lit, H*0.10, H*0.22);
+    const px=W*0.52;
+    x.strokeStyle=g3; x.lineWidth=5;
+    x.beginPath(); x.moveTo(px,y); x.lineTo(px,y-H*0.34); x.stroke();
+    x.fillStyle=g3;
+    x.beginPath(); x.arc(px,y-H*0.24,H*0.035,0,7); x.fill();
+    x.fillRect(px-2,y-H*0.34,4,H*0.08);
+    x.beginPath(); x.arc(px,y-H*0.36,H*0.02,0,7); x.fill();
+    x.fillRect(px-1,y-H*0.42,2,H*0.05);
+    // Shanghai Tower twist
+    x.fillStyle=g2;
+    x.beginPath(); x.moveTo(W*0.62-10,y); x.quadraticCurveTo(W*0.62-14,y-H*0.12,W*0.62-6,y-H*0.26);
+    x.quadraticCurveTo(W*0.62-2,y-H*0.28,W*0.62+2,y-H*0.26);
+    x.quadraticCurveTo(W*0.62+8,y-H*0.12,W*0.62+10,y); x.closePath(); x.fill();
+    buildings(y, 44, g2, lit, H*0.04, H*0.12);
+
+  } else if(idx===20){ // Hong Kong — Victoria Peak + towers
+    x.fillStyle=mix([35,30,45],[85,90,80],k);
+    x.beginPath(); x.moveTo(0,y); x.quadraticCurveTo(W*0.2,y-H*0.22,W*0.42,y); x.fill();
+    buildings(y, 43, g1, lit, H*0.08, H*0.20);
+    const bx=W*0.70;
+    x.fillStyle=g3;
+    x.beginPath(); x.moveTo(bx-12,y); x.lineTo(bx-8,y-H*0.24);
+    x.lineTo(bx+8,y-H*0.24); x.lineTo(bx+12,y); x.closePath(); x.fill();
+    x.fillRect(bx-2,y-H*0.28,4,H*0.04); x.fillRect(bx-2,y-H*0.32,4,H*0.04);
+    buildings(y, 46, g2, lit, H*0.04, H*0.10);
+
+  } else if(idx===21){ // Bangkok — Wat Arun
+    buildings(y, 45, g1, lit, H*0.04, H*0.10);
+    const wx=W*0.5;
+    x.fillStyle=g3;
+    x.fillRect(wx-5,y-H*0.16,10,H*0.16);       // central prang
+    for(let s=0;s<4;s++){                       // spire steps
+      x.fillRect(wx-10+s*2.5,y-H*0.16-s*H*0.03,20-s*5,3);
+    }
+    x.fillRect(wx-1.5,y-H*0.30,3,H*0.04);
+    // corner prangs
+    [[-24,0.55],[24,0.55]].forEach(([ox,s])=>{
+      x.fillRect(wx+ox-3,y-H*0.16*s,6,H*0.16*s);
+      x.fillRect(wx+ox-1,y-H*0.16*s-8,2,8);
+    });
+    buildings(y, 48, g2, lit, H*0.03, H*0.08);
+
+  } else if(idx===22){ // Mumbai — Gateway of India
+    buildings(y, 47, g1, lit, H*0.06, H*0.13);
+    const gx=W*0.5, gw=W*0.09;
+    x.fillStyle=g3;
+    x.fillRect(gx-gw/2-8,y-H*0.13,10,H*0.13);  // side towers
+    x.fillRect(gx+gw/2-2,y-H*0.13,10,H*0.13);
+    dome(gx-gw/2-3,y-H*0.13,7,g3); dome(gx+gw/2+3,y-H*0.13,7,g3);
+    x.fillStyle=g2;
+    x.fillRect(gx-gw/2,y-H*0.09,gw,H*0.09);     // arch block
+    x.fillStyle=g1;
+    x.beginPath(); x.moveTo(gx-gw*0.28,y); x.lineTo(gx-gw*0.28,y-H*0.06);
+    x.quadraticCurveTo(gx,y-H*0.09,gx+gw*0.28,y-H*0.06); x.lineTo(gx+gw*0.28,y); x.fill();
+    buildings(y, 50, g2, lit, H*0.03, H*0.08);
+
+  } else if(idx===23){ // Athens — Parthenon
+    x.fillStyle=mix([60,50,45],[170,150,130],k);
+    x.beginPath(); x.moveTo(W*0.30,y-H*0.10); x.quadraticCurveTo(W*0.5,y-H*0.20,W*0.70,y-H*0.10);
+    x.lineTo(W*0.70,y-H*0.06); x.quadraticCurveTo(W*0.5,y-H*0.15,W*0.30,y-H*0.06); x.fill();
+    const px=W*0.5, py=y-H*0.16, pw=W*0.10, ph=H*0.06;
+    x.fillStyle=mix([150,135,115],[225,210,185],k);
+    x.fillRect(px-pw/2,py-ph,pw,3);                       // entablature
+    for(let c=0;c<6;c++) x.fillRect(px-pw/2+2+c*(pw-4)/5,py-ph+3,3,ph-6); // columns
+    x.fillRect(px-pw/2,py-4,pw,4);                        // stylobate
+    x.fillStyle=`rgba(255,240,200,${0.15+k*0.25})`;
+    x.beginPath(); x.moveTo(px-pw/2,py-ph); x.lineTo(px,py-ph-H*0.02); x.lineTo(px+pw/2,py-ph); x.fill();
+    buildings(y, 52, g1, lit, H*0.03, H*0.07);
+
+  } else if(idx===24){ // Rome — St Peter's + Colosseum
+    buildings(y, 49, g1, lit, H*0.03, H*0.08);
+    // St Peter's Basilica
+    const sx=W*0.32;
+    x.fillStyle=g2; x.fillRect(sx-24,y-H*0.08,48,H*0.08);
+    dome(sx,y-H*0.08,14,g3);
+    x.fillRect(sx-1,y-H*0.08-22,2,6);
+    x.fillRect(sx-16,y-H*0.12,4,H*0.12); x.fillRect(sx+12,y-H*0.12,4,H*0.12);
+    // Colosseum
+    const cx=W*0.70;
+    x.fillStyle=g2;
+    x.beginPath(); x.ellipse(cx,y,W*0.05,H*0.06,0,Math.PI,0); x.fill();
+    x.fillRect(cx-W*0.05,y-H*0.06,W*0.10,H*0.03);
+    x.fillStyle=g1;
+    for(let a=0;a<6;a++) x.fillRect(cx-W*0.04+a*W*0.0135,y-H*0.05,3,4);
+    buildings(y, 54, g2, lit, H*0.03, H*0.07);
+
+  } else if(idx===25){ // Cape Town — Table Mountain
+    x.fillStyle=mix([50,45,55],[130,115,125],k);
+    x.beginPath(); x.moveTo(W*0.25,y); x.lineTo(W*0.32,y-H*0.17);
+    x.lineTo(W*0.62,y-H*0.17); x.lineTo(W*0.69,y); x.fill();
+    // cable station + tablecloth cloud
+    x.fillRect(W*0.45,y-H*0.185,6,5);
+    x.fillStyle=`rgba(255,255,255,${0.35+k*0.25})`;
+    x.beginPath(); x.ellipse(W*0.47,y-H*0.17,W*0.10,H*0.012,0,0,7); x.fill();
+    buildings(y, 51, g1, lit, H*0.04, H*0.10);
+    // ocean sparkle
+    x.fillStyle=`rgba(120,200,230,${0.2+k*0.3})`; x.fillRect(0,y,W,4);
+    buildings(y, 55, g2, lit, H*0.03, H*0.07);
+
+  } else if(idx===26){ // Amsterdam — canal houses + Rijksmuseum-ish
+    buildings(y, 53, g1, lit, H*0.03, H*0.05, true);
+    const y2=y-H*0.045;
+    x.fillStyle=mix([50,45,70],[120,110,150],k);
+    for(let i=0;i<9;i++){            // canal houses with stepped gables
+      const hx=W*0.08+i*W*0.095, hw=W*0.05, hh=H*0.07+((i*31)%3)*H*0.01;
+      x.fillRect(hx,y2-hh,hw,hh);
+      x.beginPath(); x.moveTo(hx,y2-hh); x.lineTo(hx,y2-hh-H*0.015);
+      x.lineTo(hx+hw*0.5,y2-hh-H*0.03); x.lineTo(hx+hw,y2-hh-H*0.015);
+      x.lineTo(hx+hw,y2-hh); x.closePath(); x.fill();
+      x.fillStyle=`rgba(255,225,150,${lit?0.9:0.25})`;
+      x.fillRect(hx+hw*0.35,y2-hh*0.55,3,4);   // one lit window
+      x.fillStyle=mix([50,45,70],[120,110,150],k);
+    }
+    // canal water
+    x.fillStyle=`rgba(60,90,110,${0.5+k*0.3})`; x.fillRect(0,y,W,H*0.02);
+    // bike on bridge? just a bike silhouette
+    x.strokeStyle='rgba(20,15,25,.9)'; x.lineWidth=1.5;
+    x.beginPath(); x.arc(W*0.86,y-3,4,0,7); x.arc(W*0.94,y-3,4,0,7); x.stroke();
+    x.beginPath(); x.moveTo(W*0.86,y-3); x.lineTo(W*0.90,y-8); x.lineTo(W*0.94,y-3);
+    x.moveTo(W*0.90,y-8); x.lineTo(W*0.89,y-11); x.moveTo(W*0.89,y-11); x.lineTo(W*0.92,y-11); x.stroke();
+
+  } else { // Auckland — Sky Tower
+    buildings(y, 56, g1, lit, H*0.05, H*0.12);
+    const tx=W*0.42;
+    x.strokeStyle=g3; x.lineWidth=6;
+    x.beginPath(); x.moveTo(tx,y); x.lineTo(tx,y-H*0.22); x.stroke();
+    x.fillStyle=g3;
+    x.beginPath(); x.moveTo(tx-8,y-H*0.20); x.lineTo(tx-5,y-H*0.25);
+    x.lineTo(tx+5,y-H*0.25); x.lineTo(tx+8,y-H*0.20); x.closePath(); x.fill();
+    x.fillRect(tx-3,y-H*0.30,6,H*0.05); x.fillRect(tx-1,y-H*0.34,2,H*0.04);
+    // volcano (Rangitoto)
+    x.fillStyle=mix([35,40,35],[85,100,85],k);
+    x.beginPath(); x.moveTo(W*0.62,y); x.quadraticCurveTo(W*0.74,y-H*0.13,W*0.86,y); x.fill();
+    x.fillStyle=mix([25,28,25],[60,70,60],k);
+    x.beginPath(); x.ellipse(W*0.74,y-H*0.115,W*0.025,H*0.008,0,0,7); x.fill();
+    buildings(y, 58, g2, lit, H*0.03, H*0.08);
   }
 }
 
@@ -432,9 +682,11 @@ function showWin(w){
   const el=document.getElementById('win'), msg=document.getElementById('winmsg');
   msg.innerHTML = (w?c.win:c.lose)+'<br><br><span style="font-size:16px">Click to retry — or switch cities</span>';
   el.style.display='flex';
-  el.onclick = e => { if(e.target.tagName==='BUTTON')return;
+  const onTab = e => e.target.tagName==='BUTTON';
+  el.onclick = e => { if(onTab(e))return;
     sunY=0.95; t=startTime; playing=true; el.style.display='none'; };
-  tabsEl.onclick = e => { if(e.target.tagName==='BUTTON' && !playing){ el.style.display='none'; sunY=0.95; t=startTime; playing=true; } };
+  [tabsEl,tabsLEl].forEach(te => te.onclick = e => { if(onTab(e) && !playing){
+    el.style.display='none'; sunY=0.95; t=startTime; playing=true; } });
 }
 requestAnimationFrame(loop);
 </script>
