@@ -6,6 +6,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 const GAME_ICONS = {
+  "bug-war": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6" r="2.5"/><path d="M10.5 4L9 1.5M13.5 4L15 1.5"/><ellipse cx="12" cy="14.5" rx="5" ry="6"/><path d="M12 10.5v8"/><path d="M7.2 11.5L3.5 9.5M6.9 15.5H3.5M8.2 18.8L5.5 21.5M16.8 11.5L20.5 9.5M17.1 15.5h3.4M15.8 18.8L18.5 21.5"/></svg>`,
+
   "arcade": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 10h2M7 13h2"/><circle cx="15" cy="11" r="1.5"/><path d="M15 13l2 2"/></svg>`,
 
   "rock-paper-scissors": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18" r="2.5"/><rect x="16" y="15.5" width="4" height="4" rx="1"/><circle cx="10" cy="8" r="1.5"/><circle cx="14" cy="8" r="1.5"/><path d="M10 8l-2 8M14 8l2 8"/></svg>`,
