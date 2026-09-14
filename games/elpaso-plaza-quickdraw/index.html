@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>EL PASO QUICKDRAW</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0708;overflow:hidden}
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;
+    cursor:none;touch-action:none;-webkit-user-select:none;user-select:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+"use strict";
+/*
+  EL PASO QUICKDRAW — a first-person reaction duel on the Camino Real.
+  You stand in the plaza at sunset. A gunfighter calls you out.
+  Wait for DRAW! — aim, fire. Draw early and eat lead.
+  Headshots pay extra. Two-gun crews show up as the sun goes down.
+*/
+(() => {
+
+const VW = 960, VH = 600;
+const cvs = document.getElementById('game');
+const g = cvs.getContext('2d');
+
+function resize(){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cvs.width  = Math.round(VW * dpr);
+  cvs.height = Math.round(VH * dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------------------------------------------------------- utils */
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp  = (a,b,t) => a + (b-a)*t;
+const rnd   = (a,b)   => a + Math.random()*(b-a);
+const pick  = arr     => arr[(Math.random()*arr.length)|0];
+function hash(n){ const s = Math.sin(n*127.1+311.7)*43758.5453; return s - Math.floor(s); }
+
+/* ---------------------------------------------------------------- audio */
+let actx = null;
+function A(){
+  if (!actx){ try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} }
+  return actx;
+}
+function noise(dur){
+  const a = A(); if (!a) return null;
+  const n = (a.sampleRate*dur)|0;
+  const buf = a.createBuffer(1, n, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i=0;i<n;i++) d[i] = Math.random()*2-1;
+  return buf;
+}
+function boom(vol=1){
+  const a = A(); if (!a) return;
+  const t = a.currentTime;
+  const s = a.createBufferSource(); s.buffer = noise(0.35);
+  const lp = a.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.setValueAtTime(4200,t); lp.frequency.exponentialRampToValueAtTime(240,t+0.25);
+  const gn = a.createGain(); gn.gain.setValueAtTime(0.9*vol,t);
+  gn.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+  s.connect(lp).connect(gn).connect(a.destination); s.start(t); s.stop(t+0.35);
+  const o = a.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(120,t); o.frequency.exponentialRampToValueAtTime(38,t+0.16);
+  const og = a.createGain(); og.gain.setValueAtTime(0.6*vol,t);
+  og.gain.exponentialRampToValueAtTime(0.001,t+0.2);
+  o.connect(og).connect(a.destination); o.start(t); o.stop(t+0.22);
+}
+function whine(){ // ricochet / miss
+  const a = A(); if (!a) return; const t = a.currentTime;
+  const o = a.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(1900+Math.random()*700,t);
+  o.frequency.exponentialRampToValueAtTime(300,t+0.28);
+  const gn = a.createGain(); gn.gain.setValueAtTime(0.12,t);
+  gn.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+  o.connect(gn).connect(a.destination); o.start(t); o.stop(t+0.32);
+}
+function thud(){ // round lands on a body
+  const a = A(); if (!a) return; const t = a.currentTime;
+  const o = a.createOscillator(); o.type='triangle';
+  o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(55,t+0.1);
+  const gn = a.createGain(); gn.gain.setValueAtTime(0.5,t);
+  gn.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+  o.connect(gn).connect(a.destination); o.start(t); o.stop(t+0.14);
+}
+function ping(freq, dur=0.18, type='square', vol=0.12, when=0){
+  const a = A(); if (!a) return; const t = a.currentTime+when;
+  const o = a.createOscillator(); o.type=type; o.frequency.value=freq;
+  const gn = a.createGain(); gn.gain.setValueAtTime(vol,t);
+  gn.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(gn).connect(a.destination); o.start(t); o.stop(t+dur+0.02);
+}
+const sfx = {
+  go(){ ping(1320,0.25,'square',0.16); ping(1760,0.3,'square',0.1,0.05); },
+  foul(){ ping(220,0.4,'sawtooth',0.16); ping(160,0.5,'sawtooth',0.14,0.08); },
+  clear(){ [523,659,784,1046].forEach((f,i)=>ping(f,0.3,'triangle',0.14,i*0.09)); },
+  down(){ ping(392,0.3,'sawtooth',0.12); ping(262,0.5,'sawtooth',0.12,0.14); }
+};
+
+/* ---------------------------------------------------------------- scene */
+const GROUND_Y = 540;            // feet line for the closest enemy
+const HORIZON  = 366;
+
+function drawSky(){
+  const sky = g.createLinearGradient(0,0,0,HORIZON+20);
+  sky.addColorStop(0.00,'#241539');
+  sky.addColorStop(0.30,'#5b2a44');
+  sky.addColorStop(0.55,'#a04a2e');
+  sky.addColorStop(0.78,'#e08a3c');
+  sky.addColorStop(1.00,'#ffd27a');
+  g.fillStyle = sky; g.fillRect(0,0,VW,HORIZON+20);
+
+  for (let i=0;i<36;i++){
+    const sx = hash(i*1.7)*VW, sy = hash(i*4.3)*140;
+    g.fillStyle = 'rgba(255,244,222,'+(0.1+hash(i*9.1)*0.35)+')';
+    g.fillRect(sx, sy, 1.5, 1.5);
+  }
+  // sun dropping behind the Franciscos
+  const sx = 620, sy = 258;
+  const halo = g.createRadialGradient(sx,sy,4,sx,sy,190);
+  halo.addColorStop(0,'rgba(255,232,170,0.9)');
+  halo.addColorStop(0.4,'rgba(255,170,80,0.3)');
+  halo.addColorStop(1,'rgba(255,120,40,0)');
+  g.fillStyle = halo; g.fillRect(sx-200,sy-200,400,400);
+  g.fillStyle = '#ffeecb';
+  g.beginPath(); g.arc(sx,sy,36,0,Math.PI*2); g.fill();
+
+  for (let i=0;i<6;i++){
+    const cy = 200+hash(i*3.3)*130;
+    g.fillStyle = 'rgba(90,40,50,'+(0.12+hash(i)*0.12)+')';
+    g.beginPath();
+    g.ellipse(hash(i*7.7)*VW, cy, 70+hash(i*2.2)*180, 3+hash(i*5.5)*4, 0,0,Math.PI*2);
+    g.fill();
+  }
+}
+function drawMountains(){
+  g.fillStyle = '#33202c';
+  g.beginPath(); g.moveTo(0,HORIZON);
+  for (let x=0;x<=VW;x+=26){
+    const h = 30 + hash(x*0.11)*70 + (x>430&&x<780 ? (x-430)*(x<620?(x-430):(780-x))*0.0016*150 : 0);
+    g.lineTo(x, HORIZON - h);
+  }
+  g.lineTo(VW,HORIZON); g.closePath(); g.fill();
+  // ridge rim light
+  g.strokeStyle = 'rgba(255,190,120,0.35)'; g.lineWidth = 1.5;
+  g.beginPath();
+  for (let x=0;x<=VW;x+=26){
+    const h = 30 + hash(x*0.11)*70 + (x>430&&x<780 ? (x-430)*(x<620?(x-430):(780-x))*0.0016*150 : 0);
+    x ? g.lineTo(x,HORIZON-h) : g.moveTo(x,HORIZON-h);
+  }
+  g.stroke();
+}
+function mission(x){
+  // adobe mission chapel — Ysleta / San Elizario vibe
+  g.fillStyle = '#3a2320';
+  g.fillRect(x-52, HORIZON-64, 104, 64);           // nave
+  g.fillRect(x-64, HORIZON-58, 14, 58);            // side wall
+  g.fillRect(x-30, HORIZON-96, 44, 96);            // bell tower
+  g.fillStyle = '#2c1a17';
+  g.fillRect(x-24, HORIZON-88, 32, 22);            // belfry opening
+  g.fillStyle = '#c9a35a';
+  g.fillRect(x-15, HORIZON-74, 4, 8);              // bell
+  g.fillStyle = '#f7c873';                          // lit doorway
+  g.fillRect(x-10, HORIZON-30, 20, 30);
+  g.fillStyle = '#3a2320';                          // crossing
+  g.fillRect(x-10, HORIZON-112, 20, 4); g.fillRect(x-2, HORIZON-118, 4, 20);
+}
+function palm(x, h){
+  g.strokeStyle = '#241512'; g.lineWidth = 6; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x, HORIZON+6);
+  g.quadraticCurveTo(x+6, HORIZON-h*0.6, x+2, HORIZON-h); g.stroke();
+  g.lineWidth = 3;
+  for (let i=0;i<7;i++){
+    const a = -Math.PI*0.9 + i*(Math.PI*0.8/6);
+    g.beginPath(); g.moveTo(x+2, HORIZON-h);
+    g.quadraticCurveTo(x+2+Math.cos(a)*h*0.28, HORIZON-h+Math.sin(a)*h*0.2-6,
+                       x+2+Math.cos(a)*h*0.42, HORIZON-h+Math.sin(a)*h*0.34);
+    g.stroke();
+  }
+}
+function drawTown(){
+  mission(160);
+  g.fillStyle = '#2e1b18';                          // low adobes toward Juárez
+  [[300,34],[352,26],[392,44],[640,30],[690,40],[742,26],[830,52],[892,34]]
+    .forEach(b => g.fillRect(b[0], HORIZON-b[1], 44, b[1]));
+  g.fillStyle = 'rgba(255,200,120,0.5)';
+  [[312,14],[404,22],[702,20],[842,28]].forEach(w => g.fillRect(w[0], HORIZON-w[1], 6, 8));
+  palm(500, 150); palm(770, 120); palm(940, 165);
+  // border milestone
+  g.fillStyle = '#4a3226'; g.fillRect(468, HORIZON-26, 26, 30);
+  g.fillStyle = '#d8b57f'; g.fillRect(471, HORIZON-23, 20, 24);
+  g.fillStyle = '#5c3c22'; g.font = '700 7px sans-serif'; g.textAlign='center';
+  g.fillText('EL', 481, HORIZON-13); g.fillText('PASO', 481, HORIZON-5);
+}
+function drawGround(t){
+  const dirt = g.createLinearGradient(0,HORIZON,0,VH);
+  dirt.addColorStop(0,'#6b4527');
+  dirt.addColorStop(0.5,'#4c2f1c');
+  dirt.addColorStop(1,'#2a180e');
+  g.fillStyle = dirt; g.fillRect(0,HORIZON,VW,VH-HORIZON);
+  // long shadows from the setting sun
+  g.strokeStyle = 'rgba(30,15,10,0.4)'; g.lineWidth = 2;
+  for (let i=0;i<34;i++){
+    const y = HORIZON + 6 + hash(i*5.1)*(VH-HORIZON-8);
+    const x = hash(i*2.9)*VW, len = 20+hash(i*8.2)*90;
+    g.beginPath(); g.moveTo(x,y); g.lineTo(x+len,y+1.5); g.stroke();
+  }
+  // creosote bushes + a saguaro each side
+  g.fillStyle = '#20130c';
+  for (let i=0;i<14;i++){
+    const bx = hash(i*6.6)*VW, by = HORIZON+14+hash(i*3.4)*(VH-HORIZON-30), bs = 5+hash(i*9.7)*9;
+    g.beginPath(); g.arc(bx,by,bs,Math.PI,Math.PI*2); g.fill();
+  }
+  saguaro(60,  GROUND_Y-40, 92);
+  saguaro(915, GROUND_Y-30, 74);
+}
+function saguaro(x,y,h){
+  g.strokeStyle = '#26351f'; g.lineWidth = 11; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(x,y); g.lineTo(x,y-h); g.stroke();
+  g.lineWidth = 7;
+  g.beginPath(); g.moveTo(x,y-h*0.55); g.lineTo(x-16,y-h*0.55); g.lineTo(x-16,y-h*0.8); g.stroke();
+  g.beginPath(); g.moveTo(x,y-h*0.4);  g.lineTo(x+14,y-h*0.4);  g.lineTo(x+14,y-h*0.7); g.stroke();
+}
+
+/* ---------------------------------------------------------------- enemies */
+const GUNMEN = [
+  { tag:'HAT',      poncho:'#8c2f24', hat:'#241611', taunt:"Don't blink, amigo." },
+  { tag:'BANDANA',  poncho:'#26545c', hat:'#3d2a12', taunt:"I run this plaza." },
+  { tag:'ONE-EYE',  poncho:'#7a5a1e', hat:'#40303c', taunt:"Been waiting all week." },
+  { tag:'GREASER',  poncho:'#3c4a2a', hat:'#161210', taunt:"Your mama raised a slow one." },
+  { tag:'CALICO',   poncho:'#6e2a50', hat:'#4a2c17', taunt:"Sun's setting on you, partner." },
+];
+const SLOTS = [
+  { x:160, s:0.72 }, { x:320, s:0.85 }, { x:480, s:1.0 },
+  { x:650, s:0.85 }, { x:810, s:0.72 },
+];
+// local body units (before scale s): feet at (0,0), head near y=-100
+const BODY = { top:-104, bottom:0, halfW:20, headY:-118, headR:11 };
+
+function makeGunman(level){
+  const slot = SLOTS[(Math.random()*SLOTS.length)|0];
+  const look = pick(GUNMEN);
+  const react = Math.max(210, 640 - level*28) + rnd(-70, 110);
+  return {
+    x: slot.x + rnd(-18,18), s: slot.s, gy: GROUND_Y - (1-slot.s)*140,
+    ...look,
+    react,                       // ms after DRAW! that they fire
+    drawP: 0,                    // 0..1 arm raise
+    fireT: 0,                    // muzzle flash timer
+    dead: 0,                     // 0..1 falling anim
+    hatFly: 0,
+    aimX: rnd(-0.4,0.4),         // little idle sway
+    wobble: rnd(0,6.28),
+    alive: true,
+  };
+}
+
+function gunmanHitbox(e){
+  const s = e.s;
+  return {
+    body: { x:e.x - BODY.halfW*s, y:e.gy + BODY.top*s, w:BODY.halfW*2*s, h:(BODY.bottom-BODY.top)*s },
+    head: { x:e.x, y:e.gy + BODY.headY*s, r:BODY.headR*s },
+  };
+}
+
+function drawGunman(e, now){
+  const s = e.s;
+  g.save();
+  g.translate(e.x, e.gy);
+  // shadow
+  g.fillStyle = 'rgba(0,0,0,0.45)';
+  g.beginPath(); g.ellipse(0, 2, 30*s, 7*s, 0, 0, Math.PI*2); g.fill();
+
+  const fall = e.dead;
+  g.rotate(fall * -0.5 * Math.PI * 0.44);          // tips backward
+  g.translate(0, fall*8*s);
+  g.scale(s, s);
+
+  const sw = Math.sin(now/900 + e.wobble)*1.2*(e.alive?1:0);
+
+  // legs
+  g.strokeStyle = '#241a10'; g.lineWidth = 8; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-7,-52+sw*0.3); g.lineTo(-9,-2); g.stroke();
+  g.beginPath(); g.moveTo( 7,-52-sw*0.3); g.lineTo( 9,-2); g.stroke();
+
+  // poncho
+  g.fillStyle = e.poncho;
+  g.beginPath();
+  g.moveTo(-26,-50); g.lineTo(-16,-96); g.lineTo(16,-96); g.lineTo(26,-50);
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(-26,-58,52,6);
+
+  // gun arm — low at ready, snaps up when DRAW
+  const sx = 14, sy = -88;
+  const hx = lerp(20, 34, e.drawP), hy = lerp(-56, -86, e.drawP);
+  g.strokeStyle = e.poncho; g.lineWidth = 7;
+  g.beginPath(); g.moveTo(sx,sy); g.lineTo(hx+sw*0.2,hy); g.stroke();
+  if (e.drawP > 0.4){
+    g.save(); g.translate(hx,hy); g.rotate(-0.12);
+    g.fillStyle = '#33241a'; g.fillRect(0,-2.5,15,5); g.fillRect(1,-2,4,8);
+    g.restore();
+  }
+  if (e.fireT > 0 && e.alive){
+    g.save(); g.globalCompositeOperation = 'lighter';
+    const fx = hx+17, fy = hy-1, r = 14*e.fireT;
+    const fl = g.createRadialGradient(fx,fy,0,fx,fy,r);
+    fl.addColorStop(0,'rgba(255,250,220,0.95)'); fl.addColorStop(1,'rgba(255,130,40,0)');
+    g.fillStyle = fl; g.beginPath(); g.arc(fx,fy,r,0,Math.PI*2); g.fill();
+    g.restore();
+  }
+
+  // head + mask
+  g.fillStyle = '#7a5638';
+  g.beginPath(); g.arc(0,-112,9,0,Math.PI*2); g.fill();
+  g.fillStyle = '#d9d2c2';
+  g.fillRect(-9,-112,18,5);
+  // hat
+  const hf = e.hatFly;
+  g.save();
+  g.translate(hf*-18, hf*-62); g.rotate(hf*-1.4);
+  g.fillStyle = e.hat;
+  g.beginPath(); g.ellipse(0,-118,15,4.5,0,0,Math.PI*2); g.fill();
+  g.fillRect(-7,-130,14,12);
+  g.restore();
+
+  g.restore();
+
+  // taunt bubble while waiting
+  if (e.alive && S.mode === 'set'){
+    const bx = e.x, by = e.gy - (BODY.headY*0 + 152)*s;
+    g.font = '600 13px Georgia, serif'; g.textAlign = 'center';
+    const w = g.measureText(e.taunt).width + 16;
+    g.fillStyle = 'rgba(12,8,6,0.75)';
+    g.beginPath(); g.roundRect(bx-w/2, by-15, w, 22, 6); g.fill();
+    g.fillStyle = '#e8c98a';
+    g.fillText(e.taunt, bx, by);
+  }
+}
+
+/* ---------------------------------------------------------------- player gun (first person) */
+function drawGun(now){
+  const aimX = clamp((S.aim.x - VW/2) / (VW/2), -1, 1);
+  const rec = S.recoil;
+  g.save();
+  g.translate(VW/2 + aimX*70, VH + 30 - rec*34);
+  g.rotate(aimX*-0.10 + rec*0.14);
+
+  // forearm
+  g.fillStyle = '#3a2b1e';
+  g.beginPath(); g.roundRect(-26, -120, 52, 130, 18); g.fill();
+  // revolver
+  g.fillStyle = '#4a3526';                         // grip
+  g.beginPath(); g.roundRect(-16,-168,32,64,8); g.fill();
+  g.fillStyle = '#2d2118';
+  g.beginPath(); g.arc(0,-160,17,0,Math.PI*2); g.fill();   // cylinder
+  g.fillStyle = '#8c8f94';                          // barrel
+  g.beginPath(); g.roundRect(-7,-238,14,74,4); g.fill();
+  g.fillStyle = '#565a60';
+  g.beginPath(); g.roundRect(-3,-244,6,10,2); g.fill();
+  // muzzle flash
+  if (S.flash > 0){
+    g.save(); g.globalCompositeOperation = 'lighter';
+    const r = 46*S.flash;
+    const fl = g.createRadialGradient(0,-246,0,0,-246,r);
+    fl.addColorStop(0,'rgba(255,252,225,0.98)');
+    fl.addColorStop(0.5,'rgba(255,190,80,0.7)');
+    fl.addColorStop(1,'rgba(255,120,30,0)');
+    g.fillStyle = fl; g.beginPath(); g.arc(0,-246,r,0,Math.PI*2); g.fill();
+    g.restore();
+  }
+  g.restore();
+
+  // smoke from the barrel drifts where the gun points
+  if (S.smokePuff > 0 && S.flash > 0.2){
+    for (let i=0;i<2;i++){
+      P.push({ x: VW/2 + aimX*98 + rnd(-8,8), y: VH-238 - rec*30,
+        vx: rnd(-14,14), vy: rnd(-46,-18), r: rnd(6,14), life: rnd(0.7,1.4),
+        c: 'rgba(210,200,190,' });
+    }
+    S.smokePuff = 0;
+  }
+}
+
+/* ---------------------------------------------------------------- particles */
+const P = [];
+function burst(x,y,n,opts={}){
+  for (let i=0;i<n;i++){
+    const a = rnd(0,Math.PI*2), sp = rnd(40, opts.fast?420:190);
+    P.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - (opts.up||0),
+      r:rnd(2,opts.r||6), life:rnd(0.4,opts.life||0.9),
+      c: opts.c || 'rgba(200,160,110,', grav: opts.grav ?? 300 });
+  }
+}
+function stepParticles(dt){
+  for (let i=P.length-1;i>=0;i--){
+    const p = P[i];
+    p.life -= dt;
+    if (p.life <= 0){ P.splice(i,1); continue; }
+    p.x += p.vx*dt; p.y += p.vy*dt;
+    p.vy += (p.grav||0)*dt;
+  }
+}
+function drawParticles(){
+  for (const p of P){
+    g.fillStyle = p.c + clamp(p.life,0,0.6) + ')';
+    g.beginPath(); g.arc(p.x, p.y, p.r*(0.6+0.6*(1-p.life)), 0, Math.PI*2); g.fill();
+  }
+}
+
+/* ---------------------------------------------------------------- state */
+const S = {
+  mode: 'title',        // title | set | draw | clear | down | over
+  level: 1,
+  lives: 3,
+  score: 0,
+  ammo: 6,
+  crew: [],
+  cueAt: 0,             // wall-clock ms when DRAW! happens
+  aim: { x: VW/2, y: VH/2 },
+  recoil: 0, flash: 0, smokePuff: 0,
+  shake: 0, hurt: 0,
+  msg: '', sub: '', msgCol: '#ffd894',
+  best: null, roundBest: null,
+  endAt: 0,
+};
+try { S.best = parseFloat(localStorage.getItem('elpaso_best') || '') || null; } catch(e){}
+try { S.hi   = parseFloat(localStorage.getItem('elpaso_hi')   || '') || null; } catch(e){}
+S.hi = S.hi ?? 0;
+
+function beginWave(){
+  S.crew = [];
+  let n = 1;
+  if (S.level >= 3 && Math.random() < 0.35) n = 2;
+  if (S.level >= 6 && Math.random() < 0.30) n = 3;
+  // spread crew across distinct slots
+  const slots = SLOTS.slice().sort(() => Math.random()-0.5);
+  for (let i=0;i<n;i++){
+    const look = pick(GUNMEN);
+    const slot = slots[i % slots.length];
+    const react = Math.max(210, 640 - S.level*28) + rnd(-70, 110);
+    S.crew.push({
+      x: slot.x + rnd(-16,16), s: slot.s, gy: GROUND_Y - (1-slot.s)*140,
+      ...look, react, drawP:0, fireT:0, dead:0, hatFly:0,
+      wobble: rnd(0,6.28), alive:true, fired:false,
+    });
+  }
+  S.ammo = 6;
+  S.mode = 'set';
+  S.roundBest = null;
+  S.cueAt = performance.now() + rnd(1200, 3000);
+  S.msg = '';
+}
+function beginGame(){
+  S.level = 1; S.lives = 3; S.score = 0;
+  beginWave();
+}
+function goDraw(){
+  S.mode = 'draw';
+  S.msg = 'DRAW!'; S.msgCol = '#ff5a2a'; S.sub = '';
+  sfx.go();
+  for (const e of S.crew){ e.fireAt = performance.now() + e.react; }
+}
+function endWave(){
+  S.mode = 'clear';
+  const bonus = 100 * S.crew.length;
+  S.score += bonus;
+  S.msg = 'PLAZA CLEAR'; S.msgCol = '#8fbf9f';
+  S.sub = '+' + bonus + ' — tap for the next gun';
+  S.endAt = performance.now() + 900;   // ignore taps until a beat
+  sfx.clear();
+  if (S.roundBest !== null && (S.best === null || S.roundBest < S.best)){
+    S.best = S.roundBest;
+    try { localStorage.setItem('elpaso_best', String(S.best)); } catch(e){}
+  }
+}
+function gameOver(){
+  S.mode = 'over';
+  S.hi = Math.max(S.hi, S.score);
+  try { localStorage.setItem('elpaso_hi', String(S.hi)); } catch(e){}
+  sfx.down();
+}
+
+/* ---------------------------------------------------------------- shooting */
+function pullTrigger(){
+  const now = performance.now();
+
+  if (S.mode === 'title' || S.mode === 'over'){ beginGame(); return; }
+  if (S.mode === 'clear'){ if (now > S.endAt){ S.level++; beginWave(); } return; }
+  if (S.mode === 'set'){
+    // jumped the cue — the crew never waits for polite
+    for (const e of S.crew){ if (!e.fired){ e.fired = true; e.fireT = 1; } }
+    hurtPlayer('YOU JUMPED THE CUE');
+    sfx.foul();
+    if (S.lives > 0){
+      // round is over; step to the next gun after the penalty flash
+      S.mode = 'clear';
+      S.endAt = performance.now() + 1500;
+      S.sub = 'the crew lets a jumpy draw walk away — once';
+    }
+    return;
+  }
+  if (S.mode !== 'draw') return;
+  if (S.ammo <= 0){ return; }
+
+  S.ammo--;
+  S.recoil = 1; S.flash = 1; S.smokePuff = 1; S.shake = Math.max(S.shake, 0.5);
+  boom(0.8);
+
+  const ax = S.aim.x, ay = S.aim.y;
+  let hit = null, head = false;
+  for (const e of S.crew){
+    if (!e.alive) continue;
+    const hb = gunmanHitbox(e);
+    const dx = ax - hb.head.x, dy = ay - hb.head.y;
+    if (dx*dx + dy*dy <= (hb.head.r+4)*(hb.head.r+4)){ hit = e; head = true; break; }
+    const b = hb.body;
+    if (ax >= b.x-4 && ax <= b.x+b.w+4 && ay >= b.y && ay <= b.y+b.h){ hit = e; break; }
+  }
+
+  if (!hit){
+    whine();
+    burst(clamp(ax,0,VW), clamp(ay,HORIZON,VH), 10, { c:'rgba(220,190,140,', up:60, fast:true });
+    return;
+  }
+
+  hit.alive = false; hit.dead = 0.0001; hit.hatFly = 0.0001;
+  thud();
+  burst(hit.x, hit.gy - 70*hit.s, 16, { c:'rgba(120,30,20,', fast:true, life:0.7, r:4 });
+  burst(hit.x, hit.gy - 10, 12, { c:'rgba(200,160,110,', up:40 });
+
+  const drawMs = now - S.cueFiredAt;
+  if (S.roundBest === null || drawMs < S.roundBest) S.roundBest = drawMs;
+  let pts = Math.max(60, 1000 - Math.round(drawMs)) + (head ? 250 : 0);
+  S.score += pts;
+  S.msg = head ? 'HEADSHOT  +' + pts : 'GOOD ROUND  +' + pts;
+  S.msgCol = head ? '#ffd894' : '#d9b98a';
+  S.sub = Math.round(drawMs) + ' MS' + (head ? '  •  X2 AIM' : '');
+
+  if (S.crew.every(gm => !gm.alive)) endWave();
+}
+
+function hurtPlayer(cause){
+  S.lives--;
+  S.hurt = 1; S.shake = 1;
+  boom(0.55);
+  S.msg = cause; S.msgCol = '#ff4a3a';
+  if (S.lives <= 0){
+    S.endAt = performance.now() + 1200;
+    S.mode = 'down';
+  }
+}
+
+/* ---------------------------------------------------------------- input */
+function setAim(ev){
+  const r = cvs.getBoundingClientRect();
+  const p = ev.touches ? ev.touches[0] : ev;
+  S.aim.x = (p.clientX - r.left) / r.width  * VW;
+  S.aim.y = (p.clientY - r.top)  / r.height * VH;
+}
+cvs.addEventListener('pointermove', setAim);
+cvs.addEventListener('pointerdown', ev => { ev.preventDefault(); setAim(ev); A()?.resume?.(); pullTrigger(); });
+addEventListener('keydown', ev => {
+  if (ev.code === 'Space' || ev.code === 'Enter'){
+    ev.preventDefault(); A()?.resume?.(); pullTrigger();
+  }
+});
+
+/* ---------------------------------------------------------------- ui bits */
+function text(s, x, y, size, col, align='center', serif=false, ls=0){
+  g.save();
+  g.font = (serif ? '600 ' : '700 ') + size + 'px ' + (serif ? 'Georgia, serif' : 'Impact, "Arial Narrow", sans-serif');
+  g.textAlign = align; g.textBaseline = 'middle';
+  g.letterSpacing = ls + 'px';
+  g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillText(s, x+2, y+3);
+  g.fillStyle = col; g.fillText(s, x, y);
+  g.restore();
+}
+function dim(a){ g.fillStyle = 'rgba(8,4,3,' + a + ')'; g.fillRect(0,0,VW,VH); }
+
+function drawCrosshair(){
+  if (S.mode === 'title' || S.mode === 'over') return;
+  const { x, y } = S.aim;
+  g.strokeStyle = S.mode === 'draw' ? 'rgba(255,230,160,0.95)' : 'rgba(255,230,160,0.45)';
+  g.lineWidth = 1.6;
+  g.beginPath(); g.arc(x, y, 12, 0, Math.PI*2); g.stroke();
+  g.beginPath();
+  g.moveTo(x-19,y); g.lineTo(x-7,y); g.moveTo(x+7,y); g.lineTo(x+19,y);
+  g.moveTo(x,y-19); g.lineTo(x,y-7); g.moveTo(x,y+7); g.lineTo(x,y+19);
+  g.stroke();
+}
+
+/* ---------------------------------------------------------------- main loop */
+let prev = performance.now();
+function frame(now){
+  const dt = Math.min(0.05, (now - prev)/1000); prev = now;
+
+  /* — timers — */
+  if (S.mode === 'set' && now >= S.cueAt){ S.cueFiredAt = now; goDraw(); }
+  if (S.mode === 'draw'){
+    for (const e of S.crew){
+      if (e.alive && !e.fired && now >= e.fireAt){
+        e.fired = true; e.fireT = 1;
+        hurtPlayer('BEAT YOU TO IT — ' + (e.react|0) + ' MS');
+      }
+    }
+    if (S.lives > 0 && S.crew.every(e => !e.alive)) endWave();
+  }
+  if (S.mode === 'down' && now >= S.endAt) gameOver();
+
+  /* — animate — */
+  const drawing = (S.mode === 'draw' || (S.mode !== 'set' && S.mode !== 'title'));
+  for (const e of S.crew){
+    const want = (S.mode === 'draw' || S.mode === 'down') ? 1 : 0;
+    e.drawP = lerp(e.drawP, want, e.drawP < want ? 0.35 : 0.1);
+    if (!e.alive){ e.dead = Math.min(1, e.dead + dt*2.4); e.hatFly = Math.min(1, e.hatFly + dt*2); }
+    e.fireT = Math.max(0, e.fireT - dt*6);
+  }
+  S.recoil  = Math.max(0, S.recoil  - dt*7);
+  S.flash   = Math.max(0, S.flash   - dt*11);
+  S.shake   = Math.max(0, S.shake   - dt*2.6);
+  S.hurt    = Math.max(0, S.hurt    - dt*1.6);
+  stepParticles(dt);
+
+  /* — render — */
+  g.save();
+  if (S.shake > 0) g.translate(rnd(-7,7)*S.shake, rnd(-5,5)*S.shake);
+
+  drawSky();
+  drawMountains();
+  drawTown();
+  drawGround(now);
+
+  const crewSorted = S.crew.slice().sort((a,b) => a.s - b.s);
+  for (const e of crewSorted) drawGunman(e, now);
+
+  drawParticles();
+  drawGun(now);
+
+  // hurt flash
+  if (S.hurt > 0){
+    const hv = g.createRadialGradient(VW/2,VH/2,VH*0.3,VW/2,VH/2,VH);
+    hv.addColorStop(0,'rgba(160,0,0,0)');
+    hv.addColorStop(1,'rgba(160,0,0,'+(0.55*S.hurt)+')');
+    g.fillStyle = hv; g.fillRect(0,0,VW,VH);
+  }
+  // vignette
+  const vg = g.createRadialGradient(VW/2,VH/2,VH*0.4,VW/2,VH/2,VH*1.05);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.5)');
+  g.fillStyle = vg; g.fillRect(0,0,VW,VH);
+  g.restore();
+
+  /* — HUD — */
+  // lives as six-guns top-left, score top-right, level top-center
+  for (let i=0;i<3;i++){
+    g.save(); g.translate(28 + i*30, 34);
+    g.globalAlpha = i < S.lives ? 1 : 0.22;
+    g.fillStyle = '#ffd894';
+    g.fillRect(-2,-12,4,16); g.fillRect(-8,-4,16,4); g.fillRect(6,-4,4,10);
+    g.restore();
+  }
+  text('AMMO', 14, 66, 12, '#b99a6f', 'left');
+  for (let i=0;i<6;i++){
+    g.fillStyle = i < S.ammo ? '#e8b64a' : 'rgba(140,110,80,0.3)';
+    g.fillRect(70 + i*13, 60, 6, 12);
+  }
+  text(String(S.score).padStart(6,'0'), VW-14, 30, 30, '#ffd894', 'right');
+  text('HIGH ' + String(Math.max(S.hi, S.score)).padStart(6,'0'), VW-14, 58, 13, '#b99a6f', 'right');
+  text('SUNSET ' + S.level, VW/2, 30, 18, '#e8b64a', 'center', false, 4);
+  if (S.best !== null) text('FASTEST DRAW ' + Math.round(S.best) + ' MS', VW/2, 54, 12, '#b99a6f', 'center', false, 2);
+
+  if (S.mode === 'set'){
+    text('WAIT FOR IT…', VW/2, 180, 34, 'rgba(232,182,74,0.85)', 'center', false, 8);
+  } else if (S.mode === 'draw' && S.msg === 'DRAW!'){
+    const pulse = 1 + Math.sin(now/60)*0.05;
+    g.save(); g.translate(VW/2, 170); g.scale(pulse,pulse);
+    text('DRAW!', 0, 0, 84, '#ff5a2a', 'center', false, 10);
+    g.restore();
+  } else if (S.msg && (S.mode==='draw' || S.mode==='clear' || S.mode==='down')){
+    text(S.msg, VW/2, 200, 44, S.msgCol, 'center', false, 4);
+    if (S.sub) text(S.sub, VW/2, 244, 17, '#c9a97c', 'center', false, 2);
+  }
+  if (S.mode === 'clear' && now > S.endAt)
+    text('TAP TO CALL THE NEXT GUN', VW/2, 300, 18, '#ffd894', 'center', false, 4);
+
+  if (S.mode === 'title'){
+    dim(0.45);
+    text('EL PASO', VW/2, 180, 92, '#ffd894', 'center', false, 10);
+    text('QUICKDRAW', VW/2, 252, 44, '#ff5a2a', 'center', false, 12);
+    text('A GUN IS CALLING YOU OUT ON THE CAMINO REAL', VW/2, 312, 16, '#c9a97c', 'center', true, 2);
+    text('AIM WITH THE MOUSE — TAP OR CLICK TO FIRE', VW/2, 342, 16, '#c9a97c', 'center', true, 2);
+    text('WAIT FOR “DRAW!” — EARLY LEAD COSTS BLOOD', VW/2, 372, 16, '#c9a97c', 'center', true, 2);
+    text('HEADSHOTS PAY DOUBLE', VW/2, 402, 16, '#c9a97c', 'center', true, 2);
+    text('TAP OR PRESS SPACE', VW/2, 462, 24, '#ffd894', 'center', false, 6);
+  }
+  if (S.mode === 'over'){
+    dim(0.55);
+    text('BURIED IN THE', VW/2, 176, 30, '#c9a97c', 'center', true, 6);
+    text('EL PASO SUNSET', VW/2, 226, 58, '#ff5a2a', 'center', false, 8);
+    text('SCORE ' + S.score + '   •   DUELS SURVIVED: ' + (S.level-1), VW/2, 296, 22, '#ffd894', 'center', false, 3);
+    text('FASTEST DRAW ' + (S.best!==null ? Math.round(S.best)+' MS' : '—') + '   •   HIGH ' + S.hi, VW/2, 330, 16, '#c9a97c', 'center', false, 2);
+    text('TAP TO RIDE AGAIN', VW/2, 400, 24, '#e8b64a', 'center', false, 6);
+  }
+
+  drawCrosshair();
+  requestAnimationFrame(frame);
+}
+window.__elpaso = S;
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
