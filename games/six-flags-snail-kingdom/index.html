@@ -44,7 +44,10 @@
 
   /* ---------- board ---------- */
   #board{
-    position:relative;width:100%;aspect-ratio:960/600;
+    position:relative;
+    width:min(100%, calc(1.6 * (100vh - 190px)));
+    margin:0 auto;
+    aspect-ratio:960/600;
     border-radius:14px;overflow:hidden;
     border:1px solid var(--line);background:#bcd7e6;box-shadow:var(--shadow);
     touch-action:none;
