@@ -213,6 +213,8 @@ const GAME_ICONS = {
   "solitaire": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="10" height="14" rx="1.5"/><rect x="9" y="6" width="10" height="14" rx="1.5"/><path d="M12 10l1.5 1.5L12 13l-1.5-1.5L12 10z"/></svg>`,
   "block-blast": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor"/></svg>`,
 
+  "six-flags-snail-kingdom": `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 19c3-1 5-7 10-7s7 6 10 7"/><path d="M12 12V6"/><path d="M12 6l5 2-5 2"/><path d="M2 19h20"/></svg>`,
+
 };
 
 // Return the SVG markup for a game slug (fallback to a generic arcade icon).

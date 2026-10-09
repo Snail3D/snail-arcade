@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Six Flags Over Sheldon — Snail Kingdom Park Day</title>
+<meta name="description" content="A day at the Snail Kingdom theme park. Ride the rides, tally the fun, and find out what a roller coaster is actually worth.">
+<meta property="og:title" content="Six Flags Over Sheldon">
+<meta property="og:description" content="Six pennants, five rides, one sleep meter. Tally the fun.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#f2e3c8">
+<style>
+  :root{
+    --paper:#f7efdd;
+    --ink:#33291f;
+    --ink-soft:#6b5a45;
+    --line:#cbb694;
+    --sky:#a9d8ea;
+    --grass:#5f9a55;
+    --flag:#c9412f;
+    --gold:#c98a2a;
+    --teal:#2f6f70;
+    --panel:#fffaf0;
+    --shadow:0 10px 30px rgba(51,41,31,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #fdf6e6 0%, rgba(253,246,230,0) 60%),
+      linear-gradient(#f3e6cd, #e7d7ba 70%, #ddcaa8);
+    background-attachment:fixed;
+    color:var(--ink);
+    font:16px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,system-ui,sans-serif;
+    -webkit-text-size-adjust:100%;
+    padding:14px 12px 40px;
+  }
+  .wrap{max-width:1000px;margin:0 auto}
+  .topbar{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .brand{font-family:Georgia,"Times New Roman",serif;font-size:22px;letter-spacing:.2px}
+  .brand b{color:var(--flag)}
+  .kicker{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  .spacer{flex:1}
+
+  /* ---------- board ---------- */
+  #board{
+    position:relative;width:100%;aspect-ratio:960/600;
+    border-radius:14px;overflow:hidden;
+    border:1px solid var(--line);background:#bcd7e6;box-shadow:var(--shadow);
+    touch-action:none;
+  }
+  #board canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #ridecv{display:none}
+
+  /* ---------- hud ---------- */
+  #hud{
+    position:absolute;left:0;right:0;top:0;padding:8px 10px;
+    display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    background:linear-gradient(rgba(255,250,240,.94),rgba(255,250,240,.72) 70%,rgba(255,250,240,0));
+    pointer-events:none;
+  }
+  .chip{
+    pointer-events:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;
+    padding:5px 9px;font-size:12px;line-height:1.2;min-width:78px;
+  }
+  .chip .lbl{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  .chip .val{font-family:Georgia,serif;font-size:17px}
+  #sleepbar{
+    position:relative;width:150px;height:26px;border:1px solid var(--line);border-radius:9px;
+    background:var(--panel);overflow:hidden;pointer-events:auto;
+  }
+  #sleepfill{position:absolute;left:0;top:0;bottom:0;width:30%;background:#6fae63;transition:width .25s,background .25s}
+  #sleepbar span{position:relative;display:block;text-align:center;font-size:11px;line-height:26px;letter-spacing:.08em;color:var(--ink);text-transform:uppercase}
+  #hud button{
+    pointer-events:auto;margin-left:auto;font:inherit;font-size:12px;
+    background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:6px 11px;cursor:pointer;color:var(--ink);
+  }
+  #hud button:hover{border-color:var(--ink-soft)}
+
+  /* ---------- feed ---------- */
+  #feed{
+    position:absolute;left:10px;bottom:10px;max-width:44%;
+    display:flex;flex-direction:column;gap:4px;pointer-events:none;
+  }
+  #feed div{
+    background:rgba(255,250,240,.9);border:1px solid var(--line);border-radius:8px;
+    padding:4px 8px;font-size:12.5px;color:var(--ink);
+    animation:pop .3s ease both;
+  }
+  #feed div b{color:var(--flag)}
+  @keyframes pop{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+  /* ---------- overlay panels ---------- */
+  #panel{
+    position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(51,41,31,.42);padding:16px;
+  }
+  #panel.on{display:flex}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;max-width:560px;width:100%;box-shadow:var(--shadow);
+  }
+  .card h2{font-family:Georgia,serif;font-size:20px;margin-bottom:6px}
+  .card .sub{color:var(--ink-soft);font-size:13px;margin-bottom:10px}
+  .card .line{border-top:1px dashed var(--line);margin:10px 0}
+  .card .say{font-family:Georgia,serif;font-size:17px;margin:8px 0 2px}
+  .card .meta{font-size:12.5px;color:var(--ink-soft)}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  button.big{
+    font:inherit;font-size:15px;padding:10px 16px;border-radius:10px;cursor:pointer;
+    background:var(--ink);color:var(--paper);border:1px solid var(--ink);
+  }
+  button.big.ghost{background:var(--panel);color:var(--ink);border-color:var(--line)}
+  button.big:hover{opacity:.92}
+
+  /* ---------- screens ---------- */
+  .screen{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;padding:18px;
+    background:linear-gradient(#f7efdd,#e9dabb);overflow:auto}
+  .screen.on{display:flex}
+  .screen .card{max-width:660px}
+  h1{font-family:Georgia,serif;font-size:clamp(26px,5.4vw,44px);line-height:1.04;letter-spacing:-.4px}
+  h1 small{display:block;font-size:.42em;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin-top:8px;font-family:ui-sans-serif,system-ui,sans-serif}
+  .lede{font-size:15px;color:var(--ink-soft);margin-top:12px;max-width:52ch}
+  .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:16px}
+  .rule{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:13px}
+  .rule b{display:block;font-family:Georgia,serif;font-size:15px;margin-bottom:2px}
+  .keys{margin-top:14px;font-size:12.5px;color:var(--ink-soft)}
+  .disc{margin-top:16px;font-size:11.5px;color:#8a7a63}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:6px 6px;border-bottom:1px solid #eadfc7;vertical-align:top}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  td.num,th.num{text-align:right;font-family:Georgia,serif}
+  .good{color:#3f7a3e}.bad{color:#b03a2b}.mid{color:var(--gold)}
+  .tally{font-family:Georgia,serif;font-size:14px}
+  .grand{margin-top:12px;border-top:2px solid var(--ink);padding-top:10px}
+  .grand .row{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:2px 0}
+  .grand .row b{font-family:Georgia,serif;font-size:19px}
+  .closer{margin-top:14px;font-family:Georgia,serif;font-size:16px}
+  #reportBody{max-height:56vh;overflow:auto;padding-right:4px}
+  @media(max-width:560px){
+    #feed{max-width:70%}
+    .chip{min-width:64px}
+    #sleepbar{width:118px}
+    table{font-size:12.5px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand"><b>SN</b>AIL KINGDOM</div>
+    <div class="kicker">Six Flags Over Sheldon</div>
+    <div class="spacer"></div>
+    <div class="kicker">Tally &amp; Valuation Engine v1</div>
+  </div>
+
+  <div id="board">
+    <canvas id="parkcv" width="960" height="600"></canvas>
+    <canvas id="ridecv" width="960" height="600"></canvas>
+    <div id="hud">
+      <div class="chip"><span class="lbl">Park closes in</span><span class="val" id="clock">5:00</span></div>
+      <div id="sleepbar" title="Sleepiness — 100 and you are asleep on a bench"><div id="sleepfill"></div><span id="sleeptxt">sleepiness 30</span></div>
+      <div class="chip"><span class="lbl">Fun bank</span><span class="val" id="funval">0</span></div>
+      <button id="leaveBtn">Leave the park</button>
+    </div>
+    <div id="feed"></div>
+    <div id="panel"><div class="card" id="panelCard"></div></div>
+  </div>
+
+  <div class="rules" style="margin-top:14px">
+    <div class="rule"><b>Tap a ride</b>Walk over, wait in line, ride it. Five rides, one corn dog cart.</div>
+    <div class="rule"><b>Watch the meter</b>Good rides are exhausting. Sleepiness hits 100 and the day ends on a bench.</div>
+    <div class="rule"><b>Tallies</b>Every ride gets a verdict. The verdicts get billed. The bill is the game.</div>
+  </div>
+</div>
+
+<!-- ============ START ============ -->
+<div id="start" class="screen on"><div class="card">
+  <div class="kicker">Snail Kingdom presents</div>
+  <h1>Six Flags Over Sheldon<small>a park day with accounting</small></h1>
+  <p class="lede">Sheldon has been promised a day at the park. Six pennants over the gate, five rides on the midway, and one bell curve of sleep crashing toward nap time. Ride everything you can before the lot closes — then find out what the fun was actually worth.</p>
+  <div class="keys">
+    Tap or click a ride to walk there. Coaster and drop tower are timing games. Log flume is a steer game. Corn dog is a balance game.<br>
+    Keyboard: <b>1</b>–<b>5</b> pick a ride, <b>Space</b> acts, <b>Arrows</b> steer, <b>Esc</b> leaves the park.
+  </div>
+  <div class="btnrow">
+    <button class="big" id="enterBtn">Enter the park</button>
+  </div>
+  <div class="disc">A parody fan game. Not affiliated with, endorsed by, or connected to Six Flags Entertainment Corporation. Any resemblance to a real ledger is the point.</div>
+</div></div>
+
+<!-- ============ REPORT ============ -->
+<div id="report" class="screen"><div class="card">
+  <div class="kicker" id="repKicker">The day is over</div>
+  <h2 id="repTitle" style="font-family:Georgia,serif;font-size:26px;margin:4px 0 2px">The Tallies</h2>
+  <div class="sub" id="repSub"></div>
+  <div id="reportBody"></div>
+  <div class="btnrow">
+    <button class="big" id="againBtn">Ride again</button>
+    <button class="big ghost" id="copyBtn">Copy the tally sheet</button>
+  </div>
+</div></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- helpers ---------------- */
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+const lerp = (a,b,t) => a+(b-a)*t;
+const rnd = (a,b) => a+Math.random()*(b-a);
+const fmtClock = s => { s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+const esc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+/* ---------------- park data ---------------- */
+const W = 960, H = 600;
+const DAY = 300;              // seconds of park day
+const IDLE_DRAIN = 0.100;     // sleep per second just being at the park
+const QUEUE_DRAIN = 0.120;    // sleep per second standing in line
+
+const RIDES = [
+  { id:"stampede", name:"Sheldon Stampede", kind:"Wooden coaster", base:120, sleep:15, min:2.0, queue:5,
+    hx:565, hy:90,  hw:360, hh:230, ex:700, ey:352, color:"#c9412f",
+    blurb:"Two thousand feet of boardwalk and one very long first hill." },
+  { id:"tower",    name:"SlingSnail",       kind:"Drop tower",     base:110, sleep:17, min:1.0, queue:6,
+    hx:330, hy:80,  hw:230, hh:220, ex:440, ey:346, color:"#6b4fa8",
+    blurb:"Up slow, down fast, and the whole thing is your own idea." },
+  { id:"tilt",     name:"Tilt-A-Snail",     kind:"Spinner",        base:70,  sleep:9,  min:1.5, queue:4,
+    hx:70,  hy:330, hw:250, hh:150, ex:210, ey:498, color:"#d8892a",
+    blurb:"Nobody is driving. Everybody is laughing. Stomach optional." },
+  { id:"flume",    name:"Sheldon Falls",    kind:"Log flume",      base:90,  sleep:12, min:2.5, queue:5,
+    hx:560, hy:390, hw:370, hh:190, ex:620, ey:558, color:"#2f7fa8",
+    blurb:"A water ride in the late afternoon. Bring the rain jacket." },
+  { id:"snack",    name:"Corn Dog Cart",    kind:"Snack",          base:45,  sleep:-14, min:0.5, queue:2,
+    hx:330, hy:440, hw:210, hh:150, ex:436, ey:470, color:"#b8860b",
+    blurb:"Mustard, ketchup, sugar. Get the tray to the bench without spilling." }
+];
+
+const VERDICTS = {
+  best:{ key:"best", word:"Best ride of the day", say:"Best ride of the day. Again. Again.", liked:"yes", again:"yes", mult:1.3 },
+  fun: { key:"fun",  word:"That was fun",         say:"That was fun.",                       liked:"yes", again:"yes", mult:1.0 },
+  ok:  { key:"ok",   word:"It was okay",          say:"It was okay, I guess.",               liked:"mid", again:"no",  mult:0.7 },
+  meh: { key:"meh",  word:"I want to go home",    say:"I want to go home.",                  liked:"no",  again:"no",  mult:0.35 }
+};
+const MULTI = { stampede:2, tower:2, flume:2 };
+
+/* ---------------- state ---------------- */
+let mode = "start";                       // start | park | travel | queue | ride | report
+let park, mini, cur, walk, queueT, queueTotal, logLines;
+
+function newPark(){
+  return {
+    time: DAY,
+    sleep: 30,
+    fun: 0,
+    rides: 0,
+    visited: {},            // id -> times ridden
+    rows: [],               // report rows
+    tally: { yes:0, mid:0, no:0, again:0, sore:0, best:"" },
+    snail: { x:480, y:520 },
+    done: false,
+    cause: ""
+  };
+}
+park = newPark();
+
+/* ---------------- logging ---------------- */
+function log(html){
+  logLines.push(html);
+  if(logLines.length > 7) logLines.shift();
+  renderFeed();
+}
+function renderFeed(){
+  const f = $("feed");
+  f.innerHTML = logLines.map(l => "<div>"+l+"</div>").join("");
+}
+
+/* ---------------- HUD ---------------- */
+function drawHud(){
+  $("clock").textContent = fmtClock(park.time);
+  const s = Math.round(park.sleep);
+  $("sleeptxt").textContent = "sleepiness " + s;
+  $("funval").textContent = park.fun;
+  const f = $("sleepfill");
+  f.style.width = clamp(s,0,100) + "%";
+  f.style.background = s < 55 ? "#6fae63" : (s < 82 ? "#d8a12a" : "#c9412f");
+}
+
+/* ================================================================
+   PARK MAP
+   ================================================================ */
+const PK = $("parkcv"), pg = PK.getContext("2d");
+const RK = $("ridecv"), rg = RK.getContext("2d");
+
+function drawSky(g){
+  const sky = g.createLinearGradient(0,0,0,H*0.75);
+  sky.addColorStop(0,"#a5d6ea"); sky.addColorStop(0.55,"#cde6ea"); sky.addColorStop(1,"#f7e6c4");
+  g.fillStyle = sky; g.fillRect(0,0,W,H);
+  // sun
+  g.fillStyle = "rgba(255,236,186,.9)";
+  g.beginPath(); g.arc(858,74,34,0,7); g.fill();
+  g.fillStyle = "rgba(255,236,186,.30)";
+  g.beginPath(); g.arc(858,74,62,0,7); g.fill();
+  // clouds
+  const cloud = (x,y,s,a) => {
+    g.fillStyle = "rgba(255,255,255,"+a+")";
+    g.beginPath();
+    g.arc(x,y,22*s,0,7); g.arc(x+26*s,y+5*s,16*s,0,7); g.arc(x-26*s,y+6*s,14*s,0,7);
+    g.arc(x+6*s,y-12*s,15*s,0,7); g.fill();
+  };
+  cloud(150,70,1,.86); cloud(420,48,.8,.7); cloud(660,96,.7,.62);
+  // distant ridge
+  g.fillStyle = "#9dbfae";
+  g.beginPath(); g.moveTo(0,300);
+  g.quadraticCurveTo(120,232,250,292); g.quadraticCurveTo(380,340,520,286);
+  g.quadraticCurveTo(700,222,860,290); g.lineTo(W,300); g.lineTo(W,340); g.lineTo(0,340); g.fill();
+}
+
+function drawGround(g){
+  const gr = g.createLinearGradient(0,330,0,H);
+  gr.addColorStop(0,"#6ba55f"); gr.addColorStop(1,"#4b8347");
+  g.fillStyle = gr; g.fillRect(0,330,W,H-330);
+  // lake (under the paths)
+  g.fillStyle = "#4e93b5";
+  g.beginPath(); g.ellipse(158,548,132,46,0,0,7); g.fill();
+  g.fillStyle = "rgba(255,255,255,.20)";
+  g.beginPath(); g.ellipse(148,538,92,20,0,0,7); g.fill();
+  g.fillStyle = "#3f7a3e";
+  g.beginPath(); g.ellipse(150,566,146,58,0,0,7); g.fill();
+  g.fillStyle = "#3f7a3e";
+  g.beginPath(); g.ellipse(150,566,132,50,0,0,7); g.fill();
+  g.fillStyle = "#4e93b5";
+  g.beginPath(); g.ellipse(150,566,124,44,0,0,7); g.fill();
+  g.fillStyle = "rgba(255,255,255,.22)";
+  g.beginPath(); g.ellipse(140,556,84,16,0,0,7); g.fill();
+  // midway path
+  g.strokeStyle = "#e3d3b0"; g.lineWidth = 46; g.lineCap = "round";
+  g.beginPath();
+  g.moveTo(110,560); g.quadraticCurveTo(300,520,470,540);
+  g.quadraticCurveTo(640,558,860,512);
+  g.stroke();
+  g.strokeStyle = "#d6c19a"; g.lineWidth = 40;
+  g.beginPath(); g.moveTo(110,560); g.quadraticCurveTo(300,520,470,540); g.quadraticCurveTo(640,558,860,512); g.stroke();
+  // tower plaza + spur
+  g.fillStyle = "#e3d3b0"; g.beginPath(); g.ellipse(442,352,66,18,0,0,7); g.fill();
+  g.fillStyle = "#d6c19a"; g.beginPath(); g.ellipse(442,352,56,13,0,0,7); g.fill();
+  g.strokeStyle = "#e3d3b0"; g.lineWidth = 20;
+  g.beginPath(); g.moveTo(432,540); g.quadraticCurveTo(430,440,442,352); g.stroke();
+  g.strokeStyle = "#d6c19a"; g.lineWidth = 15;
+  g.beginPath(); g.moveTo(432,540); g.quadraticCurveTo(430,440,442,352); g.stroke();
+}
+
+function tree(g,x,y,s){
+  g.fillStyle = "rgba(51,41,31,.14)"; g.beginPath(); g.ellipse(x,y+34*s,24*s,7*s,0,0,7); g.fill();
+  g.fillStyle = "#6b4a2f"; g.fillRect(x-4*s,y,8*s,34*s);
+  g.fillStyle = "#3f7a3e";
+  g.beginPath(); g.arc(x,y-16*s,22*s,0,7); g.arc(x-17*s,y-2*s,15*s,0,7); g.arc(x+17*s,y-1*s,14*s,0,7); g.fill();
+  g.fillStyle = "rgba(255,255,255,.10)";
+  g.beginPath(); g.arc(x-6*s,y-22*s,11*s,0,7); g.fill();
+}
+
+function pennants(g){
+  const x0 = 168, y0 = 116, cols = ["#c9412f","#d8a12a","#2f7fa8","#6b4fa8","#3f7a3e","#e0e0de"];
+  for(let i=0;i<6;i++){
+    const x = x0 + i*22;
+    g.strokeStyle = "#7b6a52"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x,y0); g.lineTo(x, y0+40); g.stroke();
+    const wav = Math.sin(tNow*1.6 + i*0.7)*3;
+    g.fillStyle = cols[i];
+    g.beginPath(); g.moveTo(x,y0+2); g.lineTo(x+30,y0+10+wav); g.lineTo(x,y0+20); g.closePath(); g.fill();
+  }
+  g.fillStyle = "rgba(51,41,31,.72)";
+  g.font = "600 13px Georgia, serif"; g.textAlign = "center";
+  g.fillText("SIX FLAGS OVER SHELDON", x0+62, y0+60);
+  g.textAlign = "left";
+}
+
+/* --- ride structures --- */
+function drawCoaster(g){
+  const x=730, y=230;
+  const bx0=x-150, bx1=x+150, base=y+70;
+  const prof = p => base - (30 + Math.sin(Math.pow(p,0.85)*Math.PI)*72);
+  g.fillStyle="#c9a88a"; g.fillRect(bx0, base, 300, 12);
+  g.fillStyle="rgba(51,41,31,.13)"; g.fillRect(bx0, base+12, 300, 7);
+  g.strokeStyle="rgba(255,255,255,.7)"; g.lineWidth=2;
+  for(let i=0;i<=12;i++){ const p=i/12, px=lerp(bx0,bx1,p); if(base-prof(p)>6){ g.beginPath(); g.moveTo(px,prof(p)+10); g.lineTo(px,base); g.stroke(); } }
+  g.strokeStyle="#f2ece0"; g.lineWidth=5; g.beginPath();
+  for(let i=0;i<=30;i++){ const p=i/30, px=lerp(bx0,bx1,p); i?g.lineTo(px,prof(p)):g.moveTo(px,prof(p)); } g.stroke();
+  g.strokeStyle="#c9412f"; g.lineWidth=3; g.beginPath();
+  for(let i=0;i<=30;i++){ const p=i/30, px=lerp(bx0,bx1,p); i?g.lineTo(px,prof(p)+10):g.moveTo(px,prof(p)+10); } g.stroke();
+  const cp = clamp(0.5 + Math.sin(tNow*0.85)*0.36, 0.02, 0.98);
+  const cpx = lerp(bx0,bx1,cp), cpy = prof(cp);
+  g.fillStyle="#8a5a2b"; g.beginPath(); g.roundRect(cpx-16,cpy-16,32,14,4); g.fill();
+  g.fillStyle="#e9c46a"; g.beginPath(); g.arc(cpx,cpy-19,9,0,7); g.fill();
+  g.fillStyle="#d8a12a"; g.beginPath(); g.arc(cpx,cpy-19,9,0.2,1.5); g.arc(cpx,cpy-19,5,1.6,3.0); g.fill();
+}
+function drawTower(g){
+  const x=445, top=106, base=300;
+  g.fillStyle="#c9a88a"; g.fillRect(x-34,base,68,10);
+  g.strokeStyle="rgba(255,255,255,.75)"; g.lineWidth=2;
+  for(let i=0;i<10;i++){
+    const p0=i/10, p1=(i+1)/10;
+    const w0=lerp(22,1.5,p0), w1=lerp(22,1.5,p1);
+    const y0=lerp(base,top,p0), y1=lerp(base,top,p1);
+    g.beginPath(); g.moveTo(x-w0,y0); g.lineTo(x+w1,y1); g.stroke();
+    g.beginPath(); g.moveTo(x+w0,y0); g.lineTo(x-w1,y1); g.stroke();
+    g.beginPath(); g.moveTo(x-w0,y0); g.lineTo(x+w0,y0); g.stroke();
+  }
+  g.strokeStyle="#b6a2d6"; g.lineWidth=3;
+  g.beginPath(); g.moveTo(x-22,base); g.lineTo(x,top); g.moveTo(x+22,base); g.lineTo(x,top); g.stroke();
+  const cy = lerp(base-26, top+30, 0.5+0.5*Math.sin(tNow*0.55));
+  g.fillStyle="#6b4fa8"; g.beginPath(); g.roundRect(x-28,cy,56,20,6); g.fill();
+  g.fillStyle="#e9c46a"; g.beginPath(); g.arc(x-9,cy+7,4,0,7); g.moveTo(x+13,cy+7); g.arc(x+9,cy+7,4,0,7); g.fill();
+}
+function drawTilt(g){
+  const x=195,y=398;
+  g.fillStyle="rgba(51,41,31,.14)"; g.beginPath(); g.ellipse(x,y+62,80,14,0,0,7); g.fill();
+  g.fillStyle="#8d6d4b"; g.beginPath(); g.ellipse(x,y+52,74,20,0,0,7); g.fill();
+  g.fillStyle="#d8892a"; g.beginPath(); g.ellipse(x,y+44,70,18,0,0,7); g.fill();
+  g.fillStyle="#7b6a52"; g.fillRect(x-6,y+18,12,28);
+  g.save(); g.translate(x,y+44);
+  for(let i=0;i<6;i++){
+    const a = tNow*0.55 + i*Math.PI/3;
+    const cxx = Math.cos(a)*48, cyy = Math.sin(a)*15;
+    g.fillStyle="#b0601f"; g.beginPath(); g.roundRect(cxx-10,cyy-24,20,12,4); g.fill();
+    g.fillStyle="#e9c46a"; g.beginPath(); g.ellipse(cxx,cyy-13,13,8,0,0,7); g.fill();
+  }
+  g.fillStyle="#a9762c"; g.beginPath(); g.ellipse(0,-20,22,8,0,0,7); g.fill();
+  g.restore();
+}
+function drawFlume(g){
+  const x=790,y=470;
+  g.fillStyle="#4e93b5"; g.beginPath(); g.ellipse(x-10,y+40,210,56,0,0,7); g.fill();
+  g.fillStyle="rgba(255,255,255,.20)"; g.beginPath(); g.ellipse(x-30,y+28,150,26,0,0,7); g.fill();
+  g.strokeStyle="#a98a63"; g.lineWidth=26; g.lineCap="round";
+  g.beginPath(); g.moveTo(x-190,y+34); g.quadraticCurveTo(x-90,y-32,x+10,y+18); g.quadraticCurveTo(x+110,y+64,x+180,y+6); g.stroke();
+  g.strokeStyle="#63b0cf"; g.lineWidth=16;
+  g.beginPath(); g.moveTo(x-190,y+34); g.quadraticCurveTo(x-90,y-32,x+10,y+18); g.quadraticCurveTo(x+110,y+64,x+180,y+6); g.stroke();
+  const t = (tNow*0.4)%1;
+  const px = x-190+t*370, py = y+30 - Math.sin(t*Math.PI*2)*12 + t*6;
+  g.fillStyle="#8a5a2b"; g.beginPath(); g.roundRect(px-22,py-9,44,16,6); g.fill();
+  g.fillStyle="#e9c46a"; g.beginPath(); g.arc(px+6,py-11,6,0,7); g.fill();
+}
+function drawSnack(g){
+  const x=356,y=496;
+  g.fillStyle="rgba(51,41,31,.14)"; g.beginPath(); g.ellipse(x,y+40,62,12,0,0,7); g.fill();
+  // cart body
+  g.fillStyle="#e7e2d6"; g.beginPath(); g.roundRect(x-56,y-6,112,44,8); g.fill();
+  g.fillStyle="#c9412f"; g.beginPath(); g.roundRect(x-56,y-6,112,15,7); g.fill();
+  // counter
+  g.fillStyle="#6b4a2f"; g.fillRect(x-64,y-18,128,14);
+  // steam tray
+  g.fillStyle="#b9b3a6"; g.beginPath(); g.roundRect(x-40,y-30,80,14,4); g.fill();
+  g.fillStyle="#a9762c"; g.fillRect(x-32,y-26,26,7); g.fillRect(x+6,y-26,26,7);
+  // umbrella
+  g.fillStyle="#7b6a52"; g.fillRect(x-3,y-96,6,70);
+  g.fillStyle="#2f7fa8"; g.beginPath(); g.moveTo(x-52,y-74); g.quadraticCurveTo(x,y-128,x+52,y-74); g.closePath(); g.fill();
+  g.fillStyle="#fffaf0";
+  g.beginPath(); g.moveTo(x-52,y-74); g.quadraticCurveTo(x-26,y-104,x-2,y-74); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(x+52,y-74); g.quadraticCurveTo(x+26,y-104,x+2,y-74); g.closePath(); g.fill();
+}
+
+function drawPark(){
+  const g = pg;
+  drawSky(g); drawGround(g);
+  tree(g,62,348,1); tree(g,286,430,0.85); tree(g,930,352,0.9); tree(g,604,336,0.7); tree(g,250,300,0.75);
+  pennants(g);
+  drawTower(g); drawCoaster(g); drawTilt(g); drawFlume(g); drawSnack(g);
+
+  // ride labels
+  g.font = "600 13px Georgia, serif"; g.textAlign = "center";
+  for(const r of RIDES){
+    const cx = r.hx + r.hw/2, cy = r.hy + r.hh + 16;
+    g.fillStyle = "rgba(255,250,240,.9)";
+    const tw = Math.max(g.measureText(r.name).width+50, 132);
+    g.beginPath(); g.roundRect(cx-tw/2, cy-13, tw, 22, 7); g.fill();
+    g.strokeStyle = "rgba(203,182,148,.9)"; g.lineWidth = 1; g.stroke();
+    g.fillStyle = "#33291f";
+    g.fillText(r.name, cx - 9, cy+2);
+    const n = park.visited[r.id] ? String(park.visited[r.id]) + "x" : "";
+    if(n){ g.fillStyle = "#c9412f"; g.font="600 11px ui-sans-serif, system-ui"; g.fillText(n, cx+tw/2-16, cy+2); g.font = "600 13px Georgia, serif"; }
+  }
+  g.textAlign = "left";
+
+  // hover highlight
+  if(hoverRide){
+    g.strokeStyle = "#fffaf0"; g.lineWidth = 3;
+    g.setLineDash([7,6]);
+    g.beginPath(); g.roundRect(hoverRide.hx, hoverRide.hy, hoverRide.hw, hoverRide.hh, 12); g.stroke();
+    g.setLineDash([]);
+  }
+
+  // queue bubble
+  if(mode==="queue"){
+    drawBubble(g, walk.x, walk.y-40, "in line — " + Math.ceil(queueT) + "s");
+  }
+  if(mode==="travel"){
+    drawBubble(g, walk.x, walk.y-40, "walking…");
+  }
+
+  // snail
+  drawSnail(g, walk.x, walk.y, 1.0);
+}
+function drawBubble(g,x,y,text){
+  g.font = "600 12px ui-sans-serif, system-ui";
+  const w = g.measureText(text).width + 20;
+  g.fillStyle = "rgba(255,250,240,.95)";
+  g.beginPath(); g.roundRect(x-w/2,y-16,w,26,8); g.fill();
+  g.strokeStyle = "#cbb694"; g.lineWidth=1; g.stroke();
+  g.fillStyle = "#33291f"; g.textAlign="center"; g.fillText(text,x,y+2); g.textAlign="left";
+}
+function drawSnail(g,x,y,s){
+  g.save(); g.translate(x,y); g.scale(s,s);
+  g.fillStyle = "rgba(0,0,0,.16)"; g.beginPath(); g.ellipse(0,6,18,5,0,0,7); g.fill();
+  g.fillStyle = "#e9c46a"; g.beginPath(); g.arc(0,-6,13,0,7); g.fill();
+  g.fillStyle = "#d8a12a";
+  g.beginPath(); g.arc(0,-6,13,0.2,1.5); g.arc(0,-6,7,1.6,3.0); g.arc(0,-6,3,-1.2,0.4); g.fill();
+  g.fillStyle = "#c98a2a"; g.beginPath(); g.ellipse(0,3,16,6,0,0,7); g.fill();
+  g.fillStyle = "#8a5a2b"; g.fillRect(-11,2,22,4);
+  g.strokeStyle = "#8a5a2b"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(15,-1); g.lineTo(22,-13); g.moveTo(19,-1); g.lineTo(27,-11); g.stroke();
+  g.fillStyle = "#33291f"; g.beginPath(); g.arc(22,-13,2.2,0,7); g.arc(27,-11,2.2,0,7); g.fill();
+  g.restore();
+}
+
+/* ================================================================
+   MINIGAMES  — all input goes through tap()/move() so a bot uses the
+   same code path a human does.
+   ================================================================ */
+const MINI = {};
+
+/* --- 1. coaster: tap the arches as they cross the rail --- */
+MINI.stampede = {
+  init(){ this.t=0; this.line=430; this.gates=[]; this.next=1.0; this.scores=[]; this.word=""; this.wordT=0; this.flash=0; this.done=false; this.skill=0; },
+  upd(dt){
+    this.t+=dt; this.next-=dt; this.wordT-=dt; this.flash=Math.max(0,this.flash-dt*2);
+    if(this.next<=0 && this.scores.length + this.gates.filter(g=>!g.scored).length < 5){
+      this.next = 1.15; this.gates.push({y:-40,scored:false,hit:false});
+    }
+    const spd = 300 + this.t*26;
+    for(const g of this.gates){
+      if(!g.scored) g.y += spd*dt;
+      if(!g.scored && g.y > this.line+64){ g.scored=true; this.scores.push(0); this.word="MISSED"; this.wordT=0.8; this.flash=1; }
+    }
+    this.gates = this.gates.filter(g => g.y < 700);
+    const resolved = this.scores.length;
+    if(resolved>=5 || this.t>14) this.finish();
+  },
+  tap(){
+    if(this.done) return;
+    let best=null;
+    for(const g of this.gates){ if(g.scored) continue; if(!best || Math.abs(g.y-this.line) < Math.abs(best.y-this.line)) best=g; }
+    if(!best) return;
+    const err = Math.abs(best.y - this.line);
+    if(err > 70) { this.word="TOO EARLY"; this.wordT=0.6; this.flash=1; return; }
+    best.scored = true; best.hit = true; best.hitAt = err;
+    let sc;
+    if(err <= 13) sc = 1;
+    else sc = clamp(1 - (err-13)/57*0.75, 0.15, 1);
+    this.scores.push(sc);
+    this.word = err<=13 ? "PERFECT" : (err<=32 ? "GOOD" : "LATE");
+    this.wordT = 0.8; this.flash = 1;
+  },
+  finish(){
+    if(this.done) return;
+    this.done = true;
+    while(this.scores.length < 5) this.scores.push(0);
+    this.skill = this.scores.reduce((a,b)=>a+b,0)/5;
+    setTimeout(()=>resolveRide(), 420);
+  },
+  draw(g){
+    const sky = g.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,"#8fc9e6"); sky.addColorStop(1,"#f3ddb4");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    // rails converging
+    g.strokeStyle="#c9a88a"; g.lineWidth=5;
+    g.beginPath(); g.moveTo(180,-20); g.lineTo(300,this.line+120); g.stroke();
+    g.beginPath(); g.moveTo(780,-20); g.lineTo(660,this.line+120); g.stroke();
+    g.strokeStyle="#e2e0da"; g.lineWidth=3;
+    for(let i=0;i<11;i++){
+      const p=i/11, y=p*this.line;
+      const w1=lerp(300,60,Math.pow(p,0.75)), x1=lerp(480-w1,480-w1+90,p);
+      const w2=lerp(300,60,Math.pow(p,0.75)), x2=lerp(480+w1,480+w1-90,p);
+      g.beginPath(); g.moveTo(x1,y); g.lineTo(x2,y); g.stroke();
+    }
+    // ground + target rail
+    g.fillStyle="#5f9a55"; g.fillRect(0,this.line+90,W,H-this.line-90);
+    g.fillStyle="rgba(255,250,240,.95)"; g.fillRect(0,this.line-4,W,9);
+    g.fillStyle="#c9412f"; g.fillRect(0,this.line+5,W,3);
+    // gates
+    for(const gt of this.gates){
+      const p = clamp(gt.y/this.line,0,1);
+      const w = lerp(150,52,Math.pow(p,0.8));
+      g.strokeStyle = gt.scored ? (gt.hit?"rgba(63,122,62,.55)":"rgba(176,58,43,.5)") : "#e9c46a";
+      g.lineWidth = lerp(12,7,p);
+      g.beginPath(); g.moveTo(480-w,gt.y); g.lineTo(480-w+18,gt.y-26); g.lineTo(480+w-18,gt.y-26); g.lineTo(480+w,gt.y); g.stroke();
+      if(gt.scored && gt.hit && gt.hitAt!==undefined){
+        g.fillStyle="rgba(63,122,62,.8)"; g.font="600 12px ui-sans-serif,system-ui"; g.textAlign="center";
+        g.fillText(gt.hitAt<=13?"PERFECT":"+"+Math.round((1-Math.min(1,gt.hitAt/70))*100)+"%", 480, gt.y-34); g.textAlign="left";
+      }
+    }
+    // car
+    const carY = 10;
+    g.fillStyle="#8a5a2b"; g.beginPath(); g.roundRect(430,carY,100,40,8); g.fill();
+    g.fillStyle="#e9c46a"; g.beginPath(); g.arc(480,carY+14,13,0,7); g.fill();
+    g.fillStyle="#d8a12a"; g.beginPath(); g.arc(480,carY+14,13,0.2,1.5); g.arc(480,carY+14,7,1.6,3.0); g.fill();
+    g.fillStyle="#33291f"; g.beginPath(); g.arc(509,carY+38,5,0,7); g.arc(451,carY+38,5,0,7); g.fill();
+    // text
+    g.fillStyle="rgba(255,250,240,.92)"; g.beginPath(); g.roundRect(W/2-160,120,320,30,9); g.fill();
+    g.fillStyle="#33291f"; g.font="600 14px ui-sans-serif,system-ui"; g.textAlign="center";
+    g.fillText("TAP when the arch crosses the rail", W/2, 140);
+    if(this.wordT>0){ g.font="600 22px Georgia,serif"; g.fillStyle="#c9412f"; g.fillText(this.word, W/2, 186); }
+    g.font="600 13px ui-sans-serif,system-ui"; g.fillStyle="rgba(51,41,31,.75)";
+    g.fillText("gate " + Math.min(5,this.scores.length+1) + " of 5", W/2, 212);
+    g.textAlign="left";
+  }
+};
+
+/* --- 2. tower: stop the force meter in the band --- */
+MINI.tower = {
+  init(){
+    this.t=0; this.i=0; this.rounds=[]; this.m=0; this.dir=1; this.word=""; this.wordT=0; this.done=false; this.skill=0;
+    this.band = this.newBand(0.14);
+  },
+  newBand(hw){ return { c:rnd(0.34,0.72), hw:hw }; },
+  upd(dt){
+    this.t+=dt; this.wordT-=dt;
+    const spd = 0.95 + this.i*0.34;
+    this.m += this.dir*spd*dt;
+    if(this.m>1){ this.m=1; this.dir=-1; } if(this.m<0){ this.m=0; this.dir=1; }
+    if(this.t>16) this.finish();
+  },
+  tap(){
+    if(this.done) return;
+    const d = Math.abs(this.m - this.band.c);
+    let sc;
+    if(d <= this.band.hw) sc = 1;
+    else sc = clamp(1 - (d-this.band.hw)/0.30, 0, 0.9);
+    this.rounds.push(sc);
+    this.word = d<=this.band.hw ? "HOLD ON" : (d<=this.band.hw+0.09 ? "CLOSE" : "BAD DROP");
+    this.wordT = 0.9;
+    this.i++;
+    if(this.i>=3){ this.finish(); return; }
+    this.band = this.newBand(Math.max(0.075, 0.14 - this.i*0.032));
+  },
+  finish(){
+    if(this.done) return;
+    this.done = true;
+    while(this.rounds.length<3) this.rounds.push(0);
+    this.skill = this.rounds.reduce((a,b)=>a+b,0)/3;
+    setTimeout(()=>resolveRide(), 420);
+  },
+  draw(g){
+    const sky = g.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,"#b9a8e0"); sky.addColorStop(1,"#f0dcb8");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    // tower
+    g.strokeStyle="rgba(255,255,255,.85)"; g.lineWidth=4;
+    g.beginPath(); g.moveTo(150,520); g.lineTo(300,90); g.lineTo(330,90); g.lineTo(180,520); g.stroke();
+    g.beginPath(); g.moveTo(810,520); g.lineTo(660,90); g.lineTo(630,90); g.lineTo(780,520); g.stroke();
+    g.lineWidth=2; g.strokeStyle="rgba(255,255,255,.6)";
+    for(let i=0;i<12;i++){
+      const p=i/12, y=lerp(520,96,p), w=lerp(30,0,p);
+      g.beginPath(); g.moveTo(150+(810-150)*0+165-w*3, y); g.lineTo(645+w*3, y); g.stroke();
+    }
+    // car
+    const cy = lerp(500, 130, 1 - this.m);
+    g.fillStyle="#6b4fa8"; g.beginPath(); g.roundRect(420,cy,120,34,7); g.fill();
+    g.fillStyle="#e9c46a"; g.beginPath(); g.arc(447,cy+15,6,0,7); g.arc(480,cy+15,6,0,7); g.arc(513,cy+15,6,0,7); g.fill();
+    g.strokeStyle="#8a7ab8"; g.lineWidth=3; g.beginPath(); g.moveTo(390,cy+17); g.lineTo(420,cy+17); g.moveTo(540,cy+17); g.lineTo(570,cy+17); g.stroke();
+    // gauge
+    const gx=300, gy=130, gw=360;
+    g.fillStyle="rgba(255,250,240,.9)"; g.beginPath(); g.roundRect(gx-14,gy-30,gw+28,64,12); g.fill();
+    g.strokeStyle="#cbb694"; g.lineWidth=1; g.stroke();
+    g.fillStyle="#e6dcc6"; g.fillRect(gx,gy-6,gw,26);
+    g.fillStyle="#8bc07f"; g.fillRect(gx+(this.band.c-this.band.hw)*gw, gy-6, this.band.hw*2*gw, 26);
+    const mx = gx + clamp(this.m,0,1)*gw;
+    g.fillStyle="#c9412f"; g.fillRect(mx-3,gy-14,6,42);
+    g.fillStyle="#33291f"; g.font="600 12px ui-sans-serif,system-ui"; g.textAlign="center";
+    g.fillText("PULL THE CABLE — tap inside the green", W/2, gy+52);
+    if(this.wordT>0){ g.font="600 22px Georgia,serif"; g.fillStyle="#6b4fa8"; g.fillText(this.word, W/2, 470); }
+    g.font="600 13px ui-sans-serif,system-ui"; g.fillStyle="rgba(51,41,31,.75)";
+    g.fillText("drop " + Math.min(3,this.i+1) + " of 3", W/2, 220);
+    g.textAlign="left";
+  }
+};
+
+/* --- 3. flume: steer the log --- */
+MINI.flume = {
+  init(){
+    this.t=0; this.x=480; this.tx=480; this.rocks=[]; this.next=0.9; this.spawned=0; this.hits=0; this.done=false; this.skill=0; this.shake=0; this.trail=[];
+  },
+  upd(dt){
+    this.t+=dt; this.shake=Math.max(0,this.shake-dt*2);
+    this.x = lerp(this.x, this.tx, clamp(dt*9,0,1));
+    this.next -= dt;
+    if(this.next<=0 && this.spawned<6){
+      this.next = 1.05; this.spawned++;
+      this.rocks.push({ x: rnd(150,810), y: -30, hit:false });
+    }
+    for(const r of this.rocks){
+      r.y += 300*dt;
+      if(!r.hit && r.y>430 && r.y<510 && Math.abs(r.x-this.x)<44){ r.hit=true; this.hits++; this.shake=1; }
+    }
+    this.trail.push({x:this.x,y:470}); if(this.trail.length>16) this.trail.shift();
+    if(this.t>15) this.finish();
+    const past = this.rocks.filter(r=>r.y>560).length;
+    if(this.spawned>=6 && past>=6) this.finish();
+  },
+  move(px){ this.tx = clamp(px, 130, 830); },
+  tap(){ },
+  left(){ this.tx = clamp(this.tx-140,130,830); },
+  right(){ this.tx = clamp(this.tx+140,130,830); },
+  finish(){
+    if(this.done) return;
+    this.done = true;
+    this.skill = clamp((6-this.hits)/6, 0, 1);
+    setTimeout(()=>resolveRide(), 420);
+  },
+  draw(g){
+    const sky = g.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,"#a9d8ea"); sky.addColorStop(1,"#dfe8d2");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    // chute walls
+    g.fillStyle="#8a6b46";
+    g.beginPath(); g.moveTo(0,0); g.lineTo(170,0); g.lineTo(60,H); g.lineTo(0,H); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(W,0); g.lineTo(830,0); g.lineTo(900,H); g.lineTo(W,H); g.closePath(); g.fill();
+    g.fillStyle="#63b0cf"; g.fillRect(150,0,660,H);
+    g.fillStyle="rgba(255,255,255,.22)";
+    for(let i=0;i<9;i++){
+      const y = ((tNow*160 + i*70) % H);
+      g.fillRect(160, y, 640, 3);
+    }
+    // rocks
+    for(const r of this.rocks){
+      g.fillStyle = r.hit ? "#7a6a55" : "#9a8a72";
+      g.beginPath(); g.ellipse(r.x, r.y, 34, 22, 0, 0, 7); g.fill();
+      g.fillStyle="rgba(255,255,255,.25)"; g.beginPath(); g.ellipse(r.x-8,r.y-7,12,7,0,0,7); g.fill();
+    }
+    // splash zone
+    g.fillStyle="rgba(255,255,255,.30)"; g.fillRect(150,500,660,10);
+    // trail
+    g.strokeStyle="rgba(255,255,255,.35)"; g.lineWidth=10;
+    g.beginPath(); for(let i=0;i<this.trail.length;i++){ const p=this.trail[i]; i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y); } g.stroke();
+    // log
+    const sh = this.shake>0 ? (Math.random()-0.5)*8 : 0;
+    g.save(); g.translate(sh,0);
+    g.fillStyle="#8a5a2b"; g.beginPath(); g.roundRect(this.x-52, 440, 104, 40, 12); g.fill();
+    g.fillStyle="#6b4321"; g.beginPath(); g.roundRect(this.x-52, 440, 104, 12, 10); g.fill();
+    g.fillStyle="#e9c46a"; g.beginPath(); g.arc(this.x+22, 452, 12, 0, 7); g.fill();
+    g.fillStyle="#d8a12a"; g.beginPath(); g.arc(this.x+22,452,12,0.2,1.5); g.arc(this.x+22,452,6,1.6,3.0); g.fill();
+    g.restore();
+    g.fillStyle="rgba(255,250,240,.92)"; g.beginPath(); g.roundRect(W/2-190,110,380,58,9); g.fill();
+    g.fillStyle="#33291f"; g.font="600 14px ui-sans-serif,system-ui"; g.textAlign="center";
+    g.fillText("STEER — drag, or use the arrow keys", W/2, 132);
+    g.fillText("rocks hit " + this.hits + " / 6", W/2, 156);
+    g.textAlign="left";
+  }
+};
+
+/* --- 4. tilt: stop the pointer in the arc --- */
+MINI.tilt = {
+  init(){
+    this.t=0; this.i=0; this.a=0; this.spd=3.0; this.hw=0.62; this.arcs=[]; this.word=""; this.wordT=0; this.done=false; this.skill=0;
+    this.tgt = rnd(0.6, 5.6);
+  },
+  upd(dt){ this.t+=dt; this.wordT-=dt; this.a = (this.a + this.spd*dt) % (Math.PI*2); if(this.t>18) this.finish(); },
+  tap(){
+    if(this.done) return;
+    let d = Math.abs(this.a - this.tgt); if(d>Math.PI) d = Math.PI*2 - d;
+    let sc;
+    if(d <= this.hw) sc = 1 - (d/this.hw)*0.25;
+    else sc = clamp(0.55 - (d-this.hw)*0.85, 0, 0.55);
+    this.arcs.push({ ang:this.a, tgt:this.tgt, sc:sc });
+    this.word = d<=this.hw ? (d<this.hw*0.4?"BULLSEYE":"IN THE ARC") : "OUT OF THE ARC";
+    this.wordT = 0.9;
+    this.i++;
+    if(this.i>=3){ this.finish(); return; }
+    this.hw = Math.max(0.20, this.hw*0.7);
+    this.spd *= 1.14;
+    this.tgt = (this.a + rnd(1.6, 3.6)) % (Math.PI*2);
+  },
+  finish(){
+    if(this.done) return;
+    this.done = true;
+    while(this.arcs.length<3) this.arcs.push({sc:0});
+    this.skill = clamp(this.arcs.reduce((a,b)=>a+b.sc,0)/3, 0, 1);
+    setTimeout(()=>resolveRide(), 420);
+  },
+  draw(g){
+    const sky = g.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,"#f6d9a8"); sky.addColorStop(1,"#e0b986");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    const cx=480, cy=330, R=190;
+    g.fillStyle="#8d6d4b"; g.beginPath(); g.arc(cx,cy+18,R+16,0,7); g.fill();
+    g.fillStyle="#c98a2a"; g.beginPath(); g.arc(cx,cy,R+8,0,7); g.fill();
+    g.fillStyle="#e9c46a"; g.beginPath(); g.arc(cx,cy,R,0,7); g.fill();
+    for(let i=1;i<=3;i++){ g.strokeStyle="rgba(51,41,31,.14)"; g.lineWidth=1; g.beginPath(); g.arc(cx,cy,R*i/3,0,7); g.stroke(); }
+    // target arc
+    g.strokeStyle="#3f7a3e"; g.lineWidth=26; g.lineCap="butt";
+    g.beginPath(); g.arc(cx,cy,R*0.62, this.tgt-this.hw, this.tgt+this.hw); g.stroke();
+    // previous shots
+    for(const s of this.arcs){
+      g.strokeStyle="rgba(51,41,31,.5)"; g.lineWidth=2;
+      g.beginPath(); g.moveTo(cx,cy); g.lineTo(cx+Math.cos(s.ang)*R*0.96, cy+Math.sin(s.ang)*R*0.96); g.stroke();
+    }
+    // pointer
+    g.strokeStyle="#c9412f"; g.lineWidth=6; g.lineCap="round";
+    g.beginPath(); g.moveTo(cx,cy); g.lineTo(cx+Math.cos(this.a)*R*0.96, cy+Math.sin(this.a)*R*0.96); g.stroke();
+    g.fillStyle="#33291f"; g.beginPath(); g.arc(cx,cy,12,0,7); g.fill();
+    g.fillStyle="#fffaf0"; g.beginPath(); g.arc(cx,cy,5,0,7); g.fill();
+    g.fillStyle="#33291f"; g.font="600 14px ui-sans-serif,system-ui"; g.textAlign="center";
+    g.fillText("TAP to stop the arm inside the green arc", cx, 132);
+    g.fillText("stop " + Math.min(3,this.i+1) + " of 3 — the arc shrinks", cx, 158);
+    if(this.wordT>0){ g.font="600 22px Georgia,serif"; g.fillStyle="#c9412f"; g.fillText(this.word, cx, 198); }
+    g.textAlign="left";
+  }
+};
+
+/* --- 5. snack: hold to balance the tray --- */
+MINI.snack = {
+  init(){ this.t=0; this.tot=5.0; this.v=0.5; this.vel=0; this.inband=0; this.hold=false; this.done=false; this.skill=0; this.band=0.14; },
+  upd(dt){
+    this.t+=dt;
+    this.vel += (Math.random()-0.5)*2.6*dt + (this.hold ? 1.35*dt : -1.15*dt);
+    this.vel = clamp(this.vel,-1.2,1.2);
+    this.v += this.vel*dt*0.9;
+    if(this.v>1){ this.v=1; this.vel=-Math.abs(this.vel)*0.45; }
+    if(this.v<0){ this.v=0; this.vel=Math.abs(this.vel)*0.45; }
+    if(Math.abs(this.v-0.5) < this.band) this.inband += dt;
+    if(this.t>=this.tot) this.finish();
+  },
+  tap(down){ this.hold = !!down; },
+  finish(){
+    if(this.done) return;
+    this.done = true;
+    this.skill = clamp(this.inband/this.tot, 0, 1);
+    setTimeout(()=>resolveRide(), 420);
+  },
+  draw(g){
+    const sky = g.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,"#f7e6c4"); sky.addColorStop(1,"#e6d3ae");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    // bench
+    g.fillStyle="#8a6b46"; g.fillRect(300,470,360,18); g.fillRect(320,488,14,60); g.fillRect(626,488,14,60);
+    // man walking with tray: tray tilt from v
+    const tilt = (this.v-0.5)*0.9;
+    const px = 480, py = 380;
+    g.save(); g.translate(px,py); g.rotate(tilt);
+    g.fillStyle="#e7e2d6"; g.beginPath(); g.roundRect(-70,-8,140,12,5); g.fill();
+    g.fillStyle="#c9412f"; g.beginPath(); g.arc(-40,-16,12,0,7); g.fill();     // corn dog
+    g.fillStyle="#d8a12a"; g.beginPath(); g.roundRect(-52,-20,24,8,4); g.fill();
+    g.fillStyle="#8bc07f"; g.beginPath(); g.arc(38,-18,13,0,7); g.arc(60,-18,11,0,7); g.fill(); // cup
+    g.restore();
+    // gauge
+    const gx=330, gy=200, gw=300;
+    g.fillStyle="rgba(255,250,240,.9)"; g.beginPath(); g.roundRect(gx-20,gy-30,gw+40,60,12); g.fill();
+    g.strokeStyle="#cbb694"; g.lineWidth=1; g.stroke();
+    g.fillStyle="#e6dcc6"; g.fillRect(gx,gy-10,gw,24);
+    g.fillStyle="#8bc07f"; g.fillRect(gx+(0.5-this.band)*gw, gy-10, this.band*2*gw, 24);
+    const cx = gx + this.v*gw;
+    g.fillStyle="#c9412f"; g.beginPath(); g.arc(cx, gy+2, 8, 0, 7); g.fill();
+    // progress
+    g.fillStyle="#e6dcc6"; g.fillRect(gx, gy-26, gw, 8);
+    g.fillStyle="#3f7a3e"; g.fillRect(gx, gy-26, gw*clamp(this.t/this.tot,0,1), 8);
+    g.fillStyle="#33291f"; g.font="600 14px ui-sans-serif,system-ui"; g.textAlign="center";
+    g.fillText("HOLD to lift the tray, release to let it down", 480, 300);
+    g.fillText(this.hold ? "holding" : "release", 480, 326);
+    g.fillText(Math.max(0,this.tot-this.t).toFixed(1)+"s of steady tray", 480, 352);
+    g.textAlign="left";
+  }
+};
+
+/* input routing into the active mini */
+function miniTap(x,y,down){
+  if(!mini) return;
+  if(mini.tap) mini.tap(down!==false);
+}
+function miniMove(x,y){
+  if(!mini) return;
+  if(mini.move) mini.move(x);
+}
+
+/* ================================================================
+   RIDE RESOLUTION
+   ================================================================ */
+function resolveRide(){
+  if(mode!=="ride") return;
+  const ride = cur, m = mini, skill = clamp(m.skill,0,1);
+  const roll = (Math.random()*2-1)*0.06;
+  const v = (0.25 + skill*0.75) - park.sleep/130 + roll;
+  const key = v>=0.65 ? "best" : v>=0.45 ? "fun" : v>=0.28 ? "ok" : "meh";
+  const V = VERDICTS[key];
+  const fun = Math.round(ride.base * (0.5+skill) * V.mult);
+  const sleepCost = ride.sleep < 0 ? ride.sleep : Math.round(ride.sleep * (0.55+0.9*skill)*10)/10;
+
+  park.fun += fun;
+  park.sleep = clamp(park.sleep + sleepCost, 0, 100);
+  park.visited[ride.id] = (park.visited[ride.id]||0) + 1;
+  park.rides++;
+  park.tally[V.liked]++;
+  if(V.again === "yes") park.tally.again++;
+  if(key==="best") park.tally.best = ride.name;
+  if(skill < 0.35) park.tally.sore++;
+
+  park.rows.push({
+    name: ride.name, kind: ride.kind, verdict: V.word, key: key, skill: skill,
+    fun: fun, sleep: sleepCost, min: ride.min, rate: Math.round(fun/(ride.min/60)), say: V.say
+  });
+
+  mode = "park";
+  RK.style.display = "none"; PK.style.display = "block";
+  $("panelCard").innerHTML =
+    '<h2>'+esc(ride.name)+'</h2>'+
+    '<div class="sub">'+esc(ride.kind)+' &middot; your run: '+Math.round(skill*100)+'% clean</div>'+
+    '<div class="say">&ldquo;'+esc(V.say)+'&rdquo;</div>'+
+    '<div class="line"></div>'+
+    row2("Fun banked", "+"+fun+" units")+
+    row2("Sleepiness", (sleepCost>0?"+":"")+sleepCost)+
+    row2("Projected rate", Math.round(fun/(ride.min/60))+" units/hour")+
+    '<div class="btnrow"><button class="big" id="okBtn">Back to the midway</button></div>';
+  $("panel").classList.add("on");
+  $("okBtn").onclick = closePanel;
+
+  log("<b>"+esc(ride.name)+"</b> &mdash; "+esc(V.word)+" (+"+fun+" fun, "+(sleepCost>0?"+":"")+sleepCost+" sleep)");
+  if(park.sleep>=100){ park.done=true; park.cause="asleep"; }
+  drawHud();
+}
+function row2(k,v){ return '<div class="grand" style="border-top:none;padding-top:0;margin-top:0"><div class="row"><span>'+k+'</span><b>'+v+'</b></div></div>'; }
+function closePanel(){
+  $("panel").classList.remove("on");
+  if(park.done) endDay();
+}
+
+/* ================================================================
+   FLOW: pick a ride -> travel -> queue -> ride
+   ================================================================ */
+function pickRide(r){
+  if(mode!=="park" && mode!=="travel") return;
+  if(park.time<=0) return;
+  cur = r;
+  walk.t = 0;
+  walk.x0 = park.snail.x; walk.y0 = park.snail.y;
+  walk.x1 = r.ex + rnd(-14,14); walk.y1 = r.ey;
+  const dist = Math.hypot(walk.x1-walk.x0, walk.y1-walk.y0);
+  walk.dur = clamp(dist/420, 0.5, 1.6);
+  mode = "travel";
+  log("Sheldon heads for <b>"+esc(r.name)+"</b>.");
+}
+function startQueue(){
+  cur = cur;
+  const rides = park.visited[cur.id]||0;
+  queueTotal = cur.queue * (1 + rides*0.6);
+  queueT = queueTotal;
+  mode = "queue";
+  const lines = [
+    "The line for <b>"+esc(cur.name)+"</b> is "+Math.round(queueTotal)+" seconds long.",
+    "A kid behind Sheldon is counting the flags on the gate. Out loud.",
+    "The queue music is the same four bars, forever.",
+    "Somebody ahead of them has a corn dog. Sheldon stares at it."
+  ];
+  log(lines[Math.floor(Math.random()*lines.length)]);
+}
+function startRide(){
+  mode = "ride";
+  mini = Object.assign({}, MINI[cur.id]);
+  mini.init();
+  PK.style.display = "none"; RK.style.display = "block";
+  log("Sheldon is on <b>"+esc(cur.name)+"</b>.");
+}
+
+/* ================================================================
+   MAIN LOOP
+   ================================================================ */
+let tNow = 0, last = 0, hoverRide = null, paused = false;
+walk = { x:480, y:520, x0:480, y0:520, x1:480, y1:520, t:0, dur:1 };
+
+function update(dt){
+  tNow += dt;
+  if(mode==="start" || mode==="report") return;
+  park.time = Math.max(0, park.time - dt);
+
+  if(mode==="park"){
+    park.sleep = clamp(park.sleep + IDLE_DRAIN*dt, 0, 100);
+  } else if(mode==="travel"){
+    park.sleep = clamp(park.sleep + IDLE_DRAIN*dt, 0, 100);
+    walk.t += dt;
+    const p = clamp(walk.t/walk.dur,0,1);
+    const e = p<0.5 ? 2*p*p : 1-Math.pow(-2*p+2,2)/2;
+    walk.x = lerp(walk.x0, walk.x1, e); walk.y = lerp(walk.y0, walk.y1, e);
+    park.snail.x = walk.x; park.snail.y = walk.y;
+    if(p>=1) startQueue();
+  } else if(mode==="queue"){
+    park.sleep = clamp(park.sleep + QUEUE_DRAIN*dt, 0, 100);
+    queueT -= dt;
+    if(queueT<=0){ startRide(); }
+  } else if(mode==="ride"){
+    mini.upd(dt);
+  }
+
+  if(park.sleep>=100 && !park.done){ park.done = true; park.cause="asleep"; }
+  if(park.time<=0 && !park.done){ park.done = true; park.cause="closing"; }
+  if(park.done && mode!=="ride" && !$("panel").classList.contains("on")) endDay();
+  drawHud();
+}
+function draw(){
+  if(mode==="ride") mini.draw(rg);
+  else drawPark();
+}
+function frame(ts){
+  if(paused){ last = ts; requestAnimationFrame(frame); return; }
+  if(!last) last = ts;
+  let dt = (ts-last)/1000; last = ts;
+  dt = Math.min(dt, 0.05);
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+/* headless-friendly single step (used by the verification bot) */
+window.__step = function(dt){ update(dt); draw(); };
+
+/* ================================================================
+   INPUT
+   ================================================================ */
+function toWorld(canvas, e){
+  const r = canvas.getBoundingClientRect();
+  return { x:(e.clientX-r.left)*(W/r.width), y:(e.clientY-r.top)*(H/r.height) };
+}
+PK.addEventListener("pointermove", e => {
+  const p = toWorld(PK,e);
+  hoverRide = hitTest(p.x,p.y);
+  PK.style.cursor = hoverRide ? "pointer" : "default";
+});
+PK.addEventListener("pointerdown", e => {
+  if(mode!=="park") return;
+  const p = toWorld(PK,e);
+  const r = hitTest(p.x,p.y);
+  if(r) pickRide(r);
+});
+RK.addEventListener("pointerdown", e => {
+  if(mode!=="ride") return;
+  e.preventDefault();
+  const p = toWorld(RK,e);
+  if(cur.id==="flume") miniMove(p.x);
+  else miniTap(p.x,p.y,true);
+});
+RK.addEventListener("pointermove", e => {
+  if(mode!=="ride" || cur.id!=="flume") return;
+  if(e.buttons) miniMove(toWorld(RK,e).x);
+});
+RK.addEventListener("pointerup", e => {
+  if(mode!=="ride") return;
+  if(cur.id==="snack") mini.tap(false);
+});
+function hitTest(x,y){
+  for(const r of RIDES) if(x>=r.hx && x<=r.hx+r.hw && y>=r.hy && y<=r.hy+r.hh) return r;
+  return null;
+}
+window.addEventListener("keydown", e => {
+  if(mode==="start"){ if(e.key==="Enter"||e.key===" "){ enterPark(); e.preventDefault(); } return; }
+  if(mode==="report"){ if(e.key==="Enter"){ location.reload(); } return; }
+  if(mode==="park"){
+    const k = parseInt(e.key,10);
+    if(k>=1 && k<=5){ pickRide(RIDES[k-1]); e.preventDefault(); }
+    if(e.key==="Escape") endDay("left");
+  }
+  if(mode==="ride"){
+    if(e.key===" "||e.key==="Enter"){ if(cur.id==="flume") miniMove(480); else miniTap(480,300,true); e.preventDefault(); }
+    if(e.key==="ArrowLeft"||e.key==="a"){ if(mini.left) mini.left(); }
+    if(e.key==="ArrowRight"||e.key==="d"){ if(mini.right) mini.right(); }
+    if(e.key==="ArrowDown"||e.key==="s"){ if(cur.id==="snack") mini.tap(true); }
+  }
+});
+window.addEventListener("keyup", e => {
+  if(mode==="ride" && cur && cur.id==="snack" && (e.key==="ArrowDown"||e.key==="s"||e.key===" ")) mini.tap(false);
+});
+
+/* ================================================================
+   SCREENS
+   ================================================================ */
+function enterPark(){
+  park = newPark();
+  logLines = [];
+  mode = "park";
+  cur = null; mini = null;
+  $("start").classList.remove("on");
+  $("report").classList.remove("on");
+  $("panel").classList.remove("on");
+  log("The gate opens. Six pennants, one boy, one meter.");
+  log("Sheldon: &ldquo;Where do we start?&rdquo;");
+  drawHud();
+  renderFeed();
+}
+
+function endDay(forced){
+  if(mode==="report") return;
+  if(!forced && !park.done) return;
+  mode = "report";
+  $("panel").classList.remove("on");
+  const totalFun = park.fun;
+  const readHours = totalFun/20;
+  const hours = (DAY - park.time)/3600;
+
+  const title = park.cause==="asleep" ? "Asleep on a bench" : (park.cause==="closing" ? "The lot is closing" : "They left early");
+  const kick = park.cause==="asleep" ? "Sleepiness hit 100" : "Park day: " + fmtClock(DAY-park.time) + " of 5:00 used";
+  $("repKicker").textContent = kick;
+  $("repTitle").textContent = title;
+  $("repSub").innerHTML = park.rides + " rides logged. Tallies below, then the bill.";
+
+  let html = "";
+  if(park.rows.length){
+    html += '<table><thead><tr><th>Ride</th><th>Verdict</th><th class="num">Fun</th><th class="num">Sleep</th><th class="num">Units/hr</th></tr></thead><tbody>';
+    for(const r of park.rows){
+      const cls = r.key==="best"?"good":(r.key==="fun"?"good":(r.key==="ok"?"mid":"bad"));
+      html += "<tr><td>"+esc(r.name)+"<div class='meta'>"+esc(r.kind)+" &middot; "+Math.round(r.skill*100)+"% clean</div></td>"
+        + "<td class='"+cls+"'>"+esc(r.verdict)+"</td>"
+        + "<td class='num'>"+r.fun+"</td>"
+        + "<td class='num'>"+(r.sleep>0?"+":"")+r.sleep+"</td>"
+        + "<td class='num'>"+r.rate+"</td></tr>";
+    }
+    html += "</tbody></table>";
+  } else {
+    html += "<p class='lede'>No rides logged. The tallies are empty, which is its own kind of result.</p>";
+  }
+
+  const t = park.tally;
+  html += '<div class="line" style="border-top:1px dashed var(--line);margin:16px 0"></div>';
+  html += '<div class="kicker">The tallies they asked for</div>';
+  html += '<table style="margin-top:6px"><tbody>'
+    + "<tr><td>Did you like it?</td><td class='tally'>"+t.yes+" yes &middot; "+t.mid+" shrug &middot; "+t.no+" no</td></tr>"
+    + "<tr><td>Do you want to go again?</td><td class='tally'>"+t.again+" of "+park.rides+" yes</td></tr>"
+    + "<tr><td>Best part</td><td class='tally'>"+esc(t.best||"nothing stood out")+"</td></tr>"
+    + "<tr><td>Anything hurt?</td><td class='tally'>"+t.sore+" ride"+(t.sore===1?"":"s")+" logged as sore</td></tr>"
+    + "<tr><td>Steps walked</td><td class='tally'>"+Math.round(park.rides*2200+3200).toLocaleString()+"</td></tr>"
+    + "<tr><td>Sleepiness at close</td><td class='tally'>"+Math.round(park.sleep)+" / 100</td></tr>"
+    + "</tbody></table>";
+
+  html += '<div class="grand">'
+    + '<div class="row"><span>Fun units, total</span><b>'+totalFun+'</b></div>'
+    + '<div class="row"><span>Park hours burned</span><b>'+hours.toFixed(2)+'</b></div>'
+    + '<div class="row"><span>Units per hour (park average)</span><b>'+(hours>0?Math.round(totalFun/hours):0)+'</b></div>'
+    + '<div class="row"><span>A book is worth, per hour</span><b>20</b></div>'
+    + '</div>';
+
+  const coasters = park.rows.filter(r => r.name !== "Corn Dog Cart").length;
+  const dogs = park.rows.length - coasters;
+  let closer;
+  if(totalFun === 0){
+    closer = "No fun units. The tally engine has nothing to bill, which means the ledger and the day agree for once.";
+  } else {
+    closer = totalFun + " fun units, at twenty units to the hour, books out to <b>" + readHours.toFixed(1)
+      + " hours of reading</b>. " + coasters + " ride" + (coasters===1?"":"s")
+      + (dogs ? " and " + dogs + " corn dog" + (dogs===1?"":"s") : "")
+      + ". Sleepiness cost " + Math.max(0, Math.round(park.sleep-30)) + " points"
+      + " and one nap on the ride home. The number the accountant uses on Monday will be exactly the same as this one, and he has never been on a roller coaster.";
+  }
+
+  html += '<p class="closer">'+closer+'</p>';
+
+  $("reportBody").innerHTML = html;
+  $("report").classList.add("on");
+  try{
+    const best = parseFloat(localStorage.getItem("sfs_best")||"0");
+    if(totalFun > best) localStorage.setItem("sfs_best", String(totalFun));
+  }catch(err){}
+}
+
+/* ---- buttons ---- */
+$("enterBtn").onclick = enterPark;
+$("againBtn").onclick = () => { $("report").classList.remove("on"); enterPark(); };
+$("copyBtn").onclick = () => {
+  const means = "Twenty fun units to the hour. A book is twenty units. If the units say six hours, "
+    + "six hours is what you have, and nothing about it is a math problem.";
+  const txt = "SIX FLAGS OVER SHELDON — tally sheet\n"
+    + "Verge: " + (park.cause==="asleep"?"asleep on a bench":(park.cause==="closing"?"lot closed":"left early")) + "\n"
+    + park.rows.map(r => r.name + " — " + r.verdict + " (+" + r.fun + " fun, " + r.rate + " units/hr)").join("\n")
+    + "\n\nFun units: " + park.fun + "  =  " + (park.fun/20).toFixed(1) + " hours of reading\n"
+    + "Liked: " + park.tally.yes + " yes / " + park.tally.no + " no. Again: " + park.tally.again + " of " + park.rides + ".\n"
+    + "Sleepiness at close: " + Math.round(park.sleep) + " / 100\n\n"
+    + means;
+  navigator.clipboard && navigator.clipboard.writeText(txt);
+  $("copyBtn").textContent = "Copied";
+  setTimeout(()=>{ $("copyBtn").textContent = "Copy the tally sheet"; }, 1400);
+};
+$("leaveBtn").onclick = () => {
+  if(mode==="ride") return;
+  park.cause = "left";
+  park.done = true;
+  endDay("left");
+};
+
+/* ---- question hook so the game can be driven from the console in tests ---- */
+window.__game = {
+  get mode(){ return mode; },
+  get park(){ return park; },
+  RIDES, MINI, VERDICTS,
+  pickRide, startRide, resolveRide, enterPark, endDay, closePanel,
+  get cur(){ return cur; },
+  get mini(){ return mini; },
+  setMini(id){ cur = RIDES.find(r=>r.id===id); startRide(); },
+  tap(x,y,down){ miniTap(x,y,down); },
+  move(x){ miniMove(x); },
+  step(dt){ update(dt); draw(); },
+  pause(v){ paused = !!v; },
+  toRide(id){ const r = RIDES.find(x=>x.id===id); park.snail.x=r.ex; park.snail.y=r.ey; cur=r; startRide(); }
+};
+
+/* ---- boot ---- */
+logLines = [];
+walk = { x:480, y:520, x0:480, y0:520, x1:480, y1:520, t:0, dur:1 };
+drawHud();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
